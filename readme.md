@@ -1,6 +1,6 @@
 # 5tratumFW — BETA
 
-**BETA — Gamma 601/602 only. The current source is `5tratumFW-0.1.0-beta.3`.**
+**BETA — Gamma 601/602 only. The current source is `5tratumFW-0.1.0-beta.4`.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
@@ -44,7 +44,7 @@ Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` 
 
 The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The test MUX candidate advertises live status to the Gamma 601. This Gamma receiver currently supports the legacy status acknowledgment; the QAxe's richer coin/block metadata protocol is a separate firmware capability.
 
-See [Beta 3 validation](docs/validation-beta3.md) for build and physical-device results. Gamma 602 remains unflashed; source/build compatibility is not hardware qualification.
+See [Beta 4 validation](docs/validation-beta4.md) for this build and [Beta 3 validation](docs/validation-beta3.md) for the preceding physical-device checks. Gamma 602 remains unflashed; source/build compatibility is not hardware qualification.
 
 ## Build
 

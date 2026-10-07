@@ -18,7 +18,7 @@ export class OperatingProfilesComponent implements OnInit, OnDestroy {
   busy = false;
   error = '';
   message = '';
-  review?: { body: Record<string, unknown>; label: string; frequencyMHz?: number; coreVoltageMv?: number; endpoint?: string };
+  review?: { source: 'manual' | 'slot'; slot?: number; body: Record<string, unknown>; label: string; frequencyMHz?: number; coreVoltageMv?: number; endpoint?: string };
   private destroy$ = new Subject<void>();
   constructor(private service: OperatingProfilesService, private live: LiveDataService) {}
   ngOnInit() {
@@ -58,12 +58,12 @@ export class OperatingProfilesComponent implements OnInit, OnDestroy {
   }
   reviewManual() {
     if (!this.pointChanged || !this.pointValid) return;
-    this.review = { body: { type: 'tuning', frequencyMHz: this.frequencyMHz, coreVoltageMv: this.coreVoltageMv }, label: 'Manual operating point', frequencyMHz: this.frequencyMHz, coreVoltageMv: this.coreVoltageMv };
+    this.review = { source: 'manual', body: { type: 'tuning', frequencyMHz: this.frequencyMHz, coreVoltageMv: this.coreVoltageMv }, label: 'Manual operating point', frequencyMHz: this.frequencyMHz, coreVoltageMv: this.coreVoltageMv };
   }
   reviewSlot(slot: TuningSlot | PoolSlot) {
     if (!slot.configured) return;
-    this.review = this.type === 'tuning' ? { body: { type: 'tuning', slot: slot.slot }, label: slot.name!, frequencyMHz: (slot as TuningSlot).frequencyMHz, coreVoltageMv: (slot as TuningSlot).coreVoltageMv } :
-      { body: { type: 'pool', slot: slot.slot, poolTarget: this.poolTarget }, label: `${slot.name} → ${this.poolTarget}`, endpoint: `${(slot as PoolSlot).host}:${(slot as PoolSlot).port}` };
+    this.review = this.type === 'tuning' ? { source: 'slot', slot: slot.slot, body: { type: 'tuning', slot: slot.slot }, label: slot.name!, frequencyMHz: (slot as TuningSlot).frequencyMHz, coreVoltageMv: (slot as TuningSlot).coreVoltageMv } :
+      { source: 'slot', slot: slot.slot, body: { type: 'pool', slot: slot.slot, poolTarget: this.poolTarget }, label: `${slot.name} → ${this.poolTarget}`, endpoint: `${(slot as PoolSlot).host}:${(slot as PoolSlot).port}` };
   }
   applyPoolSlot(slot: TuningSlot | PoolSlot) {
     if (this.type !== 'pool' || !slot.configured || this.busy) return;

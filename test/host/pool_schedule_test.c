@@ -196,7 +196,10 @@ int main(int argc,char **argv)
     } else if (!strcmp(scenario,"readers")) {
         pthread_t readers[3];for(unsigned i=0;i<3;i++)assert(!pthread_create(&readers[i],NULL,identity_reader,&state));
         stratum_protocol_t proto;for(unsigned i=0;i<500;i++)assert(SYSTEM_reload_primary_pool(&state,&proto)==ESP_OK);
-        for(unsigned i=0;i<3;i++)assert(!pthread_join(readers[i],NULL));unchanged_power(&state);
+        for (unsigned i = 0; i < 3; i++) {
+            assert(!pthread_join(readers[i], NULL));
+        }
+        unchanged_power(&state);
         free(state.SYSTEM_MODULE.pool_user);state.SYSTEM_MODULE.pool_user=malloc(701);memset(state.SYSTEM_MODULE.pool_user,'x',700);state.SYSTEM_MODULE.pool_user[700]=0;
         char *copy=SYSTEM_duplicate_pool_user(&state,false);assert(copy && strlen(copy)==700 && !strcmp(copy,state.SYSTEM_MODULE.pool_user));free(copy);
     } else if (!strcmp(scenario,"close-hooks")) {

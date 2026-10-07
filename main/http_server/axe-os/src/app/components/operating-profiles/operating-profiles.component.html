@@ -4,7 +4,7 @@
   <button *ngIf="!data && !busy" type="button" (click)="load()">Retry</button>
   <ng-container *ngIf="data">
     <ng-container *ngIf="type === 'tuning'">
-      <label class="fw-switch-row"><span><strong>Manual clock and voltage</strong><small>Opening this mode keeps the saved operating point.</small></span><input type="checkbox" [(ngModel)]="manual" [ngModelOptions]="{standalone:true}" [disabled]="busy" /></label>
+      <label class="fw-switch-row"><span><strong>Manual clock and voltage</strong><small>Opening this mode keeps the saved operating point.</small></span><input type="checkbox" [(ngModel)]="manual" [ngModelOptions]="{standalone:true}" (ngModelChange)="review = undefined" [disabled]="busy" /></label>
       <p class="profiles-current">Saved {{data.current.frequencyMHz}} MHz / {{data.current.coreVoltageMv}} mV <span *ngIf="actualFrequencyMHz !== undefined">· Reported actual {{actualFrequencyMHz | number:'1.0-3'}} MHz</span></p>
       <div *ngIf="manual" class="profiles-point">
         <label>Frequency <span>MHz requested</span><div class="profiles-step"><button type="button" (click)="step('frequencyMHz', -1)" [disabled]="busy" aria-label="Decrease frequency">−</button><input type="number" [(ngModel)]="frequencyMHz" [ngModelOptions]="{standalone:true}" [step]="data.limits.frequency.step" (ngModelChange)="review = undefined" [disabled]="busy" /><button type="button" (click)="step('frequencyMHz', 1)" [disabled]="busy" aria-label="Increase frequency">+</button></div></label>
@@ -12,6 +12,7 @@
       </div>
       <p *ngIf="manual" class="profiles-note">Software request bounds: {{data.limits.frequency.min}}–{{data.limits.frequency.max}} MHz, {{data.limits.coreVoltage.min}}–{{data.limits.coreVoltage.max}} mV. These are not validated safe operating points. The PLL rounds the requested clock; thermal protection remains active.</p>
       <button *ngIf="manual" type="button" (click)="reviewManual()" [disabled]="busy || !pointValid || !pointChanged">Review operating point</button>
+      <ng-container *ngIf="manual && review?.source === 'manual'"><ng-container *ngTemplateOutlet="reviewPanel"></ng-container></ng-container>
     </ng-container>
     <h3>{{type === 'tuning' ? 'Tuning profiles' : 'Saved pools'}} <small>10 slots · stored on miner</small></h3>
     <p class="profiles-note">{{type === 'tuning' ? 'Save the displayed operating point in a named slot. Saving a profile does not apply it.' : 'Save the currently stored route, including its private password. Save connection edits first.'}}</p>
@@ -21,8 +22,9 @@
         <span class="profiles-number">{{slot.slot + 1}}</span><label class="profiles-name"><span class="sr-only">Profile {{slot.slot + 1}} name</span><input type="text" [(ngModel)]="names[slot.slot]" [ngModelOptions]="{standalone:true}" maxlength="32" placeholder="Name this slot" [disabled]="busy" /></label>
         <span class="profiles-values">{{slot.configured ? type === 'tuning' ? $any(slot).frequencyMHz + ' MHz / ' + $any(slot).coreVoltageMv + ' mV' : $any(slot).host + ':' + $any(slot).port : 'Empty'}}</span>
         <div class="profiles-actions"><button type="button" (click)="save(slot.slot)" [disabled]="busy || !names[slot.slot].trim() || (type === 'tuning' && !pointValid)">Save</button><button *ngIf="type === 'pool'" type="button" (click)="applyPoolSlot(slot)" [disabled]="busy || !slot.configured" [attr.aria-label]="'Apply pool '+(slot.slot+1)+' to '+poolTarget">Apply</button><button *ngIf="type === 'tuning'" type="button" (click)="reviewSlot(slot)" [disabled]="busy || !slot.configured">Review</button><button type="button" (click)="clear(slot.slot)" [disabled]="busy || !slot.configured" [attr.aria-label]="'Clear profile ' + (slot.slot + 1)">Clear</button></div>
+        <ng-container *ngIf="type === 'tuning' && review?.source === 'slot' && review?.slot === slot.slot"><ng-container *ngTemplateOutlet="reviewPanel"></ng-container></ng-container>
       </div>
     </div>
-    <section *ngIf="review" class="profiles-review" aria-label="Review profile application"><h4>{{review.label}}</h4><p *ngIf="review.frequencyMHz !== undefined">{{data.current.frequencyMHz}} → {{review.frequencyMHz}} MHz · {{data.current.coreVoltageMv}} → {{review.coreVoltageMv}} mV</p><p *ngIf="review.endpoint">{{review.endpoint}} · stored credentials · other route unchanged</p><div><button type="button" (click)="review = undefined">Cancel</button><button type="button" (click)="apply()" [disabled]="busy">Apply</button></div></section>
+    <ng-template #reviewPanel><section *ngIf="review" class="profiles-review" aria-label="Review profile application"><h4>{{review.label}}</h4><p *ngIf="review.frequencyMHz !== undefined">{{data.current.frequencyMHz}} → {{review.frequencyMHz}} MHz · {{data.current.coreVoltageMv}} → {{review.coreVoltageMv}} mV</p><p *ngIf="review.endpoint">{{review.endpoint}} · stored credentials · other route unchanged</p><div><button type="button" (click)="review = undefined">Cancel</button><button type="button" (click)="apply()" [disabled]="busy">Apply</button></div></section></ng-template>
   </ng-container>
 </section>
