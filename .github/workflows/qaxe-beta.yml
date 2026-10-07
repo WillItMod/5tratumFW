@@ -1,0 +1,41 @@
+name: QAxe paired BETA validation
+on:
+  push:
+    paths: ['firmware/nerdqaxe/**', '.github/workflows/qaxe-beta.yml', '.gitmodules']
+  pull_request:
+    paths: ['firmware/nerdqaxe/**', '.github/workflows/qaxe-beta.yml', '.gitmodules']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qaxe-beta-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  qaxe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.14.0'
+          cache: npm
+          cache-dependency-path: firmware/nerdqaxe/main/http_server/axe-os/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare host rendering and browser
+        run: |
+          python3 -m pip install Pillow
+          echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+      - name: Build only NERDQAXEPLUS2 paired OTA artifacts
+        working-directory: firmware/nerdqaxe
+        run: bash tools/build_5tratumfw_qa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 5tratumFW-NerdQAxePlusPlus-BETA-${{ github.sha }}
+          path: firmware/nerdqaxe/release/NerdQAxe++/5tratumFW-qa-*-beta.*/
+          if-no-files-found: error
+# No hardware flashing, factory images, unsupported-board matrix or automatic publication.

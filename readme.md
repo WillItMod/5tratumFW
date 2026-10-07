@@ -1,6 +1,22 @@
-# 5tratumFW — BETA
+# 5tratumFW — choose your device
 
-**BETA — Gamma 601/602 only. The current source is `5tratumFW-0.1.0-beta.4`.**
+5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** Both families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
+
+| Your device | Firmware pair | Qualification and guide |
+| --- | --- | --- |
+| Bitaxe Gamma PCB601 or602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Gamma601 Beta4 installed;602 compiled, unflashed. [Gamma guides](docs/installation.md) · [compatibility](docs/compatibility.md) |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [validation](firmware/nerdqaxe/docs/validation-qa-beta1.md) |
+| QAxe+, NerdOctAxe/OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
+
+Start with [firmware selection and repository layout](docs/firmware-selection.md). Downloads are [model-labelled GitHub prereleases](https://github.com/WillItMod/5tratumFW/releases); use a complete matching image pair, manifest, checksums and corresponding source. Recovery backups/NVS/factory images are never published.
+
+The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](firmware/nerdqaxe/readme.md), with its own build/package helpers. The unified interface has Overview, Miner controls, Scheduler, Pool routing, Network and Updates; QAxe retains its extra hardware, protocol/security and integration settings.
+
+QAxe's native A/B MUX connections have independently configured routes and fresh per-session coin/job information. They use the shared-chain job selector; this does not establish independent physical-chip ownership.
+
+## Gamma family
+
+**Gamma BETA — these root-source images accept Gamma601/602 only. The current source is `5tratumFW-0.1.0-beta.4`.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
@@ -11,7 +27,7 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ES
 | --- | --- | --- |
 | Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta 4 paired app/WWW installed; both versions match, saved settings/slots/schedules retained, mining and accepted shares observed. Inline Review placement verified on the device web interface. See the validation record below. |
 | Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Compiled support. Device still runs stock v2.14.2; this firmware has not been installed/tested there. |
-| Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners | Incompatible | Do not flash these Gamma images. |
+| Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners (use their separately qualified family, where available) | Incompatible | Do not flash these Gamma images. |
 
 The guard validates an existing NVS board identity; it does not physically identify a PCB. Confirm the physical board revision and existing identity before installing. A missing, unreadable or unsupported identity stops startup before hardware initialization.
 

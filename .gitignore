@@ -56,3 +56,9 @@ device-tools/
 venv/
 *.nvs.bin
 *.backup
+
+# Model-specific generated packages and private QAxe work
+firmware/nerdqaxe/release/
+firmware/nerdqaxe/build-*/
+firmware/nerdqaxe/local-devices/
+firmware/nerdqaxe/.cache/

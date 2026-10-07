@@ -1,6 +1,6 @@
 # 5tratumFW contributor guide
 
-This repository builds BETA firmware and a web interface for Bitaxe Gamma PCB revisions 601 and 602 only. Read `readme.md` and `docs/compatibility.md` before changing board support. The shared upstream drivers are not a compatibility promise for other hardware.
+This repository has separate BETA firmware families: the root builds Bitaxe Gamma PCB601/602; `firmware/nerdqaxe/` builds NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 only. Never interchange their app/WWW pairs. The test QAxe PCB revision is unidentified, and other QAxe/OctAxe revisions remain unqualified. Read `readme.md` and `docs/compatibility.md` before changing board support. The shared upstream drivers are not a compatibility promise for other hardware.
 
 - Keep the exact persisted-identity guard before hardware initialization.
 - Preserve NVS keys and device-specific configured clocks, voltage, fan, network and pool settings; do not erase NVS or apply tuning/presets during boot or OTA.
@@ -18,3 +18,7 @@ When changing `main/http_server/openapi.yaml`, regenerate the TypeScript API cli
 Host tests use production C with fake platform services. Native OLED renders use actual LVGL with simulated readings. Target compilation, host tests and fixture rendering do not prove physical-device operation. Record exact validation in `docs/validation.md` and release notes; never convert the earlier 601 alpha smoke test into a claim about a new BETA build or PCB 602.
 
 All current published builds use named `5tratumFW-X.Y.Z-beta.N` versions and GitHub prereleases. Package application `esp-miner.bin`, WWW `www.bin`, checksums, manifest and corresponding source together. Do not publish factory/NVS images from this repository.
+
+## QAxe family
+
+Read `docs/firmware-selection.md` and `docs/nerdqaxe.md`. The QAxe subtree retains GPLv3/upstream provenance and its own pinned build helper; inherited upstream board definitions/workflows are not supported-release promises. Top-level QAxe CI runs only NERDQAXEPLUS2 and never generates factory images or flashes hardware. Preserve both native sessions, shared board telemetry, both fans, security/protocol options, slots and schedules. Native A/B sessions share a chain; independent physical ASIC work ownership remains unverified.

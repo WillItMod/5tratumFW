@@ -1,0 +1,17 @@
+# NerdQAxe++ BETA
+
+Use the QAxe-specific `qaxe-v0.1.0-beta.1` prerelease pair, not Gamma assets. Board target: **NERDQAXEPLUS2**, model **NerdQAxe++**, ASIC **BM1370×4**. The tested unit's PCB revision is unidentified; support is not extended to QAxe+, OctAxe or other revisions by a shared name.
+
+- [Installation, matching image pair and USB bootloader recovery](../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md)
+- [New BETA's own validation](../firmware/nerdqaxe/docs/validation-qa-beta1.md)
+- [Native dual-MUX connections and limits](../firmware/nerdqaxe/docs/native-mux-pool-streams.md)
+- [Ten pool/tuning slots and weekly pool switching](../firmware/nerdqaxe/docs/miner-profiles-and-pool-schedule.md)
+- [Power scheduler and reversible ASIC pause](../firmware/nerdqaxe/docs/mining-power.md)
+- [Build/package reproducibly](../firmware/nerdqaxe/docs/build-5tratumfw-qa.md)
+- [Original upstream documentation](../firmware/nerdqaxe/docs/upstream-readme.md)
+
+Navigation matches Gamma's six main pages while retaining both fan/PID controllers, thermal shutdown limits, direct SV1/SV2, optional verification, OTP, Alerts, InfluxDB, System and supported CAN options. External Bitcoin data belongs in Integrations; enhanced MUX coin/job context is attached to each native connection rather than assumed to be Bitcoin.
+
+The physical screen has real scrolling startup events and a large 5tratumFW logo slide for three seconds every two minutes after thirty seconds idle, while mining telemetry is fresh. Shutdown, thermal, enrollment and animation screens take priority. Route/job pages show separate native sessions and shared board/regulator temperatures once. Native fixture renders are separate from physical-screen validation.
+
+MUX0.9.73 recognizes A/B sessions beneath one collapsible parent. The qualified Dual mode control is under Miners; it preserves settings and verifies the running mode after restart. Streams have separate targets/accounting and coin/job metadata, but still use the existing whole-chain job selector. Independent physical-ASIC work assignment remains unverified.

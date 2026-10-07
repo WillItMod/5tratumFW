@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/shufps/ESP-Miner-NerdQAxePlus",
+  "upstreamTag": "v1.1.0-rc1-test1",
+  "upstreamBaseCommit": "8b45522a6695c6bbccc3d032370fe08a29856d80",
+  "imported5tratumFWCommit": "e2d77fc3f75e311fa53b79f41a20ab268445cc82",
+  "license": "GPL-3.0",
+  "boardProfile": "NERDQAXEPLUS2",
+  "asicModel": "BM1370",
+  "asicCount": 4,
+  "testedPcbRevision": null
+}
