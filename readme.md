@@ -9,7 +9,7 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ES
 
 | Hardware | This image | Validation |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta 3 paired app/WWW installed; both versions match, saved settings and pool slots retained, mining and accepted shares observed. See the validation record below. |
+| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta 4 paired app/WWW installed; both versions match, saved settings/slots/schedules retained, mining and accepted shares observed. Inline Review placement verified on the device web interface. See the validation record below. |
 | Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Compiled support. Device still runs stock v2.14.2; this firmware has not been installed/tested there. |
 | Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners | Incompatible | Do not flash these Gamma images. |
 
