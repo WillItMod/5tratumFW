@@ -142,17 +142,21 @@ inline void divider(lv_obj_t *parent, int y) {
 
 inline lv_obj_t *logo(lv_obj_t *parent, int x, int y, int size) {
     lv_obj_t *obj = lv_img_create(parent);
-    lv_img_set_src(obj, &emblem);
+    lv_img_set_src(obj, &firmwareLogo);
     lv_img_set_pivot(obj, 0, 0);
-    lv_img_set_zoom(obj, size * 256 / 64);
+    lv_img_set_zoom(obj, size * 256 / 240);
     lv_obj_set_pos(obj, x, y);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     return obj;
 }
 
 inline lv_obj_t *header(lv_obj_t *parent, const char *page) {
-    logo(parent, 6, 0, 30);
-    text(parent, "5tratumFW", 42, 6, 132, &ui_font_OpenSansBold14);
+    auto *mark = lv_img_create(parent);
+    lv_img_set_src(mark, &firmwareWordmark);
+    lv_img_set_pivot(mark, 0, 0);
+    lv_img_set_zoom(mark, 192);
+    lv_obj_set_pos(mark, 6, 0);
+    lv_obj_clear_flag(mark, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *title = text(parent, page, 180, 8, 132, &lv_font_montserrat_10, Cyan);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_RIGHT, 0);
     divider(parent, 29);
@@ -409,30 +413,24 @@ inline SettingsWidgets settings(lv_obj_t *parent) {
 }
 
 inline lv_obj_t *splash(lv_obj_t *parent, const char *model, bool connecting) {
-    rectangle(parent, 8, 12, 304, 113, Surface, 9);
-    rectangle(parent, 14, 18, 95, 101, Line, 6, true);
-    logo(parent, 26, 35, 70);
-    icon(parent, Icon::Chip, 115, 93, Muted);
-    text(parent, "5tratumFW", 115, 38, 190, &ui_font_OpenSansBold24, Cyan);
-    text(parent, model, 115, 74, 190, &ui_font_OpenSansBold13);
-    text(parent, "MINER CONTROL", 143, 98, 162, &lv_font_montserrat_10, Muted);
-    lv_obj_t *status = text(parent, connecting ? "Connecting..." : "Starting...", 8, 136, 304,
+    logo(parent, 40, 0, 240);
+    text(parent, model, 8, 151, 150, &lv_font_montserrat_10, Muted);
+    lv_obj_t *status = text(parent, connecting ? "Connecting..." : "Starting...", 165, 149, 147,
                             &ui_font_OpenSansBold13, Muted);
-    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_RIGHT, 0);
     return status;
 }
 
 struct BootWidgets { lv_obj_t *lines[BootStatusHistory::LINE_COUNT]; };
 
 inline BootWidgets bootStatus(lv_obj_t *parent, const char *model, const char *version) {
-    logo(parent, 8, 8, 110);
-    text(parent, "5tratumFW", 128, 15, 184, &ui_font_OpenSansBold24, Cyan);
-    auto *device = text(parent, model, 128, 52, 184, &ui_font_OpenSansBold13);
+    logo(parent, 80, 0, 160);
+    auto *device = text(parent, model, 8, 5, 100, &lv_font_montserrat_10, Muted);
     setBoundedCoinName(device, model);
-    text(parent, "STARTUP", 128, 74, 184, &lv_font_montserrat_10, Muted);
+    text(parent, "STARTUP", 235, 5, 77, &lv_font_montserrat_10, Muted);
     BootWidgets fields{};
     for (size_t i = 0; i < BootStatusHistory::LINE_COUNT; ++i)
-        fields.lines[i] = text(parent, "", 128, 88 + static_cast<int>(i) * 16, 184,
+        fields.lines[i] = text(parent, "", 8, 102 + static_cast<int>(i) * 12, 304,
                               &lv_font_montserrat_10, i == BootStatusHistory::LINE_COUNT - 1 ? Cyan : Muted);
     divider(parent, 151);
     auto *build = text(parent, version, 8, 156, 304, &lv_font_montserrat_10, Muted);
@@ -452,16 +450,14 @@ inline void updateBootStatus(const BootWidgets &fields, const BootStatusHistory 
 struct BrandWidgets { lv_obj_t *coin, *hashrate, *powerTemp, *mux; };
 
 inline BrandWidgets brandSummary(lv_obj_t *parent, const char *model) {
-    logo(parent, 8, 7, 120);
-    text(parent, "5tratumFW", 138, 20, 174, &ui_font_OpenSansBold24, Cyan);
+    (void)model;
+    logo(parent, 40, 0, 240);
     BrandWidgets fields{};
-    fields.coin = text(parent, "Mining", 138, 54, 174, &ui_font_OpenSansBold13);
-    fields.hashrate = text(parent, "--", 138, 76, 174, &ui_font_OpenSansBold14, Cyan);
-    fields.powerTemp = text(parent, "-- W / --", 138, 99, 174, &ui_font_OpenSansBold13, Muted);
-    auto *device = text(parent, model, 138, 123, 174, &lv_font_montserrat_10, Muted);
-    setBoundedCoinName(device, model);
-    divider(parent, 146);
-    fields.mux = text(parent, "5tratMUX: unverified", 8, 155, 304, &lv_font_montserrat_10, Muted);
+    fields.coin = text(parent, "Mining", 8, 144, 184, &lv_font_montserrat_10, Muted);
+    fields.hashrate = text(parent, "--", 199, 144, 113, &lv_font_montserrat_10, Cyan);
+    lv_obj_set_style_text_align(fields.hashrate, LV_TEXT_ALIGN_RIGHT, 0);
+    fields.powerTemp = hiddenValue(parent);
+    fields.mux = text(parent, "5tratMUX: unverified", 8, 157, 304, &lv_font_montserrat_10, Muted);
     return fields;
 }
 

@@ -24,6 +24,14 @@ MUX's **Miners → Dual MUX mining** control is shown only for the exact qualifi
 
 A and B are network sessions. Their independent targets and counters do not prove independent physical-chip assignment. The miner's Pool routing page retains direct-pool controls and ten named slots; profile Apply targets A or B in Dual mode.
 
+## Physical screen and recurring logo
+
+Startup shows scrolling status events. While mining, the large 5tratumFW logo slide appears for three seconds every two minutes on the mining overview, after at least thirty seconds without a button press and while telemetry is fresh. Shutdown, thermal, enrollment and animation screens take priority.
+
+To see the recurring slide, open **Miner controls → Display**, disable **Automatic screen off**, save, and leave the physical screen on the mining overview for at least two minutes. With automatic screen off enabled, the display normally sleeps before the slide is due; updates preserve your saved choice.
+
+On the physical screen, **P1 means session A** and **P2 means session B** in the web interface and MUX. QAxe board and regulator temperatures are shared measurements displayed once; they are not individual chip temperatures.
+
 ## USB bootloader recovery
 
 Use a known data-capable USB cable. macOS exposes serial devices as `/dev/cu.*`; Windows uses COM ports. A blank screen in bootloader mode is expected, but first verify a serial device appears and identifies the correct ESP32-S3.

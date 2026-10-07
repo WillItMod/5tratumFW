@@ -25,7 +25,7 @@ writing JSON. The agent is at most 192 bytes and retains the terminal v2
 qualifier for existing job metadata support.
 
 The MUX receiver uses `FIVETRATUM_NATIVE_POOL_STREAMS=1` for the local test
-candidate. MUX0.9.73 releases enable native session recognition in the protected image; an explicit managed environment override of0 still disables it. Its native pool worker keys and per-worker routing
+candidate. MUX 0.9.73 releases enable native session recognition in the protected image; an explicit managed environment override of `0` still disables it. Its native pool worker keys and per-worker routing
 policies are separate from the ASIC-identity admission mechanism. The latter
 remains disabled. Shared board telemetry belongs to the physical parent;
 route estimates use accepted work rather than copying the board rate twice.
@@ -33,14 +33,15 @@ route estimates use accepted work rather than copying the board rate twice.
 ## Initial bench configuration
 
 Use Dual mode (`poolMode:1`), 50/50 job selection and two SV1 connections to
-the existing test MUX on `the local test MUX on its configured Stratum port`. Give them distinct worker labels.
+the same MUX host and its configured Stratum port. Give them distinct worker labels.
 Retain the saved ASIC operating point, cooling configuration, named slots
 and weekly schedules. Changing the manager mode takes effect on boot.
-Route 1 and Route 2 can then use separate existing SHA-256 pool targets.
+Sessions A and B can then use separate existing SHA-256 pool targets.
+The physical screen labels these sessions P1 and P2 respectively.
 
 This is two independently configured network streams using the native
-whole-chain job selector. It does not assign ASIC 1 to Route 1 or ASIC 2 to
-Route 2. Simultaneous independent work on individual ASICs remains a separate
+whole-chain job selector. It does not assign ASIC 1 to session A or ASIC 2 to
+session B. Simultaneous independent work on individual ASICs remains a separate
 driver/protocol requirement; `independentWorkAssignment` stays false.
 
 ## Checks

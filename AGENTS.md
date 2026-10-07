@@ -17,7 +17,7 @@ When changing `main/http_server/openapi.yaml`, regenerate the TypeScript API cli
 
 Host tests use production C with fake platform services. Native OLED renders use actual LVGL with simulated readings. Target compilation, host tests and fixture rendering do not prove physical-device operation. Record exact validation in `docs/validation.md` and release notes; never convert the earlier 601 alpha smoke test into a claim about a new BETA build or PCB 602.
 
-All current published builds use named `5tratumFW-X.Y.Z-beta.N` versions and GitHub prereleases. Package application `esp-miner.bin`, WWW `www.bin`, checksums, manifest and corresponding source together. Do not publish factory/NVS images from this repository.
+Published builds use GitHub prereleases with family-specific versions and matched OTA pairs. Gamma uses `5tratumFW-X.Y.Z-beta.N` and application `esp-miner.bin`; QAxe uses `5tratumFW-qa-X.Y.Z-beta.N` and application `esp-miner-NerdQAxe++.bin`. Package each family's application, its matching `www.bin`, checksums, manifest and corresponding source together. The shared WWW filename does not make the web images interchangeable. Do not publish factory/NVS images from this repository.
 
 ## QAxe family
 

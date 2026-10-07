@@ -2,7 +2,7 @@
 
 These application and web images are for **Bitaxe Gamma PCB revisions 601 and 602 only**. Check the physical PCB revision and the device's reported board version before updating. The firmware requires an exact stored identity of `601` or `602`; this guard is not physical board autodetection. Do not change an unrelated device's stored identity to bypass it.
 
-GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this image's supported hardware. QAxe development belongs to a separate project. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
+GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this Gamma image's supported hardware. NerdQAxe++ has a separate firmware family in this repository; use its [model-specific guide](nerdqaxe.md) and image pair. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
 
 ## Choose the correct files
 
