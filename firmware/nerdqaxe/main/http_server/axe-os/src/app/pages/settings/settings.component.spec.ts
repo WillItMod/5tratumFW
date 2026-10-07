@@ -6,13 +6,15 @@ import { SettingsComponent } from './settings.component';
 describe('5tratumFW settings navigation and OTA', () => {
   let component: SettingsComponent;
   let params: BehaviorSubject<any>;
+  let routeData: BehaviorSubject<any>;
   let navigate: jasmine.Spy;
   let appUpload: jasmine.Spy;
   let webUpload: jasmine.Spy;
   let auth: jasmine.Spy;
 
   beforeEach(() => {
-    params = new BehaviorSubject(convertToParamMap({ section: 'pool' }));
+    params = new BehaviorSubject(convertToParamMap({}));
+    routeData = new BehaviorSubject({ section: 'controls' });
     navigate = jasmine.createSpy('navigate');
     appUpload = jasmine.createSpy('performOTAUpdate').and.returnValue(of({ type: HttpEventType.Response }));
     webUpload = jasmine.createSpy('performWWWOTAUpdate').and.returnValue(of({ type: HttpEventType.UploadProgress, loaded: 1, total: 2 }));
@@ -22,28 +24,40 @@ describe('5tratumFW settings navigation and OTA', () => {
       performOTAUpdate: appUpload, performWWWOTAUpdate: webUpload,
     } as any, { success: () => {}, danger: () => {} } as any,
     { lockUIUntilComplete: () => (stream: any) => stream } as any,
-    { ensureOtp$: auth } as any, { queryParamMap: params } as any,
+    { ensureOtp$: auth } as any, { data: routeData, queryParamMap: params } as any,
     { navigate } as any);
     component.ngOnInit();
   });
 
   afterEach(() => component.ngOnDestroy());
 
-  it('honours Pool routing, Cooling and Firmware links on the same route', () => {
-    expect(component.section).toBe('pool');
+  it('opens primary pages from route data and control subsections from query parameters', () => {
+    expect(component.page).toBe('controls');
+    expect(component.section).toBe('performance');
     params.next(convertToParamMap({ section: 'cooling' }));
     expect(component.section).toBe('cooling');
-    params.next(convertToParamMap({ section: 'scheduler' }));
-    expect(component.section).toBe('scheduler');
-    params.next(convertToParamMap({ section: 'update' }));
-    expect(component.section).toBe('update');
     params.next(convertToParamMap({ section: 'unknown' }));
     expect(component.section).toBe('performance');
+    params.next(convertToParamMap({}));
+    for (const page of ['pool', 'scheduler', 'network', 'update']) {
+      routeData.next({ section: page });
+      expect(component.page).toBe(page);
+      expect(component.section).toBe(page);
+    }
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('redirects legacy pool, scheduler, network and update links to their primary pages', () => {
+    for (const page of ['pool', 'scheduler', 'network', 'update']) {
+      params.next(convertToParamMap({ section: page }));
+      expect(navigate.calls.mostRecent().args).toEqual([['/pages', page], { replaceUrl: true }]);
+    }
+    expect(component.page).toBe('controls');
   });
 
   it('selects sections using query parameters instead of a duplicate MUX page', () => {
-    component.selectSection('pool');
-    expect(navigate).toHaveBeenCalledWith([], jasmine.objectContaining({ queryParams: { section: 'pool' }, queryParamsHandling: 'merge' }));
+    component.selectSection('cooling');
+    expect(navigate).toHaveBeenCalledWith([], jasmine.objectContaining({ queryParams: { section: 'cooling' }, queryParamsHandling: 'merge' }));
     expect(component.sections.some(section => section.id === 'mux')).toBeFalse();
   });
 

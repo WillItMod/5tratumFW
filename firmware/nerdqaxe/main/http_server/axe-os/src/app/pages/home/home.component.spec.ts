@@ -92,7 +92,8 @@ describe('5tratumFW dashboard telemetry', () => {
   it('keeps coin unknown unless positive source metadata is present', () => {
     freshStatus([]);
     component.liveStatus!.coin = { ticker: 'BTC', source: 'unavailable' };
-    expect(component.coinLabel).toBe('Coin unknown');
+    expect(component.coinLabel).toBe('Direct pool');
+    expect(component.coinLabel).not.toBe('BTC');
     component.liveStatus!.coin = { ticker: 'BCH', source: 'mux-route' };
     expect(component.coinLabel).toBe('BCH');
   });

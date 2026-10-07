@@ -88,48 +88,61 @@ describe('Nerd settings payload preservation', () => {
     expect(component.form.get('vrFrequency')?.value).toBe(25011);
   });
 
-  it('saves the unchanged nested v2 payload without masked credentials or browser preferences', () => {
+  it('keeps unchanged settings and masked credentials without issuing a PATCH', () => {
     component.updateSystem('123456').subscribe();
-    const [uri, payload, totp] = update.calls.mostRecent().args;
-    expect(uri).toBe('');
-    expect(totp).toBe('123456');
-    expect(payload).toEqual({
-      hostname: source.hostname, ssid: source.ssid, frequency: 577, coreVoltage: 1137, vrFrequency: 25011,
-      jobInterval: 333, stratumDifficulty: 16384, poolMode: 1, poolBalance: 37, stratumKeep: 1,
-      pools: source.pools.map(pool => ({ ...pool, tls: !!pool.tls, enonceSubscribe: !!pool.enonceSubscribe })),
-      fans: source.fans.map(fan => ({ mode: fan.mode, manualSpeed: fan.manualSpeed, overheatTemp: fan.overheatTemp, pid: { ...fan.pid } })),
-      invertFanPolarity: false, pidUseMax: true, mempoolCustom: false, mempoolUrl: '',
-      flipScreen: false, invertScreen: true, autoScreenOff: true, canMaster: false,
-    });
-    expect(payload.wifiPass).toBeUndefined();
-    expect(payload.pools.every((pool: any) => !('password' in pool))).toBeTrue();
-    expect(payload.timeFormat).toBeUndefined();
-    expect(payload.fans[1].pid).toEqual(source.fans[1].pid); // linked/disabled fields are retained
+    expect(update).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
+    expect(component.form.get('frequency')?.value).toBe(577);
+    expect(component.form.get('coreVoltage')?.value).toBe(1137);
+    expect(component.form.get('fan1PidI')?.value).toBe(source.fans[1].pid.i);
+    expect(component.form.get('fallbackStratumPassword')?.value).toBe('*****');
+    expect(component.sectionDirty).toBeFalse();
   });
 
-  it('sends an intentionally changed password, including an empty Wi-Fi password', () => {
+  it('writes a changed performance field while retaining unrelated pool and cooling settings', () => {
+    component.form.patchValue({ frequency: 578, fallbackStratumUser: 'unsaved-other-section' });
+    component.updateSystem('123456').subscribe();
+    expect(update.calls.mostRecent().args).toEqual(['', { frequency: 578 }, '123456']);
+    expect(component.form.get('coreVoltage')?.value).toBe(1137);
+    expect(component.form.get('fan1PidI')?.value).toBe(source.fans[1].pid.i);
+    expect(component.sectionDirty).toBeFalse();
+    expect(component.hasUnsavedChanges).toBeTrue();
+    component.section = 'pool';
+    expect(component.sectionDirty).toBeTrue();
+  });
+
+  it('writes changed passwords only from their owning section, including empty Wi-Fi passwords', () => {
+    component.section = 'pool';
     component.form.patchValue({ fallbackStratumPassword: 'fixture-replacement', wifiPass: '' });
     component.updateSystem().subscribe();
-    const payload = update.calls.mostRecent().args[1];
-    expect(payload.pools[0].password).toBeUndefined();
-    expect(payload.pools[1].password).toBe('fixture-replacement');
-    expect(payload.wifiPass).toBe('');
+    expect(update.calls.mostRecent().args).toEqual(['', { pools: [{}, { password: 'fixture-replacement' }] }, undefined]);
+    expect(component.form.get('stratumPassword')?.value).toBe('*****');
+    component.section = 'network';
     expect(component.requiresReboot).toBeTrue();
+    component.updateSystem().subscribe();
+    expect(update.calls.mostRecent().args).toEqual(['', { wifiPass: '' }, undefined]);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(component.restartPending).toBeTrue();
+    expect(component.requiresReboot).toBeFalse();
   });
 
   it('runs OTP authorization before saving from the redesigned Save action', () => {
+    component.form.patchValue({ frequency: 578 });
+    expect(component.sectionDirty).toBeTrue();
     component.confirmSave({} as any);
     expect(auth).toHaveBeenCalledTimes(1);
     expect(update.calls.mostRecent().args[2]).toBe('123456');
   });
 
   it('swaps complete pool configurations including SV2 and verification settings', () => {
+    component.section = 'pool';
     component.swapPools();
     component.updateSystem().subscribe();
     const payload = update.calls.mostRecent().args[1];
     expect(payload.pools[0]).toEqual({ ...source.pools[1], tls: true, enonceSubscribe: false });
     expect(payload.pools[1]).toEqual({ ...source.pools[0], tls: false, enonceSubscribe: true });
-    expect(payload.poolBalance).toBe(37);
+    expect(payload.poolBalance).toBeUndefined();
+    expect(component.form.get('poolBalance')?.value).toBe(37);
   });
 
   it('retains verification choice when toggled off and on', () => {
@@ -140,7 +153,7 @@ describe('Nerd settings payload preservation', () => {
   });
 
   it('opens manual mode with saved QAxe values and sends no writes',()=>{
-    source.frequency=500;source.coreVoltage=1130;component.ngOnInit();component.setManualTuning(true);
+    source.frequency=500;source.coreVoltage=1130;component.ngOnDestroy();component.ngOnInit();component.setManualTuning(true);
     expect(component.form.get('frequency')?.value).toBe(500);expect(component.form.get('coreVoltage')?.value).toBe(1130);
     expect(update).not.toHaveBeenCalled();expect(saveProfile).not.toHaveBeenCalled();expect(applyProfile).not.toHaveBeenCalled();
   });
@@ -157,15 +170,29 @@ describe('Nerd settings payload preservation', () => {
     component.applySavedProfile('pool');expect(applyProfile.calls.mostRecent().args).toEqual(['',{type:'pool',slot:8,poolTarget:'fallback'},'123456']);expect(component.form.get('stratumURL')?.value).toBe('mux.test');expect(component.form.get('poolBalance')?.value).toBe(37);
   });
   it('stores weekly timepoints and explicit offset without readonly metadata',()=>{
-    component.poolSchedule={schemaVersion:1,enabled:true,utcOffsetMinutes:60,events:[{enabled:true,dayMask:62,timeMinutes:720,slot:2}],clockValid:true,selectedSlot:2};component.saveSchedule();
+    component.profiles!.pools[2] = {slot:2,configured:true,name:'Configured pool'};
+    component.poolSchedule={schemaVersion:1,enabled:true,utcOffsetMinutes:60,events:[{enabled:true,dayMask:62,timeMinutes:720,slot:2}],clockValid:true,selectedSlot:2};
+    expect(component.validPoolSchedule).toBeTrue();component.saveSchedule();
     expect(saveSchedule.calls.mostRecent().args).toEqual(['',{schemaVersion:1,enabled:true,utcOffsetMinutes:60,events:[{enabled:true,dayMask:62,timeMinutes:720,slot:2}]},'123456']);
+  });
+
+  it('rejects a scheduled slot that has not been configured on the miner', () => {
+    component.poolSchedule={schemaVersion:1,enabled:true,utcOffsetMinutes:0,events:[{enabled:true,dayMask:127,timeMinutes:720,slot:2}],clockValid:true};
+    expect(component.validPoolSchedule).toBeFalse();
+    component.saveSchedule();
+    expect(saveSchedule).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
   });
 
   it('uses the real fan count and preserves the single-channel payload', () => {
     source.fans = source.fans.slice(0, 1);
+    component.ngOnDestroy();
     component.ngOnInit();
+    component.section = 'cooling';
+    component.form.patchValue({ overheat_temp: 74 });
     component.updateSystem().subscribe();
     expect(component.fanCount).toBe(1);
-    expect(update.calls.mostRecent().args[1].fans.length).toBe(1);
+    expect(update.calls.mostRecent().args).toEqual(['', { fans: [{ overheatTemp: 74 }] }, undefined]);
+    expect(component.form.get('manualFanSpeed')?.value).toBe(83);
   });
 });
