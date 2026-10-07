@@ -2,6 +2,12 @@ name: Gamma BETA validation
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - 'readme.md'
+      - 'AGENTS.md'
+      - 'LICENSES/**'
+      - 'LICENSE'
   pull_request:
   workflow_dispatch:
 
@@ -60,6 +66,8 @@ jobs:
 
       - name: Compile ESP32-S3 application and WWW partition
         run: |
+          mkdir -p build
+          git rev-parse HEAD > build/build-source-commit.txt
           docker run --rm -e GITHUB_ACTIONS=true \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/project" -w /project \
             "$IDF_IMAGE" \
