@@ -190,6 +190,178 @@ static bool nvs_config_load_legacy(NvsConfigKey key, const Settings *setting, Co
     return false;
 }
 
+
+// Operating settings journal v1. This is the authoritative bounded snapshot
+// once activated; original legacy keys remain intact for recovery/downgrade.
+#define OPERATING_JOURNAL_KEY "5fw_operating"
+#define OPERATING_JOURNAL_MAX 32768
+#define OPERATING_JOURNAL_COUNT (NVS_CONFIG_USE_FALLBACK_STRATUM - NVS_CONFIG_STRATUM_PROTOCOL + 4)
+static bool operating_journal_active;
+
+static bool operating_key(NvsConfigKey key)
+{
+    return (key >= NVS_CONFIG_STRATUM_PROTOCOL && key <= NVS_CONFIG_USE_FALLBACK_STRATUM) ||
+           key == NVS_CONFIG_ASIC_FREQUENCY || key == NVS_CONFIG_ASIC_VOLTAGE || key == NVS_CONFIG_OVERCLOCK_ENABLED;
+}
+
+static void put16(uint8_t *p, uint16_t n) { p[0] = n; p[1] = n >> 8; }
+static uint16_t get16(const uint8_t *p) { return p[0] | ((uint16_t)p[1] << 8); }
+static void put32(uint8_t *p, uint32_t n) { for (int i = 0; i < 4; i++) p[i] = n >> (8 * i); }
+static uint32_t get32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
+static uint32_t journal_checksum(const uint8_t *p, size_t size)
+{
+    uint32_t value = 2166136261u;
+    for (size_t i = 0; i < size; i++) value = (value ^ p[i]) * 16777619u;
+    return value;
+}
+
+static bool mutation_valid(const NvsConfigMutation *entry)
+{
+    Settings *setting = nvs_config_get_settings(entry->key);
+    if (!operating_key(entry->key) || !setting || entry->type != setting->type) return false;
+    switch (entry->type) {
+    case TYPE_STR: return entry->value.str && strlen(entry->value.str) <= NVS_STR_LIMIT;
+    case TYPE_FLOAT: return isfinite(entry->value.f) && entry->value.f >= 1 && entry->value.f <= UINT16_MAX;
+    case TYPE_U16: return entry->value.u16 >= setting->min && entry->value.u16 <= setting->max;
+    case TYPE_BOOL: return true;
+    default: return false;
+    }
+}
+
+static uint8_t *journal_encode(const NvsConfigMutation *entries, size_t count, size_t *size)
+{
+    size_t length = 12;
+    for (size_t i = 0; i < count; i++) {
+        if (!mutation_valid(&entries[i])) return NULL;
+        length += 5 + (entries[i].type == TYPE_STR ? strlen(entries[i].value.str) + 1 : entries[i].type == TYPE_FLOAT ? 4 : 2);
+    }
+    if (count != OPERATING_JOURNAL_COUNT || length > OPERATING_JOURNAL_MAX) return NULL;
+    uint8_t *blob = malloc(length);
+    if (!blob) return NULL;
+    memcpy(blob, "5FWJ", 4); blob[4] = 1; blob[5] = count; put16(blob + 6, length);
+    size_t offset = 12;
+    for (size_t i = 0; i < count; i++) {
+        const NvsConfigMutation *entry = &entries[i];
+        size_t bytes = entry->type == TYPE_STR ? strlen(entry->value.str) + 1 : entry->type == TYPE_FLOAT ? 4 : 2;
+        put16(blob + offset, entry->key); blob[offset + 2] = entry->type; put16(blob + offset + 3, bytes); offset += 5;
+        if (entry->type == TYPE_STR) memcpy(blob + offset, entry->value.str, bytes);
+        else if (entry->type == TYPE_FLOAT) { uint32_t bits; memcpy(&bits, &entry->value.f, 4); put32(blob + offset, bits); }
+        else put16(blob + offset, entry->type == TYPE_BOOL ? (entry->value.b ? 1 : 0) : entry->value.u16);
+        offset += bytes;
+    }
+    put32(blob + 8, journal_checksum(blob + 12, length - 12)); *size = length;
+    return blob;
+}
+
+static void mutations_free(NvsConfigMutation *entries, size_t count)
+{
+    for (size_t i = 0; i < count; i++) if (entries[i].type == TYPE_STR) free(entries[i].value.str);
+}
+
+static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutation *entries)
+{
+    if (size < 12 || size > OPERATING_JOURNAL_MAX || memcmp(blob, "5FWJ", 4) || blob[4] != 1 ||
+        blob[5] != OPERATING_JOURNAL_COUNT || get16(blob + 6) != size || get32(blob + 8) != journal_checksum(blob + 12, size - 12)) return ESP_ERR_INVALID_STATE;
+    memset(entries, 0, sizeof(*entries) * OPERATING_JOURNAL_COUNT);
+    bool seen[NVS_CONFIG_COUNT] = {0}; size_t offset = 12, read = 0;
+    esp_err_t error = ESP_ERR_INVALID_STATE;
+    while (read < OPERATING_JOURNAL_COUNT) {
+        if (offset + 5 > size) goto failed;
+        NvsConfigMutation *entry = &entries[read];
+        entry->key = get16(blob + offset); entry->type = blob[offset + 2];
+        size_t bytes = get16(blob + offset + 3); offset += 5;
+        if (!operating_key(entry->key) || entry->key >= NVS_CONFIG_COUNT || seen[entry->key] || offset + bytes > size) goto failed;
+        seen[entry->key] = true;
+        if (entry->type == TYPE_STR) {
+            if (!bytes || bytes > NVS_STR_LIMIT + 1 || blob[offset + bytes - 1] || memchr(blob + offset, 0, bytes - 1)) goto failed;
+            entry->value.str = malloc(bytes);
+            if (!entry->value.str) { error = ESP_ERR_NO_MEM; goto failed; }
+            memcpy(entry->value.str, blob + offset, bytes);
+        } else if (entry->type == TYPE_FLOAT && bytes == 4) { uint32_t bits = get32(blob + offset); memcpy(&entry->value.f, &bits, 4); }
+        else if ((entry->type == TYPE_U16 || entry->type == TYPE_BOOL) && bytes == 2) {
+            uint16_t value = get16(blob + offset);
+            if (entry->type == TYPE_BOOL) { if (value > 1) goto failed; entry->value.b = value != 0; }
+            else entry->value.u16 = value;
+        } else goto failed;
+        read++; offset += bytes;
+        if (!mutation_valid(entry)) goto failed;
+    }
+    if (offset != size) goto failed;
+    return ESP_OK;
+failed:
+    mutations_free(entries, read + (read < OPERATING_JOURNAL_COUNT && entries[read].type == TYPE_STR && entries[read].value.str ? 1 : 0));
+    return error;
+}
+
+static void journal_install(NvsConfigMutation *entries)
+{
+    for (size_t i = 0; i < OPERATING_JOURNAL_COUNT; i++) {
+        Settings *setting = &settings[entries[i].key];
+        if (setting->type == TYPE_STR) free(setting->value[0].str);
+        setting->value[0] = entries[i].value;
+    }
+}
+
+static esp_err_t journal_load(void)
+{
+    size_t size = 0;
+    esp_err_t error = nvs_get_blob(handle, OPERATING_JOURNAL_KEY, NULL, &size);
+    if (error == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (error != ESP_OK || size < 12 || size > OPERATING_JOURNAL_MAX) return ESP_ERR_INVALID_STATE;
+    uint8_t *blob = malloc(size);
+    if (!blob) return ESP_ERR_NO_MEM;
+    error = nvs_get_blob(handle, OPERATING_JOURNAL_KEY, blob, &size);
+    NvsConfigMutation entries[OPERATING_JOURNAL_COUNT];
+    if (error == ESP_OK) error = journal_decode(blob, size, entries);
+    free(blob);
+    if (error == ESP_OK) { journal_install(entries); operating_journal_active = true; }
+    return error;
+}
+
+esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count)
+{
+    if (!changes || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex) return ESP_ERR_INVALID_ARG;
+    for (size_t i = 0; i < count; i++) {
+        if (!mutation_valid(&changes[i])) return ESP_ERR_INVALID_ARG;
+        for (size_t j = 0; j < i; j++) if (changes[i].key == changes[j].key) return ESP_ERR_INVALID_ARG;
+    }
+    xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+    NvsConfigMutation before[OPERATING_JOURNAL_COUNT], after[OPERATING_JOURNAL_COUNT], decoded[OPERATING_JOURNAL_COUNT];
+    size_t index = 0;
+    for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) if (operating_key(key)) {
+        before[index] = (NvsConfigMutation){.key = key, .type = settings[key].type, .value = settings[key].value[0]};
+        after[index] = before[index];
+        for (size_t i = 0; i < count; i++) if (changes[i].key == key) after[index] = changes[i];
+        index++;
+    }
+    size_t old_size = 0, new_size = 0;
+    uint8_t *old_blob = journal_encode(before, index, &old_size), *new_blob = journal_encode(after, index, &new_size);
+    esp_err_t error = ESP_ERR_NO_MEM;
+    bool prepared = false;
+    if (old_blob && new_blob) { error = journal_decode(new_blob, new_size, decoded); prepared = error == ESP_OK; }
+    nvs_handle_t writer;
+    if (prepared) {
+        error = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &writer);
+        if (error == ESP_OK) {
+            error = nvs_set_blob(writer, OPERATING_JOURNAL_KEY, new_blob, new_size);
+            if (error == ESP_OK) {
+                error = nvs_commit(writer);
+                if (error != ESP_OK) {
+                    // Retain the previous authoritative snapshot on a commit
+                    // error too. Never erase the partition or touch identity.
+                    if (nvs_set_blob(writer, OPERATING_JOURNAL_KEY, old_blob, old_size) == ESP_OK && nvs_commit(writer) == ESP_OK) operating_journal_active = true;
+                }
+            }
+            nvs_close(writer);
+        }
+    }
+    if (error == ESP_OK) { journal_install(decoded); operating_journal_active = true; }
+    else if (prepared) mutations_free(decoded, OPERATING_JOURNAL_COUNT);
+    free(old_blob); free(new_blob);
+    xSemaphoreGive(nvs_cache_mutex);
+    return error;
+}
+
 static void nvs_config_apply_fallback(NvsConfigKey key, Settings * setting)
 {
     if (key == NVS_CONFIG_ASIC_FREQUENCY) {
@@ -207,6 +379,12 @@ static void nvs_task(void *pvParameters)
         if (xQueueReceive(nvs_save_queue, &update, portMAX_DELAY) == pdTRUE) {
             Settings *setting = nvs_config_get_settings(update.key);
             if (setting && setting->type == update.type) {
+                if (operating_key(update.key) && operating_journal_active && update.index == 0) {
+                    NvsConfigMutation mutation = {.key = update.key, .type = update.type, .value = update.value};
+                    if (nvs_config_apply_atomic(&mutation, 1) != ESP_OK) ESP_LOGE(TAG, "Operating settings commit failed; prior values retained");
+                    if (update.type == TYPE_STR) free(update.value.str);
+                    continue;
+                }
                 esp_err_t ret = ESP_OK;
 
                 char key[NVS_KEY_NAME_MAX_SIZE];
@@ -411,6 +589,11 @@ esp_err_t nvs_config_init(void)
             }
         }
     }
+
+    // Replay only after the persisted board identity was validated, before any
+    // hardware is initialized. Corrupt journals stop boot without defaults.
+    err = journal_load();
+    if (err != ESP_OK) return err;
 
     nvs_save_queue = xQueueCreate(20, sizeof(ConfigUpdate));
     if (nvs_save_queue == NULL) {

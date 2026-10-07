@@ -1,6 +1,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "system.h"
+#include "pool_reload.h"
 #include "global_state.h"
 #include <lwip/tcpip.h>
 #include "stratum_v1_task.h"
@@ -68,6 +69,7 @@ void stratum_v1_close_connection(GlobalState *GLOBAL_STATE)
 {
     mux_peer_status_disconnect();
     ESP_LOGE(TAG, "Shutting down socket and restarting...");
+    SYSTEM_stratum_io_lock();
     taskENTER_CRITICAL(&GLOBAL_STATE->stratum_mux);
     esp_transport_handle_t transport = GLOBAL_STATE->transport;
     GLOBAL_STATE->transport = NULL;
@@ -75,8 +77,11 @@ void stratum_v1_close_connection(GlobalState *GLOBAL_STATE)
 
     if (transport != NULL) {
         esp_transport_close(transport);
+        esp_transport_destroy(transport);
     }
     SYSTEM_clean_jobs_queue(GLOBAL_STATE);
+    protocol_coordinator_invalidate_work();
+    SYSTEM_stratum_io_unlock();
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
@@ -189,7 +194,7 @@ void stratum_v1_task(void *pvParameters)
     while (1) {
         // Check if coordinator wants us to shut down
         if (protocol_coordinator_v1_should_shutdown()) {
-            mux_peer_status_disconnect();
+            stratum_v1_close_connection(GLOBAL_STATE);
             ESP_LOGI(TAG, "Coordinator requested shutdown, exiting");
             protocol_coordinator_v1_exited();
             vTaskDelete(NULL);
@@ -260,9 +265,13 @@ void stratum_v1_task(void *pvParameters)
             retry_attempts++;
             ESP_LOGE(TAG, "Transport unable to connect to %s:%d (errno %d). Attempt: %d", stratum_url, port, ret, retry_attempts);
             // close the transport
+            SYSTEM_stratum_io_lock();
             esp_transport_close(GLOBAL_STATE->transport);
             esp_transport_destroy(GLOBAL_STATE->transport);
             GLOBAL_STATE->transport = NULL;
+            SYSTEM_clean_jobs_queue(GLOBAL_STATE);
+            protocol_coordinator_invalidate_work();
+            SYSTEM_stratum_io_unlock();
             // instead of restarting, retry this every 5 seconds
             vTaskDelay(5000 / portTICK_PERIOD_MS);
             continue;

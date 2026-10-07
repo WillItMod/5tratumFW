@@ -60,30 +60,6 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
     private route: ActivatedRoute,
     public operatingSettingsExport: OperatingSettingsExportService,
   ) {
-    // Check URL parameter for settings unlock
-    this.route.queryParams.subscribe(params => {
-      const urlOcParam = params['oc'] !== undefined;
-      if (urlOcParam) {
-        // If ?oc is in URL, enable overclock and save to NVS
-        this.settingsUnlocked = true;
-        this.saveOverclockSetting(1);
-        console.log(
-          '🎉 The ancient seals have been broken!\n' +
-          '⚡ Unlimited power flows through your miner...\n' +
-          '🔧 You can now set custom frequency and voltage values.\n' +
-          '⚠️ Remember: with great power comes great responsibility!'
-        );
-      } else {
-        // If ?oc is not in URL, check NVS setting (will be loaded in ngOnInit)
-        console.log('🔒 Here be dragons! Advanced settings are locked for your protection. \n' +
-          'Only the bravest miners dare to venture forth... \n' +
-          'If you wish to unlock dangerous overclocking powers, add: %c?oc',
-          'color: #ff4400; text-decoration: underline; cursor: pointer; font-weight: bold;',
-          'to the current URL'
-        );
-      }
-    });
-
     this.displayTimeoutControl = new FormControl();
     this.displayTimeoutControl.valueChanges.pipe(pairwise()).subscribe(([prev, next]) => {
       if (prev === next) {
@@ -103,19 +79,6 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
       this.form.patchValue({ statsFrequency: STATS_FREQUENCY_STEPS[next] });
       this.form.controls['statsFrequency'].markAsDirty();
     });
-  }
-
-  private saveOverclockSetting(enabled: number) {
-    const deviceUri = this.uri || '';
-    this.systemService.updateSystem(deviceUri, { overclockEnabled: enabled })
-      .subscribe({
-        next: () => {
-          console.log(`Overclock setting saved: ${enabled === 1 ? 'enabled' : 'disabled'}`);
-        },
-        error: (err) => {
-          console.error(`Failed to save overclock setting: ${err.message}`);
-        }
-      });
   }
 
   ngOnInit(): void {
@@ -268,17 +231,11 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
     this.updateSystem();
   }
 
-  toggleOverclockMode(enable: boolean) {
-    this.settingsUnlocked = enable;
-    this.saveOverclockSetting(enable ? 1 : 0);
-
-    if (enable) {
-      console.log(
-        '🎉 Overclock mode enabled!\n' +
-        '⚡ Custom frequency and voltage values are now available.'
-      );
-    } else {
-      console.log('🔒 Overclock mode disabled. Using safe preset values only.');
+  onTuningApplied(event: { frequencyMHz?: number; coreVoltageMv?: number }) {
+    if (event.frequencyMHz !== undefined && event.coreVoltageMv !== undefined) {
+      this.form.patchValue({ frequency: event.frequencyMHz, coreVoltage: event.coreVoltageMv });
+      this.form.controls['frequency'].markAsPristine();
+      this.form.controls['coreVoltage'].markAsPristine();
     }
   }
 

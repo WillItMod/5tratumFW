@@ -3,6 +3,8 @@
         <h1>Pool routing</h1>
     </header>
 
+    <app-operating-profiles type="pool" [uri]="uri"></app-operating-profiles>
+
     <form [formGroup]="form" *ngIf="form" [attr.aria-busy]="busy">
         <fieldset class="connection-fields" [disabled]="busy">
         <div class="connection-mode" role="group" aria-label="Connection type">

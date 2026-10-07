@@ -1,3 +1,4 @@
+#include "pool_reload.h"
 /**
  * @file bap_handlers.c
  * @brief BAP command handlers
@@ -228,15 +229,18 @@ void BAP_send_request(bap_parameter_t param, GlobalState *state) {
     //ESP_LOGI(TAG, "Sending request response for %s", BAP_parameter_to_string(param));
 
     switch (param) {
-        case BAP_PARAM_SYSTEM_INFO:
+        case BAP_PARAM_SYSTEM_INFO: {
+            char pool_host[254], pool_user[513]; uint16_t pool_port;
+            SYSTEM_copy_pool_identity(state, false, pool_host, sizeof(pool_host), pool_user, sizeof(pool_user), &pool_port);
             BAP_send_message(BAP_CMD_RES, "deviceModel", state->DEVICE_CONFIG.family.name);
             BAP_send_message(BAP_CMD_RES, "asicModel", state->DEVICE_CONFIG.family.asic.name);
             char port_str[6];
-            snprintf(port_str, sizeof(port_str),"%u", state->SYSTEM_MODULE.pool_port);
-            BAP_send_message(BAP_CMD_RES, "pool", state->SYSTEM_MODULE.pool_url);
+            snprintf(port_str, sizeof(port_str),"%u", pool_port);
+            BAP_send_message(BAP_CMD_RES, "pool", pool_host);
             BAP_send_message(BAP_CMD_RES, "poolPort", port_str);
-            BAP_send_message(BAP_CMD_RES, "poolUser", state->SYSTEM_MODULE.pool_user);
+            BAP_send_message(BAP_CMD_RES, "poolUser", pool_user);
             break;
+        }
         case BAP_PARAM_SHARES:
             {
                 char shares_ar_str[64];

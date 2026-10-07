@@ -1,0 +1,9 @@
+.pool-schedule h2 { margin-top: 0; font-size: 21px; }
+.pool-schedule-note { font-size: 12px; line-height: 1.6; opacity: .75; }
+.pool-schedule-status,.pool-schedule-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; font-size: 12px; margin: 20px 0; }
+.pool-schedule-controls label { display: flex; align-items: center; gap: 12px; }
+.pool-schedule button,.pool-schedule select,.pool-schedule input[type=time] { color: inherit; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 6px; padding: 8px; }
+.pool-schedule button:disabled { opacity: .4; }
+.pool-schedule-event { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; border-bottom: 1px solid var(--surface-border); padding: 16px 0; font-size: 12px; }
+.pool-schedule-event label { display: flex; align-items: center; gap: 7px; }.pool-event-days { display: flex; flex-wrap: wrap; gap: 4px; }.pool-event-days button { padding: 7px; }.pool-event-days .selected { color: var(--primary-color); border-color: var(--primary-color); }
+.pool-schedule-actions { display: flex; gap: 10px; margin-top: 22px; }

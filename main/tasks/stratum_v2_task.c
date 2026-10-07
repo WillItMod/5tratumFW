@@ -4,6 +4,7 @@
 #include <lwip/sockets.h>
 #include "esp_timer.h"
 #include "system.h"
+#include "pool_reload.h"
 #include "global_state.h"
 #include "stratum_v2_task.h"
 #include "stratum_socket.h"
@@ -93,9 +94,18 @@ static sv2_channel_type_t sv2_select_channel_type(GlobalState *GLOBAL_STATE, boo
     return type;
 }
 
+static void stratum_v2_release_state(GlobalState *state, sv2_conn_t *conn)
+{
+    SYSTEM_stratum_io_lock();
+    state->sv2_conn = NULL;
+    free(conn);
+    SYSTEM_stratum_io_unlock();
+}
+
 void stratum_v2_close_connection(GlobalState *GLOBAL_STATE)
 {
     ESP_LOGE(TAG, "Shutting down SV2 connection and restarting...");
+    SYSTEM_stratum_io_lock();
     if (GLOBAL_STATE->sv2_noise_ctx) {
         sv2_noise_destroy(GLOBAL_STATE->sv2_noise_ctx);
         GLOBAL_STATE->sv2_noise_ctx = NULL;
@@ -106,6 +116,8 @@ void stratum_v2_close_connection(GlobalState *GLOBAL_STATE)
         GLOBAL_STATE->transport = NULL;
     }
     SYSTEM_clean_jobs_queue(GLOBAL_STATE);
+    protocol_coordinator_invalidate_work();
+    SYSTEM_stratum_io_unlock();
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
@@ -598,8 +610,7 @@ void stratum_v2_task(void *pvParameters)
         if (protocol_coordinator_v2_should_shutdown()) {
             ESP_LOGI(TAG, "Shutdown requested by coordinator");
             stratum_v2_close_connection(GLOBAL_STATE);
-            free(conn);
-            GLOBAL_STATE->sv2_conn = NULL;
+            stratum_v2_release_state(GLOBAL_STATE, conn);
             protocol_coordinator_v2_exited();
             vTaskDelete(NULL);
             return;
@@ -616,8 +627,7 @@ void stratum_v2_task(void *pvParameters)
             ESP_LOGW(TAG, "Max SV2 retry attempts reached (%d), notifying coordinator",
                      retry_attempts);
             stratum_v2_close_connection(GLOBAL_STATE);
-            free(conn);
-            GLOBAL_STATE->sv2_conn = NULL;
+            stratum_v2_release_state(GLOBAL_STATE, conn);
             // Send only failure event — coordinator knows the task exited because it failed
             protocol_coordinator_notify_failure();
             vTaskDelete(NULL);
@@ -980,7 +990,6 @@ void stratum_v2_task(void *pvParameters)
     }
 
     // Should not reach here, but clean up just in case
-    free(conn);
-    GLOBAL_STATE->sv2_conn = NULL;
+    stratum_v2_release_state(GLOBAL_STATE, conn);
     vTaskDelete(NULL);
 }

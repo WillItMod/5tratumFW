@@ -8,6 +8,7 @@
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
 #include "global_state.h"
+#include "pool_reload.h"
 #include "screen.h"
 #include "nvs_config.h"
 #include "display.h"
@@ -444,6 +445,8 @@ void screen_next()
 {
     if (!GLOBAL_STATE || !lvgl_port_lock(0)) return;
     SystemModule *module = &GLOBAL_STATE->SYSTEM_MODULE;
+    bool decode_coinbase;
+    SYSTEM_copy_pool_options(GLOBAL_STATE, module->is_using_fallback, NULL, &decode_coinbase);
     if (oled_safety_active(GLOBAL_STATE->SELF_TEST_MODULE.is_active, module->overheat_mode,
                            module->hardware_fault, module->asic_status != NULL) || module->is_firmware_update) {
         lvgl_port_unlock();
@@ -460,7 +463,7 @@ void screen_next()
 
         if (compact_oled && next_scr == SCR_MINING &&
             (GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2 ||
-             !(module->is_using_fallback ? module->fallback_pool_decode_coinbase_tx : module->pool_decode_coinbase_tx))) continue;
+             !decode_coinbase)) continue;
         if (screen_show(next_scr)) break;
     }
     lvgl_port_unlock();
@@ -476,6 +479,10 @@ static FiveTratumOledData compact_data(void)
     int64_t now_us = esp_timer_get_time();
     int64_t elapsed = now_us - s->start_time;
     HashrateDisplaySnapshot rate = hashrate_monitor_display_snapshot(GLOBAL_STATE, now_us > 0 ? (uint64_t)now_us : 0);
+    static char pool_host[254];
+    uint16_t pool_tls;
+    SYSTEM_copy_pool_identity(GLOBAL_STATE, s->is_using_fallback, pool_host, sizeof(pool_host), NULL, 0, NULL);
+    SYSTEM_copy_pool_options(GLOBAL_STATE, s->is_using_fallback, &pool_tls, NULL);
     FiveTratumOledData d = {
         .rate_gh=rate.rate_gh, .rate_fresh=rate.fresh, .temperature_c=p->chip_temp_avg, .temperature2_c=p->chip_temp2_avg,
         .vr_temperature_c=p->vr_temp, .power_w=p->power, .fan_percent=p->fan_perc, .fan_rpm=p->fan_rpm,
@@ -487,11 +494,11 @@ static FiveTratumOledData compact_data(void)
         .applied_paused=mining_schedule_applied_paused(), .pools_unavailable=s->pools_unavailable,
         .wifi_connected=s->is_connected, .fallback=s->is_using_fallback,
         .sv2=GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2,
-        .tls=(s->is_using_fallback ? s->fallback_pool_tls : s->pool_tls) != 0,
+        .tls=pool_tls != 0,
         .mux_connected=mux.connected, .mux_acknowledged=mux.acknowledged,
         .mux_expired=mux.expired, .mux_fallback=mux.fallback,
         .hardware_fault=s->hardware_fault, .best_session=s->best_session_diff_string, .best_ever=s->best_diff_string,
-        .host=s->is_using_fallback ? s->fallback_pool_url : s->pool_url, .ip=s->ip_addr_str,
+        .host=pool_host, .ip=s->ip_addr_str,
         .ssid=s->ssid, .ap_ssid=s->ap_ssid, .network_difficulty=GLOBAL_STATE->network_diff_string,
         .scriptsig=GLOBAL_STATE->scriptsig, .message=s->hardware_fault ? s->hardware_fault_msg : s->asic_status,
         .filename=s->firmware_update_filename, .update_status=s->firmware_update_status,
@@ -672,7 +679,8 @@ static void screen_update_cb(lv_timer_t * timer)
 
     PowerManagementModule * power_management = &GLOBAL_STATE->POWER_MANAGEMENT_MODULE;
 
-    char *pool_url = module->is_using_fallback ? module->fallback_pool_url : module->pool_url;
+    char pool_url[254];
+    SYSTEM_copy_pool_identity(GLOBAL_STATE, module->is_using_fallback, pool_url, sizeof(pool_url), NULL, 0, NULL);
     if (strcmp(lv_label_get_text(urls_mining_url_label), pool_url) != 0) {
         lv_label_set_text(urls_mining_url_label, pool_url);
     }

@@ -2,6 +2,7 @@
 #define MAIN_NVS_CONFIG_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "esp_err.h"
 
@@ -114,6 +115,16 @@ typedef struct {
     int min;
     int max;
 } Settings;
+
+typedef struct {
+    NvsConfigKey key;
+    ConfigType type;
+    ConfigValue value;
+} NvsConfigMutation;
+
+// A bounded, single-blob transaction for operating/pool settings. Successful
+// commit precedes cache replacement; boot replays it after the identity guard.
+esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count);
 
 esp_err_t nvs_config_init(void);
 

@@ -10,11 +10,7 @@
     <div class="fw-control-workbench">
       <section [hidden]="activeControlSection !== 'performance'" aria-labelledby="operating-title">
         <div class="fw-section-intro"><h2 id="operating-title">Frequency and voltage</h2></div>
-        <p-message *ngIf="settingsUnlocked" severity="warn" styleClass="w-full mb-4" text="Custom settings can damage hardware or cause instability. Only change them if you understand the risks of running outside designed parameters." />
-        <div class="fw-operating-fields">
-          <div class="fw-control-field"><label for="frequency">ASIC frequency <span>MHz</span></label><input *ngIf="settingsUnlocked" id="frequency" type="number" formControlName="frequency" /><select *ngIf="!settingsUnlocked" id="frequency" formControlName="frequency"><option *ngFor="let option of dropdownFrequency" [ngValue]="option.value">{{option.name}}</option></select><small>Device default {{defaultFrequency}} MHz</small></div>
-          <div class="fw-control-field"><label for="coreVoltage">Core voltage <span>mV</span></label><input *ngIf="settingsUnlocked" id="coreVoltage" type="number" formControlName="coreVoltage" /><select *ngIf="!settingsUnlocked" id="coreVoltage" formControlName="coreVoltage"><option *ngFor="let option of dropdownVoltage" [ngValue]="option.value">{{option.name}}</option></select><small>Device default {{defaultVoltage}} mV</small></div>
-        </div>
+        <app-operating-profiles type="tuning" [uri]="uri" (applied)="onTuningApplied($event)"></app-operating-profiles>
         <div *ngIf="form.get('overheat_mode')?.value === 1" class="fw-recovery"><h3>Overheat protection is active</h3><p>Reset frequency and voltage to safe values before clearing protection.</p><button pButton type="button" class="p-button-danger" (click)="disableOverheatMode()">Clear overheat protection</button></div>
       </section>
       <section [hidden]="activeControlSection !== 'cooling'" aria-labelledby="cooling-title">
@@ -38,5 +34,4 @@
     </div>
   </div>
   <div class="fw-control-actionbar"><div class="fw-save-state"><span [class.fw-unsaved-dot]="form.dirty"></span><div><strong>{{form.dirty ? 'Unsaved changes' : pendingRestart ? 'Saved · restart required' : savedChanges ? 'Settings saved' : 'Current device settings'}}</strong><small *ngIf="form.dirty || pendingRestart">{{form.dirty ? (isRestartRequired ? 'Restart required after saving.' : 'Applies when saved.') : pendingRestart ? 'Restart to apply pending changes.' : ''}}</small></div></div><div class="fw-control-actions"><button *ngIf="!uri" type="button" class="fw-export-button" aria-label="Export settings" (click)="operatingSettingsExport.exportSettings()" pTooltip="Operating settings record; excludes passwords. Not a full NVS backup."><i class="pi pi-download" aria-hidden="true"></i><span>Export settings</span></button><button pButton type="button" [disabled]="!savedChanges" class="p-button-outlined" (click)="restart()">Restart</button><button pButton type="button" [disabled]="!form.dirty || form.invalid" (click)="updateSystem()">Save changes</button></div></div>
-  <button *ngIf="settingsUnlocked" pButton type="button" class="p-button-danger p-button-outlined fw-lock-presets" (click)="toggleOverclockMode(false)" pTooltip="Return to safe preset values only">Disable custom settings</button>
 </form>

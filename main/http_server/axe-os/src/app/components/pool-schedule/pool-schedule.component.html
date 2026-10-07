@@ -1,0 +1,21 @@
+<section class="pool-schedule" [attr.aria-busy]="busy">
+  <h2>Pool schedule</h2><p class="pool-schedule-note">Recurring time points select a saved pool profile for the primary route. The most recent point stays active until the next one, including across the week boundary.</p>
+  <p *ngIf="error" class="fw-control-warning" role="alert">{{error}}</p><p *ngIf="message" role="status">{{message}}</p>
+  <button *ngIf="!schedule && !busy" type="button" (click)="load()">Retry</button>
+  <ng-container *ngIf="schedule">
+    <p *ngIf="schedule.storageValid === false" class="fw-control-warning" role="alert">Stored pool schedule is invalid. Save a new schedule to replace it.</p>
+    <div class="pool-schedule-status" role="status"><strong>{{schedule.enabled ? 'Enabled' : 'Disabled'}}</strong><span>{{schedule.clockValid ? 'Clock synchronized' : 'Clock unavailable · current pool retained'}}</span><span>Selected profile: {{selectedName}}</span></div>
+    <div class="pool-schedule-controls"><label class="fw-switch-row"><span>Enable pool schedule</span><input type="checkbox" [(ngModel)]="schedule.enabled" (ngModelChange)="dirty = true" [disabled]="busy" /></label><label>Fixed UTC offset<select [(ngModel)]="schedule.utcOffsetMinutes" (ngModelChange)="dirty = true" [disabled]="busy"><option *ngFor="let offset of offsets" [ngValue]="offset">{{offsetLabel(offset)}}</option></select></label></div>
+    <p class="pool-schedule-note">This offset does not follow daylight saving time. It is separate from the power schedule’s timezone. Pool changes keep mining pause, clock, voltage and cooling settings intact.</p>
+    <div class="pool-schedule-event" *ngFor="let event of schedule.events; let i = index">
+      <label class="pool-event-enable"><input type="checkbox" [(ngModel)]="event.enabled" (ngModelChange)="dirty = true" [disabled]="busy" /> Event {{i + 1}}</label>
+      <div class="pool-event-days" aria-label="Event days"><button *ngFor="let day of days; let index = index" type="button" [class.selected]="daySelected(event, index)" [attr.aria-pressed]="!!(daySelected(event, index))" (click)="toggleDay(event, index)" [disabled]="busy">{{day}}</button></div>
+      <label>Time<input type="time" [ngModel]="time(event.timeMinutes)" (ngModelChange)="setTime(event, $event)" [disabled]="busy" /></label>
+      <label>Pool profile<select [(ngModel)]="event.slot" (ngModelChange)="dirty = true" [disabled]="busy"><option *ngFor="let slot of slots" [ngValue]="slot.slot" [disabled]="!slot.configured">{{slot.slot + 1}} · {{slot.name || 'Empty'}}</option></select></label>
+      <button type="button" (click)="remove(i)" [disabled]="busy" [attr.aria-label]="'Remove event ' + (i + 1)">Remove</button>
+    </div>
+    <p *ngIf="!schedule.events.length" class="pool-schedule-note">Save named pool profiles in Pool routing, then add time points here.</p>
+    <p *ngIf="schedule.enabled" class="pool-schedule-note">Saving an enabled schedule applies its most recent eligible point when the clock is valid. A single event keeps that profile selected all week.</p>
+    <div class="pool-schedule-actions"><button type="button" (click)="add()" [disabled]="busy || !canAdd">Add time point</button><button type="button" (click)="save()" [disabled]="busy || !dirty || !valid">Save pool schedule</button></div>
+  </ng-container>
+</section>

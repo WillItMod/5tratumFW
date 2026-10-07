@@ -17,6 +17,177 @@ servers:
 
 components:
   schemas:
+    FirmwareBinding:
+      type: object
+      required: [identity, hardware, firmware]
+      properties:
+        identity:
+          type: object
+          required: [deviceId]
+          properties:
+            deviceId: {type: string, pattern: '^5tfw:[0-9a-f]{32}$'}
+        hardware:
+          type: object
+          required: [boardModel, asicModel, asicCount]
+          properties:
+            boardModel: {type: string, enum: [Gamma 601, Gamma 602]}
+            asicModel: {type: string, enum: [BM1370]}
+            asicCount: {type: integer, const: 1}
+        firmware:
+          type: object
+          required: [product, version]
+          properties:
+            product: {type: string, const: 5tratumFW}
+            version: {type: string}
+    OperatingProfiles:
+      allOf:
+        - $ref: '#/components/schemas/FirmwareBinding'
+        - type: object
+          required: [schemaVersion, tuning, pools, limits, current]
+          properties:
+            schemaVersion: {type: integer, const: 1}
+            tuning:
+              type: array
+              minItems: 10
+              maxItems: 10
+              items: {$ref: '#/components/schemas/TuningProfileSlot'}
+            pools:
+              type: array
+              minItems: 10
+              maxItems: 10
+              items: {$ref: '#/components/schemas/PoolProfileSlot'}
+            current:
+              type: object
+              required: [frequencyMHz, coreVoltageMv]
+              properties:
+                frequencyMHz: {type: number}
+                coreVoltageMv: {type: integer}
+            limits:
+              type: object
+              properties:
+                frequency:
+                  type: object
+                  properties:
+                    min: {type: number}
+                    max: {type: number}
+                    step: {type: number}
+                    quantization: {type: string, const: nearest-pll}
+                coreVoltage:
+                  type: object
+                  properties:
+                    min: {type: integer}
+                    max: {type: integer}
+                    step: {type: integer}
+    TuningProfileSlot:
+      type: object
+      required: [slot, configured, name]
+      properties:
+        slot: {type: integer, minimum: 0, maximum: 9}
+        configured: {type: boolean}
+        name: {type: [string, 'null'], maxLength: 32}
+        frequencyMHz: {type: number}
+        coreVoltageMv: {type: integer}
+    PoolProfileSlot:
+      type: object
+      required: [slot, configured, name]
+      properties:
+        slot: {type: integer, minimum: 0, maximum: 9}
+        configured: {type: boolean}
+        name: {type: [string, 'null'], maxLength: 32}
+        protocol: {type: string, enum: [SV1, SV2]}
+        host: {type: string, maxLength: 253}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        user: {type: string, maxLength: 512}
+        passwordConfigured: {type: boolean}
+        suggestedDifficulty: {type: integer, minimum: 0, maximum: 65535}
+        extranonceSubscribe: {type: boolean}
+        tls: {type: integer, minimum: 0, maximum: 2}
+        certificate: {type: string, maxLength: 2048}
+        channelType: {type: string, enum: [standard, extended]}
+        authorityPubkey: {type: string, maxLength: 52}
+        decodeCoinbase: {type: boolean}
+    ProfileSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [type, slot]
+      description: Save a named point or pool connection, capture the stored primary/fallback route, or clear a slot. See docs/profiles-api.md for mutually exclusive request forms. Omitted password retains an existing slot credential.
+      properties:
+        type: {type: string, enum: [tuning, pool]}
+        slot: {type: integer, minimum: 0, maximum: 9}
+        name: {type: string, minLength: 1, maxLength: 32}
+        clear: {type: boolean, const: true}
+        captureCurrent: {type: string, enum: [primary, fallback]}
+        frequencyMHz: {type: number}
+        coreVoltageMv: {type: integer}
+        protocol: {type: string, enum: [SV1, SV2]}
+        host: {type: string, minLength: 1, maxLength: 253}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        user: {type: string, maxLength: 512}
+        password: {type: string, maxLength: 512, writeOnly: true}
+        suggestedDifficulty: {type: integer, minimum: 0, maximum: 65535}
+        extranonceSubscribe: {type: boolean}
+        tls: {type: integer, minimum: 0, maximum: 2}
+        certificate: {type: string, maxLength: 2048}
+        channelType: {type: string, enum: [standard, extended]}
+        authorityPubkey: {type: string, maxLength: 52}
+        decodeCoinbase: {type: boolean}
+    ProfileApplyRequest:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: Explicitly apply a tuning slot, a direct manual point, or a pool slot and target. No per-ASIC targeting is supported.
+      properties:
+        type: {type: string, enum: [tuning, pool]}
+        slot: {type: integer, minimum: 0, maximum: 9}
+        poolTarget: {type: string, enum: [primary, fallback]}
+        frequencyMHz: {type: number}
+        coreVoltageMv: {type: integer}
+    ProfileResult:
+      type: object
+      required: [ok, restartRequired]
+      properties:
+        ok: {type: boolean, const: true}
+        restartRequired: {type: boolean}
+    PoolScheduleEvent:
+      type: object
+      additionalProperties: false
+      required: [enabled, dayMask, timeMinutes, slot]
+      properties:
+        enabled: {type: boolean}
+        dayMask: {type: integer, minimum: 1, maximum: 127, description: Sunday bit 0 through Saturday bit 6.}
+        timeMinutes: {type: integer, minimum: 0, maximum: 1439}
+        slot: {type: integer, minimum: 0, maximum: 9}
+    PoolScheduleConfig:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, enabled, utcOffsetMinutes, events]
+      properties:
+        schemaVersion: {type: integer, const: 1}
+        enabled: {type: boolean}
+        utcOffsetMinutes: {type: integer, minimum: -720, maximum: 840, multipleOf: 15, description: Fixed UTC offset; does not follow daylight saving time.}
+        events:
+          type: array
+          maxItems: 16
+          items: {$ref: '#/components/schemas/PoolScheduleEvent'}
+    PoolScheduleSnapshot:
+      allOf:
+        - $ref: '#/components/schemas/FirmwareBinding'
+        - type: object
+          required: [schemaVersion, enabled, utcOffsetMinutes, events, clockValid, selectedSlot, timezoneMode, poolTarget, maxEvents]
+          properties:
+            schemaVersion: {type: integer, const: 1}
+            enabled: {type: boolean}
+            utcOffsetMinutes: {type: integer, minimum: -720, maximum: 840, multipleOf: 15}
+            events:
+              type: array
+              maxItems: 16
+              items: {$ref: '#/components/schemas/PoolScheduleEvent'}
+            clockValid: {type: boolean}
+            selectedSlot: {type: [integer, 'null'], minimum: 0, maximum: 9}
+            timezoneMode: {type: string, const: fixed-utc-offset}
+            poolTarget: {type: string, const: primary}
+            maxEvents: {type: integer, const: 16}
+            storageValid: {type: boolean, description: False disables a corrupt stored routing schedule while retaining current route and API recovery.}
     GenericResponse:
       type: object
       required:
@@ -920,6 +1091,99 @@ components:
       description: Internal server error
 
 paths:
+  /api/5tratum/profiles:
+    get:
+      operationId: getOperatingProfiles
+      tags: [system]
+      summary: Read exactly ten tuning and ten pool slots; passwords are redacted.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperatingProfiles'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or referenced slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous settings retained}
+    post:
+      operationId: saveOperatingProfile
+      tags: [system]
+      summary: Save a slot without applying it; referenced pool slots cannot be edited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProfileSaveRequest'}
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileResult'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or referenced slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous settings retained}
+  /api/5tratum/profiles/apply:
+    post:
+      operationId: applyOperatingProfile
+      tags: [system]
+      summary: Explicitly commit a reviewed operating point or route; never reboot automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProfileApplyRequest'}
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileResult'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or referenced slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous settings retained}
+  /api/5tratum/pool-schedule:
+    get:
+      operationId: getPoolSchedule
+      tags: [system]
+      summary: Read the fixed-offset recurring primary-pool time-point schedule.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolScheduleSnapshot'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or referenced slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous settings retained}
+    post:
+      operationId: savePoolSchedule
+      tags: [system]
+      summary: Commit a bounded pool schedule; invalid clock retains the current route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PoolScheduleConfig'}
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolScheduleSnapshot'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or referenced slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous settings retained}
   /api/system/wifi/scan:
     get:
       summary: Scan for available WiFi networks

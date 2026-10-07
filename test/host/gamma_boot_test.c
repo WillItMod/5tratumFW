@@ -106,6 +106,8 @@ esp_err_t nvs_get_u64(nvs_handle_t handle, const char *key, uint64_t *out)
     (void)handle;
     return get_number(key, STORE_U64, out);
 }
+esp_err_t nvs_get_blob(nvs_handle_t h, const char *k, void *v, size_t *s) { (void)h; (void)k; (void)v; (void)s; return ESP_ERR_NVS_NOT_FOUND; }
+esp_err_t nvs_set_blob(nvs_handle_t h, const char *k, const void *v, size_t s) { (void)h; (void)k; (void)v; (void)s; writes++; return set_result; }
 esp_err_t nvs_set_str(nvs_handle_t h, const char *k, const char *v) { (void)h; (void)v; writes++; snprintf(written_key, sizeof(written_key), "%s", k); return set_result; }
 esp_err_t nvs_set_u16(nvs_handle_t h, const char *k, uint16_t v) { (void)h; (void)k; (void)v; writes++; return ESP_OK; }
 esp_err_t nvs_set_i32(nvs_handle_t h, const char *k, int32_t v) { (void)h; (void)k; (void)v; writes++; return ESP_OK; }

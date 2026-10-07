@@ -12,6 +12,9 @@
 #include "connect.h"
 #include "system.h"
 #include "nvs_config.h"
+#include "pool_reload.h"
+#include "http_server/operating_profiles.h"
+#include <stdatomic.h>
 
 #include <string.h>
 
@@ -33,7 +36,9 @@ typedef enum {
     COORD_EVENT_PROTOCOL_SUCCESS,
     COORD_EVENT_V1_TASK_EXITED,
     COORD_EVENT_V2_TASK_EXITED,
-} coordinator_event_t;
+    COORD_EVENT_CONFIG_RELOAD,
+} coordinator_event_type_t;
+typedef struct { coordinator_event_type_t type; unsigned generation; } coordinator_event_t;
 
 #define TRANSPORT_TIMEOUT_MS 5000
 #define HEARTBEAT_INTERVAL_MS 60000
@@ -47,8 +52,10 @@ static const char *TAG = "protocol_coordinator";
 static GlobalState *s_global_state = NULL;
 static coordinator_state_t s_state = COORD_STATE_IDLE;
 static QueueHandle_t s_event_queue = NULL;
-static volatile bool s_v1_should_shutdown = false;
-static volatile bool s_v2_should_shutdown = false;
+static atomic_bool s_v1_should_shutdown, s_v2_should_shutdown;
+static atomic_bool s_v1_active, s_v2_active;
+static atomic_uint s_running_generation, s_work_generation, s_reload_requested;
+static unsigned s_reload_applied;
 
 // Protocol tracking
 static stratum_protocol_t s_primary_protocol;
@@ -71,53 +78,40 @@ void protocol_coordinator_init(GlobalState *gs)
 {
     s_global_state = gs;
     s_event_queue = xQueueCreate(8, sizeof(coordinator_event_t));
-    s_v1_should_shutdown = false;
-    s_v2_should_shutdown = false;
+    atomic_store(&s_v1_should_shutdown, false);
+    atomic_store(&s_v2_should_shutdown, false);
+    atomic_store(&s_v1_active, false);
+    atomic_store(&s_v2_active, false);
     s_heartbeat_enabled = false;
     s_consecutive_pool_failures = 0;
 }
 
-void protocol_coordinator_notify_failure(void)
+void protocol_coordinator_request_primary_reload(GlobalState *gs)
 {
-    coordinator_event_t evt = COORD_EVENT_PROTOCOL_FAILED;
-    if (s_event_queue) {
-        xQueueSend(s_event_queue, &evt, 0);
+    (void)gs;
+    atomic_fetch_add(&s_reload_requested, 1);
+    coordinator_event_t event = {.type = COORD_EVENT_CONFIG_RELOAD};
+    if (s_event_queue) xQueueSend(s_event_queue, &event, 0);
+}
+unsigned protocol_coordinator_work_generation(void) { return atomic_load(&s_work_generation); }
+void protocol_coordinator_invalidate_work(void) { atomic_fetch_add(&s_work_generation, 1); }
+static void send_protocol_event(coordinator_event_type_t type, bool exiting)
+{
+    // Capture generation before marking the task quiescent. Late old-connection
+    // events cannot affect a task started after a config reload.
+    coordinator_event_t event = {.type = type, .generation = atomic_load(&s_running_generation)};
+    if (exiting) {
+        if (s_running_protocol == STRATUM_PROTOCOL_V2) atomic_store(&s_v2_active, false);
+        else atomic_store(&s_v1_active, false);
     }
+    if (s_event_queue) xQueueSend(s_event_queue, &event, 0);
 }
-
-void protocol_coordinator_notify_success(void)
-{
-    coordinator_event_t evt = COORD_EVENT_PROTOCOL_SUCCESS;
-    if (s_event_queue) {
-        xQueueSend(s_event_queue, &evt, 0);
-    }
-}
-
-bool protocol_coordinator_v1_should_shutdown(void)
-{
-    return s_v1_should_shutdown;
-}
-
-void protocol_coordinator_v1_exited(void)
-{
-    coordinator_event_t evt = COORD_EVENT_V1_TASK_EXITED;
-    if (s_event_queue) {
-        xQueueSend(s_event_queue, &evt, 0);
-    }
-}
-
-bool protocol_coordinator_v2_should_shutdown(void)
-{
-    return s_v2_should_shutdown;
-}
-
-void protocol_coordinator_v2_exited(void)
-{
-    coordinator_event_t evt = COORD_EVENT_V2_TASK_EXITED;
-    if (s_event_queue) {
-        xQueueSend(s_event_queue, &evt, 0);
-    }
-}
+void protocol_coordinator_notify_failure(void) { send_protocol_event(COORD_EVENT_PROTOCOL_FAILED, true); }
+void protocol_coordinator_notify_success(void) { send_protocol_event(COORD_EVENT_PROTOCOL_SUCCESS, false); }
+bool protocol_coordinator_v1_should_shutdown(void) { return atomic_load(&s_v1_should_shutdown); }
+void protocol_coordinator_v1_exited(void) { send_protocol_event(COORD_EVENT_V1_TASK_EXITED, true); }
+bool protocol_coordinator_v2_should_shutdown(void) { return atomic_load(&s_v2_should_shutdown); }
+void protocol_coordinator_v2_exited(void) { send_protocol_event(COORD_EVENT_V2_TASK_EXITED, true); }
 
 static void reset_share_stats(GlobalState *gs)
 {
@@ -140,24 +134,32 @@ static bool has_fallback_pool(GlobalState *gs)
 // Start the V1 stratum task (for primary V1 or fallback)
 static void start_v1_task(GlobalState *gs)
 {
-    s_v1_should_shutdown = false;
+    atomic_store(&s_v1_should_shutdown, false);
+    atomic_store(&s_v1_active, true);
     if (xTaskCreate(stratum_v1_task, "stratum v1", 8192, (void *)gs, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create V1 stratum task");
+        protocol_coordinator_notify_failure();
     }
 }
 
 // Start the V2 stratum task
 static void start_v2_task(GlobalState *gs)
 {
-    s_v2_should_shutdown = false;
+    atomic_store(&s_v2_should_shutdown, false);
+    atomic_store(&s_v2_active, true);
     if (xTaskCreate(stratum_v2_task, "stratum v2", 12288, (void *)gs, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create V2 stratum task");
+        protocol_coordinator_notify_failure();
     }
 }
 
 // Start a task for the given protocol
 static void start_protocol_task(GlobalState *gs, stratum_protocol_t protocol)
 {
+    SYSTEM_stratum_io_lock();
+    atomic_fetch_add(&s_running_generation, 1);
+    protocol_coordinator_invalidate_work();
+    SYSTEM_stratum_io_unlock();
     if (protocol == STRATUM_PROTOCOL_V2) {
         start_v2_task(gs);
     } else {
@@ -165,63 +167,28 @@ static void start_protocol_task(GlobalState *gs, stratum_protocol_t protocol)
     }
 }
 
-// Tell the V1 task to shut down and wait for it to exit.
-// Only closes the transport socket to unblock V1's recv — does NOT destroy it.
-// The V1 task handles its own full cleanup (destroy, queue clear) on exit.
-static void stop_v1_task(GlobalState *gs)
+// Wait for actual task quiescence; a timeout never permits pointer replacement.
+static bool stop_running_task(GlobalState *gs)
 {
-    mux_peer_status_disconnect();
-    s_v1_should_shutdown = true;
-
-    // Close transport to unblock V1's blocked recv()
-    if (gs->transport) {
-        esp_transport_close(gs->transport);
+    bool v2 = s_running_protocol == STRATUM_PROTOCOL_V2;
+    atomic_bool *active = v2 ? &s_v2_active : &s_v1_active;
+    unsigned generation = atomic_load(&s_running_generation);
+    if (!atomic_load(active)) return true;
+    if (!v2) mux_peer_status_disconnect();
+    atomic_store(v2 ? &s_v2_should_shutdown : &s_v1_should_shutdown, true);
+    SYSTEM_stratum_io_lock();
+    if (gs->transport) esp_transport_close(gs->transport);
+    SYSTEM_stratum_io_unlock();
+    bool acknowledged = false;
+    for (unsigned i = 0; i < 150; i++) {
+        coordinator_event_t event;
+        if (xQueueReceive(s_event_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE && event.generation == generation &&
+            (event.type == COORD_EVENT_PROTOCOL_FAILED || event.type == (v2 ? COORD_EVENT_V2_TASK_EXITED : COORD_EVENT_V1_TASK_EXITED)))
+            acknowledged = true;
+        if (acknowledged && !atomic_load(active)) return true;
     }
-
-    coordinator_event_t evt;
-    for (int i = 0; i < 100; i++) {
-        if (xQueueReceive(s_event_queue, &evt, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (evt == COORD_EVENT_V1_TASK_EXITED || evt == COORD_EVENT_PROTOCOL_FAILED) {
-                ESP_LOGI(TAG, "V1 task exited cleanly");
-                return;
-            }
-        }
-    }
-    ESP_LOGW(TAG, "V1 task did not exit within timeout");
-}
-
-// Tell the V2 task to shut down and wait for it to exit.
-// Only closes the transport socket to unblock V2's recv — does NOT destroy it.
-// The V2 task handles its own full cleanup (destroy, noise ctx, queue clear) on exit.
-static void stop_v2_task(GlobalState *gs)
-{
-    s_v2_should_shutdown = true;
-
-    // Close transport to unblock V2's blocked recv()
-    if (gs->transport) {
-        esp_transport_close(gs->transport);
-    }
-
-    coordinator_event_t evt;
-    for (int i = 0; i < 100; i++) {
-        if (xQueueReceive(s_event_queue, &evt, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (evt == COORD_EVENT_V2_TASK_EXITED || evt == COORD_EVENT_PROTOCOL_FAILED) {
-                ESP_LOGI(TAG, "V2 task exited cleanly");
-                return;
-            }
-        }
-    }
-    ESP_LOGW(TAG, "V2 task did not exit within timeout");
-}
-
-// Stop the currently running protocol task
-static void stop_running_task(GlobalState *gs)
-{
-    if (s_running_protocol == STRATUM_PROTOCOL_V2) {
-        stop_v2_task(gs);
-    } else {
-        stop_v1_task(gs);
-    }
+    ESP_LOGW(TAG, "Protocol shutdown timed out; live pool config retained");
+    return false;
 }
 
 // TCP connect probe (used for SV2 — full noise handshake is too expensive)
@@ -315,7 +282,7 @@ static void switch_to_primary(GlobalState *gs)
 {
     ESP_LOGI(TAG, "Primary pool is back! Switching from fallback.");
 
-    stop_running_task(gs);
+    if (!stop_running_task(gs)) return;
 
     queue_clear(&gs->stratum_queue);
     reset_share_stats(gs);
@@ -434,7 +401,8 @@ static void try_resume_from_paused(GlobalState *gs)
 // Handle an event from the event queue
 static void handle_event(GlobalState *gs, coordinator_event_t evt)
 {
-    switch (evt) {
+    if (evt.type == COORD_EVENT_CONFIG_RELOAD || evt.generation != atomic_load(&s_running_generation)) return;
+    switch (evt.type) {
         case COORD_EVENT_PROTOCOL_FAILED: {
             if (s_state == COORD_STATE_PAUSED) {
                 // Stray failure from a task that exited after we already paused — ignore.
@@ -481,9 +449,38 @@ static void handle_event(GlobalState *gs, coordinator_event_t evt)
             // These come from clean coordinator-requested shutdowns (via stop functions).
             // They're consumed by stop_v1_task/stop_v2_task during switch_to_primary.
             // If we receive one here unexpectedly, just log it.
-            ESP_LOGI(TAG, "Task exited event received (evt=%d, state=%d)", evt, s_state);
+            ESP_LOGI(TAG, "Task exited event received (evt=%d, state=%d)", evt.type, s_state);
+            break;
+        case COORD_EVENT_CONFIG_RELOAD:
             break;
     }
+}
+
+static esp_err_t reload_snapshot(void *value)
+{
+    return SYSTEM_reload_primary_pool(value, &s_primary_protocol);
+}
+static bool apply_primary_reload(GlobalState *gs)
+{
+    unsigned requested = atomic_load(&s_reload_requested);
+    if (requested == s_reload_applied) return true;
+    bool restart_primary = s_state == COORD_STATE_RUNNING_PRIMARY;
+    if (restart_primary && !stop_running_task(gs)) return false;
+    esp_err_t error = operating_profiles_with_pool_slots(0, reload_snapshot, gs);
+    if (error == ESP_OK) {
+        s_primary_url = gs->SYSTEM_MODULE.pool_url;
+        s_primary_port = gs->SYSTEM_MODULE.pool_port;
+        s_reload_applied = requested;
+    } else ESP_LOGW(TAG, "Primary pool snapshot unavailable; retrying without reboot");
+    if (restart_primary) {
+        SYSTEM_clean_jobs_queue(gs);
+        gs->stratum_protocol = s_primary_protocol;
+        s_running_protocol = s_primary_protocol;
+        start_protocol_task(gs, s_primary_protocol);
+    }
+    // Running fallback stays connected. The existing power/recovery policy
+    // retains ownership of pause/unreachable state; reload never clears it.
+    return error == ESP_OK;
 }
 
 void protocol_coordinator_task(void *pvParameters)
@@ -495,6 +492,9 @@ void protocol_coordinator_task(void *pvParameters)
     s_primary_protocol = gs->stratum_protocol;
     s_fallback_protocol = gs->SYSTEM_MODULE.fallback_pool_protocol;
 
+    // HTTP may apply a profile before the coordinator task starts.
+    apply_primary_reload(gs);
+
     // Start initial protocol task
     if (gs->SYSTEM_MODULE.is_using_fallback) {
         // User explicitly selected fallback — use fallback protocol
@@ -505,6 +505,7 @@ void protocol_coordinator_task(void *pvParameters)
         // User chose fallback, no heartbeat
         s_heartbeat_enabled = false;
     } else {
+        gs->stratum_protocol = s_primary_protocol;
         s_running_protocol = s_primary_protocol;
         s_state = COORD_STATE_RUNNING_PRIMARY;
         start_protocol_task(gs, s_primary_protocol);
@@ -522,9 +523,12 @@ void protocol_coordinator_task(void *pvParameters)
 
     // Main non-blocking event loop
     while (1) {
+        bool reload_ready = apply_primary_reload(gs);
         coordinator_event_t evt;
         TickType_t wait;
-        if (s_state == COORD_STATE_PAUSED) {
+        if (!reload_ready || atomic_load(&s_reload_requested) != s_reload_applied) {
+            wait = pdMS_TO_TICKS(5000);
+        } else if (s_state == COORD_STATE_PAUSED) {
             wait = pdMS_TO_TICKS(RECOVERY_PROBE_INTERVAL_MS);
         } else if (s_heartbeat_enabled) {
             wait = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
@@ -542,6 +546,8 @@ void protocol_coordinator_task(void *pvParameters)
                 heartbeat_initial_delay = true;
                 heartbeat_delay_start = esp_timer_get_time();
             }
+        } else if (!reload_ready) {
+            continue;
         } else if (s_state == COORD_STATE_PAUSED) {
             // Recovery probe — try to bring a pool back online.
             try_resume_from_paused(gs);

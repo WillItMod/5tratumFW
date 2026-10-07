@@ -11,6 +11,8 @@
 #include "http_server.h"
 #include "serial.h"
 #include "protocol_coordinator.h"
+#include "operating_profiles.h"
+#include "pool_schedule.h"
 #include "i2c_bitaxe.h"
 #include "adc.h"
 #include "nvs_config.h"
@@ -93,6 +95,11 @@ void app_main(void)
     }
 
     SYSTEM_init_system(&GLOBAL_STATE);
+    operating_profiles_init(&GLOBAL_STATE);
+    if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && pool_schedule_init(&GLOBAL_STATE) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize pool schedule; keeping ASIC reset asserted");
+        return;
+    }
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && mining_schedule_init(&GLOBAL_STATE) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize mining schedule; keeping ASIC reset asserted");
         return;
@@ -181,6 +188,7 @@ void app_main(void)
     }
 
     protocol_coordinator_init(&GLOBAL_STATE);
+    if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) pool_schedule_start();
     if (xTaskCreate(protocol_coordinator_task, "protocol coord", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating protocol coordinator task");
         POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Protocol coordinator task could not start");

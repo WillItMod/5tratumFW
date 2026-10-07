@@ -13,6 +13,9 @@ import { PoolComponent } from './pool.component';
 @Component({ selector: 'tooltip-text-icon', template: '{{text}}' })
 class TooltipStub { @Input() text = ''; @Input() tooltip = ''; }
 
+@Component({ selector: 'app-operating-profiles', template: '' })
+class ProfilesStub { @Input() type = 'pool'; @Input() uri = ''; }
+
 const reading = {
   ASICModel: 'BM1370', uptimeSeconds: 600, sharesAccepted: 100, sharesRejected: 1,
   stratumURL: 'direct.pool.local', stratumPort: 7331, stratumUser: 'wallet.worker',
@@ -42,7 +45,7 @@ describe('Unified Pool routing editor', () => {
     api.updateSystem.and.returnValue(of(undefined));
     api.restart.and.returnValue(of({ message: 'Restart requested' }));
     api.getInfo.and.returnValue(EMPTY);
-    TestBed.configureTestingModule({ declarations: [PoolComponent, TooltipStub], imports: [CommonModule, ReactiveFormsModule], providers: [
+    TestBed.configureTestingModule({ declarations: [PoolComponent, TooltipStub, ProfilesStub], imports: [CommonModule, ReactiveFormsModule], providers: [
       { provide: SystemApiService, useValue: api }, { provide: LiveDataService, useValue: live },
       { provide: ToastrService, useValue: jasmine.createSpyObj('ToastrService', ['success', 'warning', 'error', 'info']) }, LoadingService,
     ] });

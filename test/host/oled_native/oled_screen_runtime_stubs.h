@@ -69,4 +69,16 @@ static inline HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *st
 }
 #define GLOBAL_STATE_H_
 #include "mining_state.h"
+static inline void SYSTEM_copy_pool_identity(GlobalState *state, bool fallback, char *host, size_t host_size,
+                                            char *user, size_t user_size, uint16_t *port)
+{
+    if (host && host_size) snprintf(host, host_size, "%s", fallback ? state->SYSTEM_MODULE.fallback_pool_url : state->SYSTEM_MODULE.pool_url);
+    if (user && user_size) user[0] = 0;
+    if (port) *port = 3333;
+}
+static inline void SYSTEM_copy_pool_options(GlobalState *state, bool fallback, uint16_t *tls, bool *decode)
+{
+    if (tls) *tls = fallback ? state->SYSTEM_MODULE.fallback_pool_tls : state->SYSTEM_MODULE.pool_tls;
+    if (decode) *decode = fallback ? state->SYSTEM_MODULE.fallback_pool_decode_coinbase_tx : state->SYSTEM_MODULE.pool_decode_coinbase_tx;
+}
 #endif

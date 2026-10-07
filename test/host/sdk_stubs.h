@@ -37,6 +37,8 @@ esp_err_t nvs_open(const char *, nvs_open_mode_t, nvs_handle_t *);
 void nvs_close(nvs_handle_t);
 esp_err_t nvs_get_stats(const char *, nvs_stats_t *);
 esp_err_t nvs_find_key(nvs_handle_t, const char *, void *);
+esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *);
+esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t);
 esp_err_t nvs_get_str(nvs_handle_t, const char *, char *, size_t *);
 esp_err_t nvs_get_u16(nvs_handle_t, const char *, uint16_t *);
 esp_err_t nvs_get_i32(nvs_handle_t, const char *, int32_t *);

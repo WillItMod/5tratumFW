@@ -1,6 +1,8 @@
 #include <lwip/tcpip.h>
 
 #include "system.h"
+#include "pool_reload.h"
+#include "protocol_coordinator.h"
 #include "work_queue.h"
 #include "serial.h"
 #include <string.h>
@@ -44,6 +46,7 @@ void ASIC_result_task(void *pvParameters)
         }
 
         uint8_t job_id = asic_result->job_id;
+        unsigned connection_generation = protocol_coordinator_work_generation();
 
         // Snapshot the job while holding the lock. The shared slot
         // (ASIC_TASK_MODULE.active_jobs[job_id]) can be freed and reused by
@@ -78,7 +81,10 @@ void ASIC_result_task(void *pvParameters)
         uint32_t version_bits = asic_result->rolled_version ^ active_job->version;
         if (nonce_diff >= active_job->pool_diff)
         {
-            if (GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2) {
+            SYSTEM_stratum_io_lock();
+            if (connection_generation != protocol_coordinator_work_generation()) {
+                ESP_LOGW(TAG, "Dropping share from a previous pool connection");
+            } else if (GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2) {
                 // SV2: submit with binary protocol
                 int ret;
                 uint32_t sv2_job_id = (uint32_t)strtoul(active_job->jobid, NULL, 10);
@@ -108,14 +114,14 @@ void ASIC_result_task(void *pvParameters)
                 }
             } else {
                 // V1: submit with JSON-RPC
-                char * user = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback ? GLOBAL_STATE->SYSTEM_MODULE.fallback_pool_user : GLOBAL_STATE->SYSTEM_MODULE.pool_user;
+                char *user = SYSTEM_duplicate_pool_user(GLOBAL_STATE, GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback);
 
                 taskENTER_CRITICAL(&GLOBAL_STATE->stratum_mux);
                 esp_transport_handle_t transport = GLOBAL_STATE->transport;
                 int uid = GLOBAL_STATE->send_uid++;
                 taskEXIT_CRITICAL(&GLOBAL_STATE->stratum_mux);
 
-                if (transport == NULL) {
+                if (transport == NULL || user == NULL) {
                     ESP_LOGW(TAG, "No stratum connection, dropping share (job 0x%02X)", job_id);
                 } else {
                     uint64_t sent_time_us = 0;
@@ -139,7 +145,9 @@ void ASIC_result_task(void *pvParameters)
                     GLOBAL_STATE->SYSTEM_MODULE.process_time = process_time;
                     ESP_LOGI(TAG, "Processing time: %0.1f ms", process_time);
                 }
+                free(user);
             }
+            SYSTEM_stratum_io_unlock();
         }
 
         //log the ASIC response

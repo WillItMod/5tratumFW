@@ -1,4 +1,6 @@
 <header class="fw-config-heading"><h1>Scheduler</h1></header>
 <section class="fw-control-console fw-scheduler-console" aria-label="Mining schedule and power control">
-  <app-mining-controls></app-mining-controls>
+  <nav class="fw-control-sections" aria-label="Scheduler sections"><button type="button" (click)="section = 'power'" [class.fw-section-active]="section === 'power'">Power schedule</button><button type="button" (click)="section = 'pool'" [class.fw-section-active]="section === 'pool'">Pool schedule</button></nav>
+  <app-mining-controls *ngIf="section === 'power'"></app-mining-controls>
+  <app-pool-schedule *ngIf="section === 'pool'"></app-pool-schedule>
 </section>

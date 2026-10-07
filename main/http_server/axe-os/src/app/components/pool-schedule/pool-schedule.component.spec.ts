@@ -1,0 +1,12 @@
+import { of } from 'rxjs';
+import { PoolScheduleComponent } from './pool-schedule.component';
+import { OperatingProfilesService, Profiles, PoolSchedule } from 'src/app/services/operating-profiles.service';
+describe('Pool time-point schedule', () => {
+ let component: PoolScheduleComponent; let service: jasmine.SpyObj<OperatingProfilesService>;
+ const schedule: PoolSchedule = { schemaVersion: 1, enabled: false, utcOffsetMinutes: 0, events: [], clockValid: false, selectedSlot: null };
+ beforeEach(() => { service = jasmine.createSpyObj<OperatingProfilesService>('profiles', ['get', 'getSchedule', 'saveSchedule']); service.get.and.returnValue(of({ pools: [{ slot: 0, configured: true, name: 'Pool A' }, { slot: 1, configured: false, name: null }] } as Profiles)); service.getSchedule.and.returnValue(of(structuredClone(schedule))); service.saveSchedule.and.returnValue(of(structuredClone(schedule))); component = new PoolScheduleComponent(service); component.ngOnInit(); });
+ afterEach(() => component.ngOnDestroy());
+ it('loads without writing or changing the route', () => { expect(component.schedule?.clockValid).toBeFalse(); expect(service.saveSchedule).not.toHaveBeenCalled(); });
+ it('uses recurring points with Sunday bit zero and a fixed UTC offset', () => { component.add(); const event = component.schedule!.events[0]; event.dayMask = 1; component.setTime(event, '18:00'); component.schedule!.utcOffsetMinutes = 345; expect(component.daySelected(event, 0)).toBeTrue(); expect(component.daySelected(event, 1)).toBeFalse(); expect(event.timeMinutes).toBe(1080); expect(component.offsetLabel(345)).toBe('UTC+05:45'); expect(component.valid).toBeTrue(); component.save(); expect(service.saveSchedule).toHaveBeenCalled(); });
+ it('blocks missing slots, invalid times, zero days, off-step offsets and overcapacity', () => { component.add(); const event = component.schedule!.events[0]; event.slot = 1; expect(component.valid).toBeFalse(); event.slot = 0; component.setTime(event, '24:00'); expect(component.valid).toBeFalse(); component.setTime(event, '12:00'); event.dayMask = 0; expect(component.valid).toBeFalse(); event.dayMask = 127; component.schedule!.utcOffsetMinutes = 7; expect(component.valid).toBeFalse(); component.schedule!.utcOffsetMinutes = 0; component.schedule!.events = Array.from({ length: 17 }, () => ({ ...event })); expect(component.valid).toBeFalse(); component.save(); expect(service.saveSchedule).not.toHaveBeenCalled(); });
+});

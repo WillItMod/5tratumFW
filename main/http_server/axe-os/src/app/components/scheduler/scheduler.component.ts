@@ -4,4 +4,4 @@ import { Component } from '@angular/core';
   selector: 'app-scheduler',
   templateUrl: './scheduler.component.html',
 })
-export class SchedulerComponent {}
+export class SchedulerComponent { section: 'power' | 'pool' = 'power'; }
