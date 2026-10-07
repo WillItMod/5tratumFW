@@ -40,6 +40,8 @@
 #include "log_buffer.h"
 #include "cjson_utils.h"
 #include "utils.h"
+#include "mining_schedule.h"
+#include "mining_schedule_api.h"
 
 static const char * TAG = "http_server";
 static const char * CORS_TAG = "CORS";
@@ -818,8 +820,8 @@ static esp_err_t POST_mining_pause(httpd_req_t * req)
         return ESP_OK;
     }
 
-    GLOBAL_STATE->SYSTEM_MODULE.mining_paused = true;
-    ESP_LOGI(TAG, "Mining paused by API request");
+    mining_schedule_manual_override(true);
+    ESP_LOGI(TAG, "Mining pause requested by API");
 
     httpd_resp_set_type(req, "application/json");
     cJSON * resp = cJSON_CreateObject();
@@ -827,7 +829,7 @@ static esp_err_t POST_mining_pause(httpd_req_t * req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Internal error");
         return ESP_OK;
     }
-    cJSON_AddStringToObject(resp, "message", "Mining paused");
+    cJSON_AddStringToObject(resp, "message", "Mining pause requested; check schedule status for applied state");
     esp_err_t res = HTTP_send_json(req, resp, &api_common_prebuffer_len);
     cJSON_Delete(resp);
     return res;
@@ -844,8 +846,8 @@ static esp_err_t POST_mining_resume(httpd_req_t * req)
         return ESP_OK;
     }
 
-    GLOBAL_STATE->SYSTEM_MODULE.mining_paused = false;
-    ESP_LOGI(TAG, "Mining resumed by API request");
+    mining_schedule_manual_override(false);
+    ESP_LOGI(TAG, "Mining resume requested by API");
 
     httpd_resp_set_type(req, "application/json");
     cJSON * resp = cJSON_CreateObject();
@@ -853,7 +855,7 @@ static esp_err_t POST_mining_resume(httpd_req_t * req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Internal error");
         return ESP_OK;
     }
-    cJSON_AddStringToObject(resp, "message", "Mining resumed");
+    cJSON_AddStringToObject(resp, "message", "Mining resume requested; check schedule status for applied state");
     esp_err_t res = HTTP_send_json(req, resp, &api_common_prebuffer_len);
     cJSON_Delete(resp);
     return res;
@@ -1237,7 +1239,7 @@ esp_err_t start_rest_server(void * pvParameters)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
     config.max_open_sockets = 20;
-    config.max_uri_handlers = 25;
+    config.max_uri_handlers = 32;
     config.close_fn = websocket_close_fn;
     config.lru_purge_enable = true;
 
@@ -1265,6 +1267,7 @@ esp_err_t start_rest_server(void * pvParameters)
     
     // Register theme API endpoints
     ESP_ERROR_CHECK(register_theme_api_endpoints(server, rest_context));
+    ESP_ERROR_CHECK(register_mining_schedule_api(server));
 
     /* URI handler for fetching system info */
     httpd_uri_t system_info_get_uri = {

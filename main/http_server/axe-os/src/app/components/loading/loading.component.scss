@@ -1,57 +1,21 @@
 #loading {
-    background-color: var(--maskbg);
-
-    bottom: 0;
-    position: fixed;
-    z-index: 9999;
-
-    --padding: 2rem;
-
-    @media (max-width: 768px) {
-        --padding: 1rem;
-    }
-
-    left: var(--padding);
-    right: var(--padding);
-    top: calc(var(--topbar-height) + var(--padding));
-    padding-bottom: calc(var(--topbar-height) + var(--padding));
-
-    ::ng-deep .menuIsVisible & {
-        @media screen and (min-width: 992px) {
-            left: calc(var(--padding) * 2 + var(--sidebar-width));
-        }
-    }
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: color-mix(in srgb, var(--surface-ground) 94%, transparent);
+  display: grid;
+  place-items: center;
 }
-
-figure {
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 0;
+.fw-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  color: var(--text-color);
+  img { object-fit: contain; }
+  > span { font-size: 22px; font-weight: 500; letter-spacing: -.8px; b { color: #20cfff; font-weight: 600; } }
+  small { font-size: 11px; color: var(--text-color-secondary); }
+  i { width: 80px; height: 2px; border-radius: 2px; background: var(--surface-border); position: relative; overflow: hidden; &::after { content: ''; position: absolute; inset: 0; background: #20cfff; animation: fw-loading 1.4s ease-in-out infinite; transform-origin: left; } }
 }
-
-.icon-bitaxe {
-    width: 41px;
-    height: 60px;
-}
-.icon-fan {
-    width: 32px;
-    height: 32px;
-    margin: 24px 0 0;
-    position: absolute;
-
-    animation: rotation 1s infinite linear;
-    transform-box: fill-box;
-    transform-origin: center;
-    will-change: transform;
-}
-
-@keyframes rotation {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
+@keyframes fw-loading { 0%, 100% { transform: scaleX(.2); opacity: .45; } 50% { transform: scaleX(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .fw-loading-state i::after { animation: none; transform: scaleX(.5); } }

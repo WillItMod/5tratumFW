@@ -109,7 +109,7 @@ export class UpdateComponent {
       return;
     }
 
-    this.updateTarget = 'AxeOS';
+    this.updateTarget = 'Web';
     this.updateStatus = 'progress';
     this.updateMessage = '';
     if (this.progressModal) {
@@ -124,7 +124,7 @@ export class UpdateComponent {
           } else if (event.type === HttpEventType.Response) {
             if (event.ok) {
               this.updateStatus = 'success';
-              this.updateMessage = 'AxeOS updated. The page will reload in a few seconds.';
+              this.updateMessage = 'Web interface updated. The page will reload in a few seconds.';
               setTimeout(() => {
                 window.location.reload();
               }, 2000);

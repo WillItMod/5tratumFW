@@ -19,6 +19,7 @@
 #include <esp_heap_caps.h>
 #include "esp_transport_ssl.h"
 #include "freertos/task.h"
+#include "mux_peer_status.h"
 
 #define MAX_RETRY_ATTEMPTS 3
 #define MAX_CRITICAL_RETRY_ATTEMPTS 5
@@ -65,6 +66,7 @@ static void stratum_v1_reset_uid(GlobalState *GLOBAL_STATE)
 
 void stratum_v1_close_connection(GlobalState *GLOBAL_STATE)
 {
+    mux_peer_status_disconnect();
     ESP_LOGE(TAG, "Shutting down socket and restarting...");
     taskENTER_CRITICAL(&GLOBAL_STATE->stratum_mux);
     esp_transport_handle_t transport = GLOBAL_STATE->transport;
@@ -170,6 +172,7 @@ static void decode_mining_notification(GlobalState * GLOBAL_STATE, const mining_
 void stratum_v1_task(void *pvParameters)
 {
     GlobalState *GLOBAL_STATE = (GlobalState *)pvParameters;
+    mux_peer_status_disconnect();
 
     bool use_fallback = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback;
     char *stratum_url = use_fallback ? GLOBAL_STATE->SYSTEM_MODULE.fallback_pool_url : GLOBAL_STATE->SYSTEM_MODULE.pool_url;
@@ -186,6 +189,7 @@ void stratum_v1_task(void *pvParameters)
     while (1) {
         // Check if coordinator wants us to shut down
         if (protocol_coordinator_v1_should_shutdown()) {
+            mux_peer_status_disconnect();
             ESP_LOGI(TAG, "Coordinator requested shutdown, exiting");
             protocol_coordinator_v1_exited();
             vTaskDelete(NULL);
@@ -265,6 +269,7 @@ void stratum_v1_task(void *pvParameters)
         }
 
         stratum_socket_set_options(GLOBAL_STATE->transport);
+        uint64_t mux_generation = mux_peer_status_begin(GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback);
 
         const char *protocol = (conn_info.addr_family == AF_INET6) ? "IPv6" : "IPv4";
         const char *tls_status;
@@ -328,7 +333,9 @@ void stratum_v1_task(void *pvParameters)
             STRATUM_V1_parse(&stratum_api_v1_message, line);
             free(line);
 
-            if (stratum_api_v1_message.method == MINING_NOTIFY) {
+            if (stratum_api_v1_message.method == MINING_5TRATUM_STATUS) {
+                mux_peer_status_receive(mux_generation, stratum_api_v1_message.mux_status_valid, receive_time_us);
+            } else if (stratum_api_v1_message.method == MINING_NOTIFY) {
                 GLOBAL_STATE->SYSTEM_MODULE.work_received++;
                 SYSTEM_notify_new_ntime(GLOBAL_STATE, stratum_api_v1_message.mining_notification->ntime);
                 if (stratum_api_v1_message.mining_notification->clean_jobs &&

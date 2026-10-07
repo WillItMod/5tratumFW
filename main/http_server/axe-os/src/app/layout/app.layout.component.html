@@ -1,17 +1,10 @@
-<div class="layout-wrapper" [ngClass]="containerClass">
-    <app-topbar [isAPMode]="isAPMode"></app-topbar>
-    <div class="layout-sidebar" *ngIf="!isAPMode">
-        <app-sidebar></app-sidebar>
-    </div>
-    <div class="layout-main-container">
-        <div class="layout-main">
-            <router-outlet></router-outlet>
-        </div>
-        <app-footer></app-footer>
-    </div>
-
-    <div class="layout-mask"></div>
-    <app-loading
-        [ngClass]="{'menuIsVisible': !layoutService.state.staticMenuDesktopInactive}"
-    ></app-loading>
+<div class="layout-wrapper orbit-shell fw-command-shell" [ngClass]="containerClass" [class.orbit-ap-mode]="isAPMode">
+  <app-topbar [isAPMode]="isAPMode"></app-topbar>
+  <div class="fw-command-navigation" *ngIf="!isAPMode" [class.fw-navigation-open]="layoutService.state.staticMenuMobileActive"><app-sidebar></app-sidebar></div>
+  <div class="layout-main-container">
+    <main class="layout-main"><section *ngIf="!hasTelemetry" class="fw-device-waiting" role="status" aria-live="polite"><h1>Miner unavailable</h1><p>Check the miner’s power and network connection.</p><small>Readings will appear when the device responds.</small></section><router-outlet></router-outlet></main>
+    <app-footer></app-footer>
+  </div>
+  <div class="layout-mask"></div>
+  <app-loading *ngIf="hasTelemetry"></app-loading>
 </div>

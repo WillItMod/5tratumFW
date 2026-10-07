@@ -1,13 +1,15 @@
-import { HttpErrorResponse } from '@angular/common/http';
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, ValidatorFn, ValidationErrors, AbstractControl, FormControl } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { LoadingService } from 'src/app/services/loading.service';
 import { SystemApiService } from 'src/app/services/system.service';
 import { LiveDataService } from 'src/app/services/live-data.service';
-import { first } from 'rxjs';
+import { Subject, takeUntil, finalize, timer, exhaustMap, catchError, EMPTY } from 'rxjs';
+import { SystemInfo } from 'src/app/generated/models';
+import { MuxConnectionInput, MuxConnectionMonitor, MuxConnectionPatch, MuxObservation, buildMuxConnectionPatch, validMuxHost } from 'src/app/services/mux-connection.service';
 
 type PoolType = 'stratum' | 'fallbackStratum';
+type ConnectionMode = 'direct' | 'mux';
 
 interface ITlsOption {
   value: number;
@@ -29,13 +31,30 @@ interface IChannelOption {
   templateUrl: './pool.component.html',
   styleUrls: ['./pool.component.scss']
 })
-export class PoolComponent implements OnInit {
+export class PoolComponent implements OnInit, OnDestroy {
   public form!: FormGroup;
   public savedChanges: boolean = false;
+  public connectionMode: ConnectionMode = 'direct';
+  public reviewedPatch?: MuxConnectionPatch;
+  public busy = false;
+  public restartPending = false;
+  public restartRequested = false;
+  public restartObserved = false;
+  public error = '';
+  public info?: SystemInfo;
+  private observedAt = 0;
+  private now = Date.now();
+  private destroy$ = new Subject<void>();
+  private monitor = new MuxConnectionMonitor();
+  private freshnessTimer?: ReturnType<typeof setInterval>;
+  private restartBaselineUptime = 0;
+  private restartRequestedAt = 0;
+  private confirmedMuxConnection?: MuxConnectionInput;
 
   public readonly DEFAULT_BITCOIN_ADDRESS = 'bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq';
 
   public pools: PoolType[] = ['stratum', 'fallbackStratum'];
+  public selectedPool: PoolType = 'stratum';
   public showPassword = { 'stratum': false, 'fallbackStratum': false };
   public showAdvancedOptions = { 'stratum': false, 'fallbackStratum': false };
 
@@ -68,9 +87,13 @@ export class PoolComponent implements OnInit {
   ) { }
 
   ngOnInit(): void {
-    this.liveDataService.info$
-      .pipe(first(), this.loadingService.lockUIUntilComplete())
-      .subscribe(info => {
+    const readings$ = this.uri ? timer(0, 5000).pipe(
+      exhaustMap(() => this.systemService.getInfo(this.uri).pipe(catchError(() => EMPTY)))
+    ) : this.liveDataService.info$;
+    readings$.pipe(takeUntil(this.destroy$)).subscribe(info => {
+        this.receiveInfo(info, this.uri ? Date.now() : this.liveDataService.lastUpdateAt);
+        // A telemetry update must never replace an edited connection draft.
+        if (this.form) return;
         this.asicModel = info.ASICModel || '';
         this.form = this.fb.group({
           stratumURL: [info.stratumURL, [
@@ -114,71 +137,157 @@ export class PoolComponent implements OnInit {
           fallbackStratumV2ChannelType: [info.fallbackStratumV2ChannelType || 'standard']
         });
 
-        const setupTlsValidation = (tlsControlName: string, certControlName: string) => {
-          this.form.get(tlsControlName)?.valueChanges.subscribe(value => {
-            const certControl = this.form.get(certControlName);
-            if (value === 2) {
-              certControl?.setValidators([
-                Validators.required,
-                this.pemCertificateValidator()
-              ]);
-            } else {
-              certControl?.clearValidators();
-            }
-            certControl?.updateValueAndValidity();
-          });
-        };
-
-        // Setup tls validation
-        setupTlsValidation('stratumTLS', 'stratumCert');
-        setupTlsValidation('fallbackStratumTLS', 'fallbackStratumCert');
-
-        // Trigger initial validation
-        this.form.get('stratumTLS')?.updateValueAndValidity();
-        this.form.get('fallbackStratumTLS')?.updateValueAndValidity();
+        for (const pool of this.pools) {
+          this.form.get(pool + 'TLS')!.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => this.updateAdvancedValidation(pool));
+          this.form.get(pool + 'Protocol')!.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => this.updateAdvancedValidation(pool));
+          this.updateAdvancedValidation(pool);
+        }
+        this.form.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => {
+          this.reviewedPatch = undefined;
+          this.error = '';
+        });
       });
+    this.freshnessTimer = setInterval(() => this.now = Date.now(), 1000);
   }
 
-  public updateSystem() {
-    const form = this.form.getRawValue();
-
-    if (form.stratumPassword === '*****') {
-      delete form.stratumPassword;
-    }
-    if (form.fallbackStratumPassword === '*****') {
-      delete form.fallbackStratumPassword;
-    }
-
-    this.systemService.updateSystem(this.uri, form)
-      .pipe(this.loadingService.lockUIUntilComplete())
-      .subscribe({
-        next: () => {
-          const successMessage = this.uri ? `Saved pool settings for ${this.uri}` : 'Saved pool settings';
-          this.toastr.warning('You must restart this device after saving for changes to take effect.');
-          this.toastr.success(successMessage);
-          this.savedChanges = true;
-        },
-        error: (err: HttpErrorResponse) => {
-          const errorMessage = this.uri ? `Could not save pool settings for ${this.uri}. ${err.message}` : `Could not save pool settings. ${err.message}`;
-          this.toastr.error(errorMessage);
-          this.savedChanges = false;
-        }
-      });
+  ngOnDestroy(): void {
+    clearInterval(this.freshnessTimer);
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
-  public restart() {
-    this.systemService.restart(this.uri)
-      .pipe(this.loadingService.lockUIUntilComplete())
-      .subscribe({
-        next: () => {
-          const successMessage = this.uri ? `Device at ${this.uri} restarted` : 'Device restarted';
-          this.toastr.success(successMessage);
-        },
-        error: (err: HttpErrorResponse) => {
-          const errorMessage = this.uri ? `Failed to restart device at ${this.uri}. ${err.message}` : `Failed to restart device. ${err.message}`;
-          this.toastr.error(errorMessage);
+  selectConnectionMode(mode: ConnectionMode): void {
+    if (this.busy || this.connectionMode === mode) return;
+    this.connectionMode = mode;
+    if (mode === 'mux') this.selectedPool = 'stratum';
+    this.reviewedPatch = undefined;
+    this.error = '';
+  }
+
+  get editablePools(): PoolType[] { return this.connectionMode === 'mux' ? ['stratum'] : this.pools; }
+
+  get muxConnection(): MuxConnectionInput {
+    const value = this.form?.getRawValue() || {};
+    return { host: String(value.stratumURL || ''), port: Number(value.stratumPort), worker: String(value.stratumUser || ''), password: value.stratumPassword };
+  }
+
+  get muxObservation(): MuxObservation | null {
+    return this.info ? this.monitor.evaluate(this.info, this.confirmedMuxConnection || this.muxConnection,
+      this.observedAt, this.now, this.restartPending, this.restartRequested) : null;
+  }
+
+  get telemetryFresh(): boolean { return !!this.info && this.observedAt > 0 && this.now - this.observedAt <= 15000; }
+
+  get deviceState(): string {
+    if (!this.info) return 'Waiting for device readings';
+    if (!this.telemetryFresh) return 'Device telemetry stale';
+    if (this.info.power_fault || this.info.hardware_fault || this.info.overheat_mode) return 'Miner needs attention';
+    if (this.restartPending) return this.restartRequested ? 'Waiting for miner restart' : 'Settings saved · restart pending';
+    if (this.connectionMode === 'mux') return this.muxObservation!.label;
+    if (this.info.miningPaused) return 'Mining paused';
+    return this.info.isUsingFallbackStratum ? 'Fallback route reported' : 'Primary route reported';
+  }
+
+  get savedPrimaryEndpoint(): string { return this.info?.stratumURL ? `${this.info.stratumURL}:${this.info.stratumPort}` : 'Unavailable'; }
+  get savedFallbackEndpoint(): string { return this.info?.fallbackStratumURL ? `${this.info.fallbackStratumURL}:${this.info.fallbackStratumPort}` : 'Not configured'; }
+  get fallbackDraftDirty(): boolean { return !!this.form && Object.entries(this.form.controls).some(([key, control]) => key.startsWith('fallbackStratum') && control.dirty); }
+  get fallbackUsesFactoryAddress(): boolean { return !!this.info?.fallbackStratumUser?.includes(this.DEFAULT_BITCOIN_ADDRESS); }
+  get muxConsoleUrl(): string | null { const host = this.muxConnection.host.trim(); return validMuxHost(host) ? `http://${host}:13050` : null; }
+
+  receiveInfo(info: SystemInfo, receivedAt: number): void {
+    if (receivedAt < this.observedAt) return;
+    this.now = Date.now();
+    this.info = info;
+    this.observedAt = receivedAt;
+    if (this.restartRequested && receivedAt > this.restartRequestedAt && Number.isFinite(info.uptimeSeconds)
+      && info.uptimeSeconds < this.restartBaselineUptime) {
+      this.restartPending = false;
+      this.restartRequested = false;
+      this.restartObserved = true;
+      this.monitor.reset();
+    }
+    this.monitor.observe(info);
+  }
+
+  reviewMuxConnection(): void {
+    if (this.busy || this.connectionMode !== 'mux' || !this.form) return;
+    this.form.markAllAsTouched();
+    try {
+      this.reviewedPatch = buildMuxConnectionPatch(this.muxConnection);
+      this.error = '';
+    } catch (error) {
+      this.reviewedPatch = undefined;
+      this.error = error instanceof Error ? error.message : 'Check the MUX connection fields.';
+    }
+  }
+
+  public updateSystem(): void {
+    if (this.busy || !this.form) return;
+    const isMux = this.connectionMode === 'mux';
+    if (isMux && !this.reviewedPatch) return;
+    if (!isMux && (!this.form.dirty || this.form.invalid)) return;
+    const submittedValues = this.form.getRawValue();
+    const patch = isMux ? { ...this.reviewedPatch! } : { ...submittedValues };
+    if (patch.stratumPassword === '*****') delete patch.stratumPassword;
+    if ('fallbackStratumPassword' in patch && patch.fallbackStratumPassword === '*****') delete patch.fallbackStratumPassword;
+    const savedMuxTarget = isMux ? { ...this.muxConnection } : undefined;
+    this.busy = true;
+    this.error = '';
+    this.systemService.updateSystem(this.uri, patch).pipe(takeUntil(this.destroy$), finalize(() => this.busy = false)).subscribe({
+      next: () => {
+        this.savedChanges = true;
+        this.restartPending = true;
+        this.restartRequested = false;
+        this.restartObserved = false;
+        this.confirmedMuxConnection = savedMuxTarget ? { host: savedMuxTarget.host, port: savedMuxTarget.port, worker: savedMuxTarget.worker } : undefined;
+        // Confirm only the submitted fields. In particular a MUX save does not
+        // save or discard a separate fallback draft.
+        for (const [key, value] of Object.entries(patch)) {
+          const control = this.form.get(key);
+          if (control && control.value === submittedValues[key]) {
+            control.setValue(key.endsWith('Password') ? '*****' : value, { emitEvent: false });
+            control.markAsPristine();
+          }
         }
-      });
+        this.updateAdvancedValidation('stratum');
+        this.updateAdvancedValidation('fallbackStratum');
+        this.reviewedPatch = undefined;
+        this.toastr.success(isMux ? 'MUX connection saved. Restart required.' : 'Pool settings saved. Restart required.');
+      },
+      error: () => {
+        this.error = 'The device did not confirm saving this connection. Your draft has been retained.';
+        this.toastr.error(this.error);
+      }
+    });
+  }
+
+  public restart(): void {
+    if (!this.restartPending || this.busy || this.restartRequested || !this.telemetryFresh) return;
+    this.busy = true;
+    this.error = '';
+    const baseline = this.info!.uptimeSeconds;
+    this.systemService.restart(this.uri).pipe(takeUntil(this.destroy$), finalize(() => this.busy = false)).subscribe({
+      next: () => {
+        this.restartBaselineUptime = baseline;
+        this.restartRequestedAt = Date.now();
+        this.restartRequested = true;
+        this.toastr.info('Restart requested. Waiting for a new boot in device telemetry.');
+      },
+      error: () => {
+        this.error = 'The device did not confirm the restart request.';
+        this.toastr.error(this.error);
+      }
+    });
+  }
+
+  private updateAdvancedValidation(pool: PoolType): void {
+    const isV2 = this.form.get(pool + 'Protocol')!.value === 'SV2';
+    const cert = this.form.get(pool + 'Cert')!;
+    cert.setValidators(!isV2 && this.form.get(pool + 'TLS')!.value === 2 ? [Validators.required, this.pemCertificateValidator()] : []);
+    cert.updateValueAndValidity({ emitEvent: false });
+    const authority = this.form.get(pool + 'V2AuthorityPubkey')!;
+    authority.setValidators(isV2 ? [this.base58Validator()] : []);
+    authority.updateValueAndValidity({ emitEvent: false });
   }
 
   private extractPort(url: string): { cleanUrl: string, port?: number } {
@@ -196,7 +305,8 @@ export class PoolComponent implements OnInit {
     const tlsControl = this.form.get(`${poolType}TLS`);
     if (!urlControl || !portControl || !tlsControl) return;
 
-    let urlValue = urlControl.value.trim() || '';
+    if (this.connectionMode === 'mux') return;
+    let urlValue = String(urlControl.value || '').trim();
 
     if (!urlValue) return;
 
@@ -206,7 +316,7 @@ export class PoolComponent implements OnInit {
       { prefix: 'stratum+ssl://', tlsMode: true }
     ] as const;
 
-    let isTlsMode = 0;
+    let isTlsMode = Number(tlsControl.value) || 0;
     const matched = prefixes.find(({ prefix }) => urlValue.startsWith(prefix));
     if (matched) {
       urlValue = urlValue.slice(matched.prefix.length);

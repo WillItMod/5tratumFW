@@ -2,6 +2,11 @@
  * Size: 8 px
  * Bpp: 1
  * Opts: --font oldschool_pc_font_pack_v2.2_linux/ttf - Mx (mixed outline+bitmap)/Mx437_Portfolio_6x8.ttf --bpp 1 --size 8 --format lvgl --range 0x20-0xFFFF -o portfolio_6x8
+ * Original font: Mx437_Portfolio_6x8.ttf, Oldschool PC Font Pack v2.2 by VileR.
+ * Source: https://int10h.org/oldschool-pc-fonts/
+ * Adaptation: converted to 1-bit LVGL C font data; inherited from ESP-Miner.
+ * Font data license: CC-BY-SA-4.0.
+ * See LICENSES/CC-BY-SA-4.0.txt and docs/third-party-notices.md.
  ******************************************************************************/
 
 #ifdef __has_include

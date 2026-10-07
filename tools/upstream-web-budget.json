@@ -1,0 +1,10 @@
+{
+  "upstream_repository": "https://github.com/bitaxeorg/ESP-Miner",
+  "upstream_tag": "v2.14.2",
+  "upstream_commit": "64680f8a4da0b9a3b532051f0aa18429fcf04e82",
+  "node_version": "24.14.0",
+  "measurement": "Production build with upstream npm lockfile, gzip level 9 and only-gzip.js",
+  "payload_bytes": 745556,
+  "compressed_javascript_bytes": 446585,
+  "www_partition_bytes": 3145728
+}

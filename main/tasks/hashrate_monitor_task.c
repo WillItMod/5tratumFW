@@ -8,6 +8,7 @@
 #include "asic_common.h"
 #include "asic.h"
 #include "utils.h"
+#include "mining_state.h"
 
 #define EPSILON 0.0001f
 
@@ -38,6 +39,23 @@ static float sum_hashrates(measurement_t * measurement, int asic_count)
         total += measurement[asic_nr].hashrate;
     }
     return total;
+}
+
+HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *pvParameters, uint64_t now_us)
+{
+    HashrateDisplaySnapshot snapshot = {0};
+    GlobalState *state = pvParameters;
+    if (!state) return snapshot;
+    HashrateMonitorModule *monitor = &state->HASHRATE_MONITOR_MODULE;
+    /* This build supports the single-ASIC Gamma. Do not infer a multi-chip
+     * aggregate's freshness from one chip's response. */
+    if (!monitor->is_initialized || !monitor->total_measurement ||
+        state->DEVICE_CONFIG.family.asic_count != 1) return snapshot;
+    pthread_mutex_lock(&monitor->lock);
+    const measurement_t *total = &monitor->total_measurement[0];
+    snapshot = hashrate_display_sample(total->hashrate, total->rate_sample_us, now_us);
+    pthread_mutex_unlock(&monitor->lock);
+    return snapshot;
 }
 
 void hashrate_monitor_reset_measurements(void *pvParameters)
@@ -159,16 +177,19 @@ void hashrate_monitor_task(void *pvParameters)
     HASHRATE_MONITOR_MODULE->error_measurement = heap_caps_malloc(asic_count * sizeof(measurement_t), MALLOC_CAP_SPIRAM);
 
     pthread_mutex_init(&HASHRATE_MONITOR_MODULE->lock, NULL);
+    /* Publish readiness only after all sample buffers (including display age)
+     * have been cleared. Readers must not see uninitialized sample metadata. */
+    memset(HASHRATE_MONITOR_MODULE->total_measurement, 0, asic_count * sizeof(measurement_t));
+    memset(data, 0, asic_count * hash_domains * sizeof(measurement_t));
+    memset(HASHRATE_MONITOR_MODULE->error_measurement, 0, asic_count * sizeof(measurement_t));
     HASHRATE_MONITOR_MODULE->is_initialized = true;
-
-    hashrate_monitor_reset_measurements(GLOBAL_STATE);
 
     init_averages();
 
     bool was_asic_initialized = false;
     TickType_t taskWakeTime = xTaskGetTickCount();
     while (1) {
-        bool is_asic_initialized = GLOBAL_STATE->ASIC_initalized;
+        bool is_asic_initialized = mining_state_work_allowed(GLOBAL_STATE);
 
         if (was_asic_initialized && !is_asic_initialized) {
             // ASIC just stopped (pause or overheat): clear measurements so that
@@ -219,9 +240,16 @@ void hashrate_monitor_register_read(void *pvParameters, register_type_t register
             update_hashrate(&HASHRATE_MONITOR_MODULE->total_measurement[asic_nr], value);
             update_hashrate(&HASHRATE_MONITOR_MODULE->domain_measurements[asic_nr][0], value);
             break;
-        case REGISTER_TOTAL_COUNT:
-            update_hash_counter(&HASHRATE_MONITOR_MODULE->total_measurement[asic_nr], value, timestamp_us);
+        case REGISTER_TOTAL_COUNT: {
+            measurement_t *total = &HASHRATE_MONITOR_MODULE->total_measurement[asic_nr];
+            uint64_t previous_time_us = total->time_us;
+            update_hash_counter(total, value, timestamp_us);
+            /* The first counter is only a baseline. Ignored short intervals
+             * and cached publication must never refresh a computed rate. */
+            if (previous_time_us != 0 && timestamp_us > previous_time_us &&
+                total->time_us == timestamp_us) total->rate_sample_us = timestamp_us;
             break;
+        }
         case REGISTER_DOMAIN_0_COUNT:
             update_hash_counter(&HASHRATE_MONITOR_MODULE->domain_measurements[asic_nr][0], value, timestamp_us);
             break;

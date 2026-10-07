@@ -28,7 +28,8 @@ typedef enum
     STRATUM_RESULT_VERSION_MASK,
     STRATUM_RESULT_SUBSCRIBE,
     CLIENT_RECONNECT,
-    CLIENT_SHOW_MESSAGE
+    CLIENT_SHOW_MESSAGE,
+    MINING_5TRATUM_STATUS
 } stratum_method;
 
 typedef enum
@@ -72,6 +73,7 @@ typedef struct
     uint32_t version_mask;
     // result
     bool response_success;
+    bool mux_status_valid;
     char * error_str;
 } StratumApiV1Message;
 

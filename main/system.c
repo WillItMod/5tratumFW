@@ -19,6 +19,7 @@
 #include "lwip/inet.h"
 
 #include "system.h"
+#include "mining_schedule.h"
 #include "i2c_bitaxe.h"
 #include "INA260.h"
 #include "adc.h"
@@ -248,6 +249,16 @@ esp_err_t SYSTEM_init_peripherals(GlobalState * GLOBAL_STATE) {
         return ret;
     }
 
+    if (!GLOBAL_STATE->SELF_TEST_MODULE.is_active && GLOBAL_STATE->SYSTEM_MODULE.mining_paused) {
+        ret = VCORE_set_voltage(GLOBAL_STATE, 0.0f);
+        mining_schedule_report_power(ret == ESP_OK, ret == ESP_OK ? NULL : "ASIC power-off failed at startup");
+        if (ret != ESP_OK) {
+            GLOBAL_STATE->SYSTEM_MODULE.hardware_fault = true;
+            snprintf(GLOBAL_STATE->SYSTEM_MODULE.hardware_fault_msg, sizeof(GLOBAL_STATE->SYSTEM_MODULE.hardware_fault_msg), "ASIC power-off failed at startup");
+            return ret;
+        }
+    }
+
     // For self-test, we set a stable known voltage before ASIC initialization
     if (GLOBAL_STATE->SELF_TEST_MODULE.is_active) {
         vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -328,6 +339,7 @@ void SYSTEM_notify_rejected_share(GlobalState * GLOBAL_STATE, char * error_msg)
 
 void SYSTEM_notify_new_ntime(GlobalState * GLOBAL_STATE, uint32_t ntime)
 {
+    if (mining_schedule_owns_clock()) return;
     SystemModule * module = &GLOBAL_STATE->SYSTEM_MODULE;
 
     // Hourly clock sync

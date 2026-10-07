@@ -1,4 +1,7 @@
 #include <string.h>
+#ifdef FIVE_TRATUM_OLED_HOST_TEST
+#include "oled_screen_runtime_stubs.h"
+#else
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_check.h"
@@ -10,6 +13,13 @@
 #include "display.h"
 #include "connect.h"
 #include "esp_timer.h"
+#include "5tratumfw.h"
+#include "mining_state.h"
+#include "mining_schedule.h"
+#include "mux_peer_status.h"
+#include "hashrate_monitor_task.h"
+#endif
+#include "oled_display_layout.h"
 
 typedef enum {
     SCR_SELF_TEST,
@@ -20,10 +30,14 @@ typedef enum {
     SCR_CONNECTION,
     SCR_BITAXE_LOGO,
     SCR_OSMU_LOGO,
+    SCR_CANDIDATE,
     SCR_URLS,
     SCR_STATS,
     SCR_MINING,
     SCR_WIFI,
+    SCR_HEALTH,
+    SCR_SHARES,
+    SCR_OPERATING,
     MAX_SCREENS,
 } screen_t;
 
@@ -32,12 +46,15 @@ typedef enum {
 
 #define SCR_CAROUSEL_START SCR_URLS
 
-extern const lv_img_dsc_t bitaxe_logo;
 extern const lv_img_dsc_t osmu_logo;
 extern const lv_img_dsc_t identify_text;
 
 static lv_obj_t * screens[MAX_SCREENS];
-static int delays_ms[MAX_SCREENS] = {0, 0, 0, 0, 0, 1000, 3000, 3000, 10000, 10000, 10000, 10000};
+static int delays_ms[MAX_SCREENS] = {
+    [SCR_CONNECTION]=1000, [SCR_BITAXE_LOGO]=3000, [SCR_OSMU_LOGO]=3000,
+    [SCR_URLS]=8000, [SCR_STATS]=10000, [SCR_MINING]=8000, [SCR_WIFI]=8000,
+    [SCR_HEALTH]=8000, [SCR_SHARES]=8000, [SCR_OPERATING]=8000,
+};
 
 static int current_screen_time_ms;
 static int current_screen_delay_ms;
@@ -46,6 +63,19 @@ static int current_screen_delay_ms;
 static int screen_lines;
 
 static GlobalState * GLOBAL_STATE;
+static bool compact_oled;
+static bool compact_boot_shown;
+static FiveTratumOledView compact_views[MAX_SCREENS];
+static FiveTratumOledView compact_identify;
+
+static const FiveTratumOledPage compact_pages[MAX_SCREENS] = {
+    [SCR_SELF_TEST]=OLED_SELF_TEST, [SCR_OVERHEAT]=OLED_OVERHEAT,
+    [SCR_ASIC_STATUS]=OLED_FAULT, [SCR_WELCOME]=OLED_SETUP, [SCR_FIRMWARE]=OLED_UPDATE,
+    [SCR_CONNECTION]=OLED_CONNECTION, [SCR_BITAXE_LOGO]=OLED_BOOT, [SCR_OSMU_LOGO]=OLED_CREDITS,
+    [SCR_CANDIDATE]=OLED_CANDIDATE, [SCR_URLS]=OLED_ROUTE, [SCR_STATS]=OLED_RATE,
+    [SCR_MINING]=OLED_JOB, [SCR_WIFI]=OLED_WIFI, [SCR_HEALTH]=OLED_HEALTH,
+    [SCR_SHARES]=OLED_SHARES, [SCR_OPERATING]=OLED_OPERATING,
+};
 
 static lv_obj_t *self_test_message_label;
 static lv_obj_t *self_test_result_label;
@@ -129,7 +159,7 @@ static lv_obj_t * create_scr_self_test() {
     lv_obj_t * scr = create_flex_screen(4);
 
     lv_obj_t *label1 = lv_label_create(scr);
-    lv_label_set_text(label1, "BITAXE SELF-TEST");
+    lv_label_set_text(label1, FIVE_STRATUM_FW_NAME " SELF-TEST");
 
     self_test_message_label = lv_label_create(scr);
     self_test_result_label = lv_label_create(scr);
@@ -147,7 +177,7 @@ static lv_obj_t * create_scr_overheat() {
     lv_obj_t *label2 = lv_label_create(scr);
     lv_obj_set_width(label2, LV_HOR_RES);
     lv_label_set_long_mode(label2, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_label_set_text(label2, "Power, frequency and fan configurations have been reset. Go to AxeOS to reconfigure device.");
+    lv_label_set_text(label2, "Power, frequency and fan configurations have been reset. Go to 5tratumFW to reconfigure device.");
 
     lv_obj_t *label3 = lv_label_create(scr);
     lv_label_set_text(label3, "IP Address:");
@@ -205,7 +235,7 @@ static lv_obj_t * create_scr_welcome(const char * ap_ssid) {
     lv_obj_set_width(label1, lv_pct(100));
     lv_obj_set_style_anim_duration(label1, 15000, LV_PART_MAIN);
     lv_label_set_long_mode(label1, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_label_set_text(label1, "Welcome to your new Bitaxe! Connect to the configuration Wi-Fi and connect the Bitaxe to your network.");
+    lv_label_set_text(label1, "Welcome to 5tratumFW! Connect to the configuration Wi-Fi and connect your Bitaxe to your network.");
 
     // add a bit of padding, it looks nicer this way
     lv_obj_set_style_pad_bottom(label1, 4, LV_PART_MAIN);
@@ -256,19 +286,16 @@ static lv_obj_t * create_scr_connection(const char * ssid, const char * ap_ssid)
 }
 
 static lv_obj_t * create_scr_bitaxe_logo(const char * name, const char * board_version) {
-    lv_obj_t * scr = lv_obj_create(NULL);
-
-    lv_obj_t *img = lv_img_create(scr);
-    lv_img_set_src(img, &bitaxe_logo);
-    lv_obj_align(img, LV_ALIGN_CENTER, 0, 1);
+    lv_obj_t * scr = create_flex_screen(3);
 
     lv_obj_t *label1 = lv_label_create(scr);
-    lv_label_set_text(label1, name);
-    lv_obj_align(label1, LV_ALIGN_RIGHT_MID, -6, -12);
+    lv_label_set_text(label1, FIVE_STRATUM_FW_NAME);
 
     lv_obj_t *label2 = lv_label_create(scr);
-    lv_label_set_text(label2, board_version);
-    lv_obj_align(label2, LV_ALIGN_RIGHT_MID, -6, -4);
+    lv_label_set_text_fmt(label2, "Bitaxe %s %s", name, board_version);
+
+    lv_obj_t *label3 = lv_label_create(scr);
+    lv_label_set_text(label3, "Open source ESP-Miner");
 
     return scr;
 }
@@ -359,6 +386,17 @@ static lv_obj_t * create_scr_wifi() {
 
 static void scr_create_overlay()
 {
+    if (compact_oled) {
+        compact_identify = oled_create_view_on(lv_layer_top(), OLED_CANDIDATE);
+        identify_image = compact_identify.screen;
+        lv_label_set_text(compact_identify.title, "IDENTIFY");
+        lv_label_set_text(compact_identify.rows[0], "Identify miner");
+        lv_label_set_text(compact_identify.rows[2], "Button to exit");
+        lv_obj_add_flag(identify_image, LV_OBJ_FLAG_HIDDEN);
+        notification_label = lv_label_create(lv_layer_top());
+        lv_obj_add_flag(notification_label, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
     identify_image = lv_img_create(lv_layer_top());
     lv_img_set_src(identify_image, &identify_text);
     lv_obj_align(identify_image, LV_ALIGN_CENTER, 0, 0);
@@ -371,6 +409,7 @@ static void scr_create_overlay()
 
 static bool screen_show(screen_t screen)
 {
+    if (screen < 0 || screen >= MAX_SCREENS) return false;
     if (!lvgl_port_lock(0)) {
         return false;
     }
@@ -386,8 +425,10 @@ static bool screen_show(screen_t screen)
 
         is_valid = lv_obj_is_valid(scr);
         if (is_valid) {
-            bool auto_del = current_screen == SCR_BITAXE_LOGO || current_screen == SCR_OSMU_LOGO;
-            lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, LV_DEF_REFR_PERIOD * 128 / 8, 0, auto_del);
+            bool auto_del = !compact_oled && (current_screen == SCR_BITAXE_LOGO || current_screen == SCR_OSMU_LOGO);
+            if (compact_oled) lv_screen_load(scr);
+            else lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, LV_DEF_REFR_PERIOD * 128 / 8, 0, auto_del);
+            if (auto_del) screens[current_screen] = NULL;
         }
 
         current_screen_time_ms = 0;
@@ -401,15 +442,124 @@ static bool screen_show(screen_t screen)
 
 void screen_next()
 {
+    if (!GLOBAL_STATE || !lvgl_port_lock(0)) return;
+    SystemModule *module = &GLOBAL_STATE->SYSTEM_MODULE;
+    if (oled_safety_active(GLOBAL_STATE->SELF_TEST_MODULE.is_active, module->overheat_mode,
+                           module->hardware_fault, module->asic_status != NULL) || module->is_firmware_update) {
+        lvgl_port_unlock();
+        return;
+    }
     screen_t next_scr = get_current_screen();
-    do {
+    for (int attempt=0; attempt<MAX_SCREENS; ++attempt) {
         next_scr++;
 
         if (next_scr == MAX_SCREENS) {
             next_scr = SCR_CAROUSEL_START;
         }
+        if (next_scr == SCR_CANDIDATE) continue;
 
-    } while (!screen_show(next_scr));
+        if (compact_oled && next_scr == SCR_MINING &&
+            (GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2 ||
+             !(module->is_using_fallback ? module->fallback_pool_decode_coinbase_tx : module->pool_decode_coinbase_tx))) continue;
+        if (screen_show(next_scr)) break;
+    }
+    lvgl_port_unlock();
+}
+
+static FiveTratumOledData compact_data(void)
+{
+    const SystemModule *s = &GLOBAL_STATE->SYSTEM_MODULE;
+    const PowerManagementModule *p = &GLOBAL_STATE->POWER_MANAGEMENT_MODULE;
+    FiveTratumMuxSnapshot mux = mux_peer_status_snapshot();
+    int8_t rssi = -128;
+    if (s->is_connected) get_wifi_current_rssi(&rssi);
+    int64_t now_us = esp_timer_get_time();
+    int64_t elapsed = now_us - s->start_time;
+    HashrateDisplaySnapshot rate = hashrate_monitor_display_snapshot(GLOBAL_STATE, now_us > 0 ? (uint64_t)now_us : 0);
+    FiveTratumOledData d = {
+        .rate_gh=rate.rate_gh, .rate_fresh=rate.fresh, .temperature_c=p->chip_temp_avg, .temperature2_c=p->chip_temp2_avg,
+        .vr_temperature_c=p->vr_temp, .power_w=p->power, .fan_percent=p->fan_perc, .fan_rpm=p->fan_rpm,
+        .configured_mhz=nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY),
+        .configured_mv=nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE), .core_mv=p->core_voltage, .input_mv=p->voltage,
+        .accepted=s->shares_accepted, .rejected=s->shares_rejected, .uptime_seconds=elapsed>0 ? elapsed/1000000 : 0,
+        .rssi=rssi, .block_height=GLOBAL_STATE->block_height, .initialized=GLOBAL_STATE->ASIC_initalized,
+        .runtime_ready=s->mining_runtime_ready, .requested_paused=mining_state_should_stop(GLOBAL_STATE),
+        .applied_paused=mining_schedule_applied_paused(), .pools_unavailable=s->pools_unavailable,
+        .wifi_connected=s->is_connected, .fallback=s->is_using_fallback,
+        .sv2=GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2,
+        .tls=(s->is_using_fallback ? s->fallback_pool_tls : s->pool_tls) != 0,
+        .mux_connected=mux.connected, .mux_acknowledged=mux.acknowledged,
+        .mux_expired=mux.expired, .mux_fallback=mux.fallback,
+        .hardware_fault=s->hardware_fault, .best_session=s->best_session_diff_string, .best_ever=s->best_diff_string,
+        .host=s->is_using_fallback ? s->fallback_pool_url : s->pool_url, .ip=s->ip_addr_str,
+        .ssid=s->ssid, .ap_ssid=s->ap_ssid, .network_difficulty=GLOBAL_STATE->network_diff_string,
+        .scriptsig=GLOBAL_STATE->scriptsig, .message=s->hardware_fault ? s->hardware_fault_msg : s->asic_status,
+        .filename=s->firmware_update_filename, .update_status=s->firmware_update_status,
+        .board_name=GLOBAL_STATE->DEVICE_CONFIG.family.name, .board_version=GLOBAL_STATE->DEVICE_CONFIG.board_version,
+    };
+    return d;
+}
+
+static void compact_update(void)
+{
+    SystemModule *s = &GLOBAL_STATE->SYSTEM_MODULE;
+    FiveTratumOledData d = compact_data();
+    FiveTratumOledPage priority = oled_priority_page(GLOBAL_STATE->SELF_TEST_MODULE.is_active, s->overheat_mode,
+                                                    s->hardware_fault, s->asic_status != NULL, s->is_firmware_update);
+    bool safety = oled_safety_active(GLOBAL_STATE->SELF_TEST_MODULE.is_active, s->overheat_mode,
+                                    s->hardware_fault, s->asic_status != NULL);
+    bool identify = s->identify_mode_time_ms > 0 && !safety && !s->is_firmware_update;
+    if (identify) display_on(true);
+    lv_obj_set_flag(identify_image, LV_OBJ_FLAG_HIDDEN, !identify);
+    lv_label_set_text_fmt(compact_identify.rows[1], "IP %s", oled_text(s->ip_addr_str));
+    lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_TRANSP, 0);
+
+    screen_t forced = MAX_SCREENS;
+    if (priority == OLED_OVERHEAT) forced = SCR_OVERHEAT;
+    else if (priority == OLED_FAULT) forced = SCR_ASIC_STATUS;
+    else if (priority == OLED_SELF_TEST) {
+        d.message=GLOBAL_STATE->SELF_TEST_MODULE.message;
+        d.result=GLOBAL_STATE->SELF_TEST_MODULE.is_finished ? GLOBAL_STATE->SELF_TEST_MODULE.result : "";
+        d.finished=GLOBAL_STATE->SELF_TEST_MODULE.is_finished ? GLOBAL_STATE->SELF_TEST_MODULE.finished : "";
+        forced = SCR_SELF_TEST;
+    } else if (priority == OLED_UPDATE) forced = SCR_FIRMWARE;
+    if (forced != MAX_SCREENS) {
+        oled_render_view(&compact_views[forced], &d);
+        screen_show(forced);
+        display_on(true);
+        return;
+    }
+    if (!s->ssid || !s->ssid[0]) forced = SCR_WELCOME;
+    else if (s->ap_enabled || !s->is_connected) { d.message=s->wifi_status; forced=SCR_CONNECTION; }
+    if (forced != MAX_SCREENS) {
+        oled_render_view(&compact_views[forced], &d);
+        screen_show(forced);
+        return;
+    }
+    for (screen_t page=SCR_URLS; page<MAX_SCREENS; ++page) oled_render_view(&compact_views[page], &d);
+    if (s->show_new_block) {
+        oled_render_view(&compact_views[SCR_CANDIDATE], &d);
+        screen_show(SCR_CANDIDATE);
+        display_on(true);
+        lv_display_trigger_activity(NULL);
+        return;
+    }
+    screen_t current = get_current_screen();
+    if (!compact_boot_shown) {
+        oled_render_view(&compact_views[SCR_BITAXE_LOGO], &d);
+        oled_render_view(&compact_views[SCR_OSMU_LOGO], &d);
+        compact_boot_shown = screen_show(SCR_BITAXE_LOGO);
+        return;
+    }
+    if (current == SCR_BITAXE_LOGO || current == SCR_OSMU_LOGO) {
+        current_screen_time_ms += SCREEN_UPDATE_MS;
+        if (current_screen_time_ms > current_screen_delay_ms)
+            screen_show(current == SCR_BITAXE_LOGO ? SCR_OSMU_LOGO : SCR_STATS);
+        return;
+    }
+    if (current < SCR_CAROUSEL_START || current >= MAX_SCREENS) { screen_show(SCR_STATS); return; }
+    current_screen_time_ms += SCREEN_UPDATE_MS;
+    if (current_screen_time_ms > current_screen_delay_ms) screen_next();
 }
 
 static void screen_update_cb(lv_timer_t * timer)
@@ -445,6 +595,11 @@ static void screen_update_cb(lv_timer_t * timer)
     }
 
     display_on(enable_display);
+
+    if (compact_oled) {
+        compact_update();
+        return;
+    }
 
     if (GLOBAL_STATE->SELF_TEST_MODULE.is_active) {
         SelfTestModule * self_test = &GLOBAL_STATE->SELF_TEST_MODULE;
@@ -543,7 +698,7 @@ static void screen_update_cb(lv_timer_t * timer)
         if (module->show_new_block) {
             lv_obj_set_width(stats_difficulty_label, LV_HOR_RES);
             lv_label_set_long_mode(stats_difficulty_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-            lv_label_set_text_fmt(stats_difficulty_label, "Best: %s   !!! BLOCK FOUND !!!", module->best_session_diff_string);
+            lv_label_set_text_fmt(stats_difficulty_label, "Best: %s   BLOCK CANDIDATE - check pool acceptance", module->best_session_diff_string);
         } else {
             lv_label_set_text_fmt(stats_difficulty_label, "Best: %s/%s", module->best_session_diff_string, module->best_diff_string);
         }
@@ -611,9 +766,9 @@ static void screen_update_cb(lv_timer_t * timer)
         current_rssi_value = rssi_value;
     }
 
-    uint32_t shares_accepted = module->shares_accepted;
-    uint32_t shares_rejected = module->shares_rejected;
-    uint32_t work_received = module->work_received;
+    uint64_t shares_accepted = module->shares_accepted;
+    uint64_t shares_rejected = module->shares_rejected;
+    uint64_t work_received = module->work_received;
 
     if (current_shares_accepted != shares_accepted 
         || current_shares_rejected != shares_rejected
@@ -651,11 +806,13 @@ static void screen_update_cb(lv_timer_t * timer)
 
 void screen_button_press() 
 {
+    if (!GLOBAL_STATE || !lvgl_port_lock(0)) return;
     if (GLOBAL_STATE->SYSTEM_MODULE.identify_mode_time_ms > 0) {
         GLOBAL_STATE->SYSTEM_MODULE.identify_mode_time_ms = 0;
     } else {
         screen_next();
     }
+    lvgl_port_unlock();
 }
 
 static void uptime_update_cb(lv_timer_t * timer)
@@ -694,9 +851,21 @@ esp_err_t screen_start(void * pvParameters)
         screen_lines = lv_display_get_vertical_resolution(NULL) / 8;
 
         GLOBAL_STATE = (GlobalState *) pvParameters;
+        compact_oled = LV_HOR_RES == 128 && LV_VER_RES == 32;
         SystemModule * SYSTEM_MODULE = &GLOBAL_STATE->SYSTEM_MODULE;
 
         if (SYSTEM_MODULE->is_screen_active) {
+
+            if (compact_oled) {
+                for (screen_t page=0; page<MAX_SCREENS; ++page) {
+                    compact_views[page] = oled_create_view(compact_pages[page]);
+                    screens[page] = compact_views[page].screen;
+                }
+                scr_create_overlay();
+                lv_timer_create(screen_update_cb, SCREEN_UPDATE_MS, NULL);
+                lvgl_port_unlock();
+                return ESP_OK;
+            }
 
             screens[SCR_SELF_TEST] = create_scr_self_test();
             screens[SCR_OVERHEAT] = create_scr_overheat();

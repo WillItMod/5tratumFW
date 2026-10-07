@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "scoreboard.h"
 #include "self_test.h"
+#include "mining_state.h"
 
 static const char *TAG = "asic_result";
 
@@ -25,7 +26,7 @@ void ASIC_result_task(void *pvParameters)
     while (1)
     {
         // Check if ASIC is initialized before trying to process work
-        if (!GLOBAL_STATE->ASIC_initalized) {
+        if (!mining_state_work_allowed(GLOBAL_STATE)) {
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;
         }

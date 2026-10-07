@@ -5,6 +5,7 @@ import { SensitiveData } from 'src/app/services/sensitive-data.service';
 import { LayoutService } from "./service/app.layout.service";
 import { AppSidebarComponent } from "./app.sidebar.component";
 import { AppTopBarComponent } from './app.topbar.component';
+import { LiveDataService } from 'src/app/services/live-data.service';
 
 @Component({
     selector: 'app-layout',
@@ -14,6 +15,7 @@ export class AppLayoutComponent implements OnDestroy {
     private destroy$ = new Subject<void>();
 
     public sensitiveDataHidden: boolean = false;
+    public hasTelemetry = false;
 
     overlayMenuOpenSubscription: Subscription;
 
@@ -30,6 +32,7 @@ export class AppLayoutComponent implements OnDestroy {
       public renderer: Renderer2,
       public router: Router,
       private sensitiveData: SensitiveData,
+      private liveData: LiveDataService,
     ) {
         this.overlayMenuOpenSubscription = this.layoutService.overlayOpen$.subscribe(() => {
             if (!this.menuOutsideClickListener) {
@@ -113,6 +116,11 @@ export class AppLayoutComponent implements OnDestroy {
     }
 
     ngOnInit() {
+        this.liveData.info$.pipe(takeUntil(this.destroy$)).subscribe(info => {
+            this.hasTelemetry = true;
+            // The guard may have opened the shell before a slow first response.
+            if (info.apEnabled && !this.isAPMode) this.router.navigate(['/ap']);
+        });
         this.sensitiveData.hidden
           .pipe(takeUntil(this.destroy$))
           .subscribe((hidden: boolean) => {

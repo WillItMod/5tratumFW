@@ -27,38 +27,60 @@ interface LayoutState {
 })
 export class LayoutService {
     private darkTheme = {
-        '--surface-a': '#0B1219',  // Darker navy
-        '--surface-b': '#070D17',  // Very dark navy (from image)
+        '--surface-a': '#101925',
+        '--surface-b': '#0b121e',
         '--surface-c': 'rgba(255,255,255,0.03)',
-        '--surface-d': '#1A2632',  // Slightly lighter navy
-        '--surface-e': '#0B1219',
-        '--surface-f': '#0B1219',
-        '--surface-ground': '#070D17',
-        '--surface-section': '#070D17',
-        '--surface-card': '#0B1219',
-        '--surface-overlay': '#0B1219',
-        '--surface-border': '#1A2632',
+        '--surface-d': '#293747',
+        '--surface-e': '#101925',
+        '--surface-f': '#101925',
+        '--surface-ground': '#0b121e',
+        '--surface-section': '#0b121e',
+        '--surface-card': '#101925',
+        '--surface-overlay': '#101925',
+        '--surface-border': '#293747',
+        '--surface-0': '#0b121e',
+        '--surface-50': '#293747',
+        '--surface-100': '#3d4a5d',
+        '--surface-200': '#59697e',
+        '--surface-300': '#7e90a6',
+        '--surface-400': '#96a4b8',
+        '--surface-500': '#a7b5c8',
+        '--surface-600': '#bdcbdc',
+        '--surface-700': '#cedaeb',
+        '--surface-800': '#e0e8f3',
+        '--surface-900': '#e8eef8',
         '--surface-hover': 'rgba(255,255,255,0.03)',
-        '--text-color': 'rgba(255, 255, 255, 0.87)',
-        '--text-color-secondary': 'rgba(255, 255, 255, 0.6)',
+        '--text-color': '#e8eef8',
+        '--text-color-secondary': '#96a4b8',
         '--maskbg': 'rgba(0,0,0,0.4)'
     };
 
     private lightTheme = {
-        '--surface-a': '#1a2632',  // Lighter navy for main background
-        '--surface-b': '#243447',  // Medium navy for secondary background
-        '--surface-c': 'rgba(255,255,255,0.03)',
-        '--surface-d': '#2f4562',  // Light navy for borders
-        '--surface-e': '#1a2632',
-        '--surface-f': '#1a2632',
-        '--surface-ground': '#243447',
-        '--surface-section': '#1a2632',
-        '--surface-card': '#1a2632',
-        '--surface-overlay': '#1a2632',
-        '--surface-border': '#2f4562',
-        '--surface-hover': 'rgba(255,255,255,0.03)',
-        '--text-color': 'rgba(255, 255, 255, 0.9)',  // Slightly brighter text
-        '--text-color-secondary': 'rgba(255, 255, 255, 0.7)',  // Brighter secondary text
+        '--surface-a': '#e4eaf2',
+        '--surface-b': '#f1f4f9',
+        '--surface-c': 'rgba(19,33,51,0.04)',
+        '--surface-d': '#cbd5e2',
+        '--surface-e': '#e4eaf2',
+        '--surface-f': '#e4eaf2',
+        '--surface-ground': '#f1f4f9',
+        '--surface-section': '#f1f4f9',
+        '--surface-card': '#e4eaf2',
+        '--surface-overlay': '#e4eaf2',
+        '--surface-border': '#cbd5e2',
+        '--surface-0': '#f1f4f9',
+        '--surface-50': '#e4eaf2',
+        '--surface-100': '#cbd5e2',
+        '--surface-200': '#adbaca',
+        '--surface-300': '#8494a9',
+        '--surface-400': '#536379',
+        '--surface-500': '#465a70',
+        '--surface-600': '#35485f',
+        '--surface-700': '#273b51',
+        '--surface-800': '#1d2f44',
+        '--surface-900': '#132133',
+        '--surface-hover': 'rgba(19,33,51,0.04)',
+        '--text-color': '#132133',
+        '--text-color-secondary': '#536379',
         '--maskbg': 'rgba(0,0,0,0.2)'
     };
 
@@ -106,34 +128,6 @@ export class LayoutService {
                             document.documentElement.style.setProperty(key, value);
                         });
                     }
-                } else {
-                    // Save default red dark theme if no settings exist
-                    this.themeService.saveThemeSettings({
-                        colorScheme: 'dark',
-                        accentColors: {
-                            '--primary-color': '#F80421',
-                            '--primary-color-text': '#ffffff',
-                            '--highlight-bg': '#F80421',
-                            '--highlight-text-color': '#ffffff',
-                            '--focus-ring': '0 0 0 0.2rem rgba(248,4,33,0.2)',
-                            '--slider-bg': '#dee2e6',
-                            '--slider-range-bg': '#F80421',
-                            '--slider-handle-bg': '#F80421',
-                            '--progressbar-bg': '#dee2e6',
-                            '--progressbar-value-bg': '#F80421',
-                            '--checkbox-border': '#F80421',
-                            '--checkbox-bg': '#F80421',
-                            '--checkbox-hover-bg': '#df031d',
-                            '--button-bg': '#F80421',
-                            '--button-hover-bg': '#df031d',
-                            '--button-focus-shadow': '0 0 0 2px #ffffff, 0 0 0 4px #F80421',
-                            '--togglebutton-bg': '#F80421',
-                            '--togglebutton-border': '1px solid #F80421',
-                            '--togglebutton-hover-bg': '#df031d',
-                            '--togglebutton-hover-border': '1px solid #df031d',
-                            '--togglebutton-text-color': '#ffffff'
-                        }
-                    }).subscribe();
                 }
                 // Update signal with config
                 this.config.set(this._config);
@@ -211,6 +205,36 @@ export class LayoutService {
         Object.entries(themeVars).forEach(([key, value]) => {
             document.documentElement.style.setProperty(key, value);
         });
+
+        // Orbit defaults are presentation-only. Never write device preferences on load.
+        const light = config.colorScheme === 'light';
+        const accent = light ? '#006681' : '#20cfff';
+        const button = light ? '#006681' : '#17677f';
+        const hover = light ? '#00516a' : '#207e99';
+        const accentVars = {
+            '--primary-color': accent,
+            '--primary-color-text': '#ffffff',
+            '--highlight-bg': light ? '#d4eaf5' : '#103044',
+            '--highlight-text-color': light ? '#132133' : '#e8eef8',
+            '--focus-ring': `0 0 0 0.2rem ${light ? 'rgba(0,102,129,.25)' : 'rgba(32,207,255,.25)'}`,
+            '--slider-bg': themeVars['--surface-d'],
+            '--slider-range-bg': accent,
+            '--slider-handle-bg': accent,
+            '--progressbar-bg': themeVars['--surface-d'],
+            '--progressbar-value-bg': accent,
+            '--checkbox-border': button,
+            '--checkbox-bg': button,
+            '--checkbox-hover-bg': hover,
+            '--button-bg': button,
+            '--button-hover-bg': hover,
+            '--button-focus-shadow': `0 0 0 2px ${themeVars['--surface-card']}, 0 0 0 4px ${accent}`,
+            '--togglebutton-bg': button,
+            '--togglebutton-border': `1px solid ${button}`,
+            '--togglebutton-hover-bg': hover,
+            '--togglebutton-hover-border': `1px solid ${hover}`,
+            '--togglebutton-text-color': '#ffffff',
+        };
+        Object.entries(accentVars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
 
         // Load theme settings from NVS
         this.themeService.getThemeSettings().subscribe(

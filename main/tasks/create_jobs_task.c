@@ -16,6 +16,7 @@
 #include "stratum_api.h"
 #include "stratum_v2_task.h"
 #include "utils.h"
+#include "mining_state.h"
 
 static const char *TAG = "create_jobs_task";
 
@@ -123,7 +124,7 @@ void create_jobs_task(void *pvParameters)
                 GLOBAL_STATE->new_set_mining_difficulty_msg = false;
             }
 
-            if (GLOBAL_STATE->new_stratum_version_rolling_msg && GLOBAL_STATE->ASIC_initalized) {
+            if (GLOBAL_STATE->new_stratum_version_rolling_msg && mining_state_work_allowed(GLOBAL_STATE)) {
                 ESP_LOGI(TAG, "Set chip version rolls %i", (int)(GLOBAL_STATE->version_mask >> 13));
                 ASIC_set_version_mask(GLOBAL_STATE, GLOBAL_STATE->version_mask);
                 GLOBAL_STATE->new_stratum_version_rolling_msg = false;
@@ -217,7 +218,7 @@ static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification
     next_job->version_mask = GLOBAL_STATE->version_mask;
 
     // Check if ASIC is initialized before trying to send work
-    if (!GLOBAL_STATE->ASIC_initalized) {
+    if (!mining_state_work_allowed(GLOBAL_STATE)) {
         // Clean up the job since we're not sending it
         // Note: This job was never stored in active_jobs, so it's safe to free
         ESP_LOGW(TAG, "ASIC not initialized, skipping job send");
@@ -293,7 +294,7 @@ static void generate_work_sv2(GlobalState *GLOBAL_STATE, sv2_job_t *sv2_job, dou
     next_job->extranonce2 = strdup(""); // unused in SV2 standard
     next_job->version_mask = version_mask;
 
-    if (!GLOBAL_STATE->ASIC_initalized) {
+    if (!mining_state_work_allowed(GLOBAL_STATE)) {
         ESP_LOGW(TAG, "ASIC not initialized, skipping SV2 job send");
         free(next_job->jobid);
         free(next_job->extranonce2);
@@ -399,7 +400,7 @@ static void generate_work_sv2_ext(GlobalState *GLOBAL_STATE, sv2_ext_job_t *ext_
     next_job->extranonce2 = strdup(en2_hex);
     next_job->version_mask = version_mask;
 
-    if (!GLOBAL_STATE->ASIC_initalized) {
+    if (!mining_state_work_allowed(GLOBAL_STATE)) {
         ESP_LOGW(TAG, "ASIC not initialized, skipping SV2 ext job send");
         free(next_job->jobid);
         free(next_job->extranonce2);

@@ -1,45 +1,56 @@
-<form *ngIf="form" [formGroup]="form">
-    <div class="card">
-        <div class="field grid p-fluid">
-            <label for="hostname" class="col-12 md:col-2 md:m-0">
-                <tooltip-text-icon
-                    text="Hostname"
-                    tooltip="Name of the device on your local network"
-                />
-            </label>
-            <div class="col-12 md:col-10">
-                <input pInputText id="hostname" type="text" formControlName="hostname" />
+<form *ngIf="form" [formGroup]="form" class="routing-console routing-network">
+    <section class="routing-editor" aria-labelledby="networkIdentityHeading">
+        <div class="routing-editor-intro">
+            <h2 id="networkIdentityHeading">Device identity</h2>
+        </div>
+        <div class="routing-editor-body">
+            <div class="routing-field">
+                <label for="hostname">Hostname</label>
+                <input pInputText id="hostname" type="text" formControlName="hostname" spellcheck="false" aria-describedby="hostnameHint" />
+                <small id="hostnameHint">Changing the hostname does not require a restart.</small>
             </div>
         </div>
-        <div class="field grid p-fluid">
-            <label for="ssid" class="col-12 md:col-2 md:m-0">Wi-Fi SSID</label>
-            <div class="col-12 md:col-10 p-inputgroup">
-                <input pInputText id="ssid" type="text" formControlName="ssid" />
-                <p-button
-                    icon="pi pi-search"
-                    pp-button
-                    (click)="scanWifi()"
-                    [loading]="scanning"
-                    pTooltip="Scan Wi-Fi"
-                    tooltipPosition="left"></p-button>
-            </div>
-        </div>
-        <div class="field grid p-fluid">
-            <label for="wifiPass" class="col-12 md:col-2 md:m-0">Wi-Fi Password</label>
-            <div class="col-12 md:col-10 p-input-icon-right">
-                <i *ngIf="form.get('wifiPass')?.dirty" class="pi cursor-pointer"
-                    [ngClass]="{'pi-eye': !showWifiPassword, 'pi-eye-slash': showWifiPassword}"
-                    (click)="toggleWifiPasswordVisibility()"></i>
-                <input pInputText id="wifiPass" formControlName="wifiPass"
-                    [type]="showWifiPassword ? 'text' : 'password'"
-                    placeholder="Enter Wi-Fi password" />
-            </div>
-        </div>
+    </section>
 
-        <div class="flex mt-5 gap-3">
-            <button pButton [disabled]="!form.dirty || form.invalid" (click)="updateSystem()"
-                class="btn btn-primary">Save</button>
-            <button pButton [disabled]="!savedChanges" (click)="restart()">Restart</button>
+    <section class="routing-editor" aria-labelledby="networkWifiHeading">
+        <div class="routing-editor-intro">
+            <h2 id="networkWifiHeading">Wi-Fi</h2>
         </div>
-    </div>
+        <div class="routing-editor-body">
+            <div class="routing-field">
+                <label for="ssid">Network name / SSID</label>
+                <div class="routing-input-action routing-wifi-input">
+                    <input pInputText id="ssid" type="text" formControlName="ssid" spellcheck="false" />
+                    <button type="button" class="routing-scan" (click)="scanWifi()" [disabled]="scanning" [attr.aria-busy]="scanning">
+                        <i class="pi" [ngClass]="scanning ? 'pi-spin pi-spinner' : 'pi-search'" aria-hidden="true"></i>
+                        <span>{{ scanning ? 'Scanning…' : 'Scan Wi-Fi' }}</span>
+                    </button>
+                </div>
+            </div>
+            <div class="routing-field">
+                <label for="wifiPass">Wi-Fi password</label>
+                <div class="routing-input-action">
+                    <input pInputText id="wifiPass" formControlName="wifiPass" [type]="showWifiPassword ? 'text' : 'password'"
+                        placeholder="Enter Wi-Fi password" autocomplete="new-password" aria-describedby="wifiPasswordHint" />
+                    <button type="button" *ngIf="form.get('wifiPass')?.dirty" class="routing-reveal"
+                        (click)="toggleWifiPasswordVisibility()" [attr.aria-pressed]="showWifiPassword"
+                        [attr.aria-label]="showWifiPassword ? 'Hide Wi-Fi password' : 'Show Wi-Fi password'">
+                        <i class="pi" [ngClass]="showWifiPassword ? 'pi-eye-slash' : 'pi-eye'" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <small id="wifiPasswordHint">Leave the masked value to keep the saved password. Clear the field for an open network.</small>
+            </div>
+        </div>
+    </section>
+
+    <footer class="routing-save-bar">
+        <div>
+            <strong>{{ savedChanges ? 'Restart required' : 'Apply configuration' }}</strong>
+            <p>{{ savedChanges ? 'Saved Wi-Fi changes take effect after a restart.' : 'Wi-Fi changes require a restart. Reconnect to the device on the new network.' }}</p>
+        </div>
+        <div class="routing-save-actions">
+            <button type="button" class="routing-button routing-button-primary" [disabled]="!form.dirty || form.invalid" (click)="updateSystem()">Save network settings</button>
+            <button type="button" class="routing-button" [disabled]="!savedChanges" (click)="restart()">Restart device</button>
+        </div>
+    </footer>
 </form>

@@ -82,6 +82,7 @@ typedef enum {
     NVS_CONFIG_SELF_TEST_TEMP_TARGET,
     NVS_CONFIG_SELF_TEST_TEMP_WARMUP,
     NVS_CONFIG_SELF_TEST_TEMP_MAX,
+    NVS_CONFIG_MINING_SCHEDULE,
     NVS_CONFIG_COUNT
 } NvsConfigKey;
 
@@ -119,6 +120,8 @@ esp_err_t nvs_config_init(void);
 char *nvs_config_get_string(NvsConfigKey key);
 char *nvs_config_get_string_indexed(NvsConfigKey key, int index);
 void nvs_config_set_string(NvsConfigKey key, const char * value);
+esp_err_t nvs_config_set_string_sync(NvsConfigKey key, const char *value);
+esp_err_t nvs_config_read_stored_string(NvsConfigKey key, char **value);
 void nvs_config_set_string_indexed(NvsConfigKey key, int index, const char *value);
 uint16_t nvs_config_get_u16(NvsConfigKey key);
 void nvs_config_set_u16(NvsConfigKey key, uint16_t value);

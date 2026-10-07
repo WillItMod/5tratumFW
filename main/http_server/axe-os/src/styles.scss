@@ -1,15 +1,3 @@
-@font-face {
-    font-family: 'Nippo-Regular';
-    src: url(/assets/fonts/Nippo-Regular.woff2) format('woff2');
-    font-weight: 400;
-    font-display: swap;
-    font-style: normal;
-}
-
-* {
-    font-family: 'Nippo-Regular';
-}
-
 @import "app/layout/styles/layout/layout.scss";
 @import "app/layout/styles/theme/themes/vela/bitaxe/theme.scss";
 
@@ -259,3 +247,8 @@ button.color-dot {
     font-family: monospace;
     font-size: medium;
 }
+
+@import "app/layout/styles/orbit.scss";
+@import "app/layout/styles/command-console.scss";
+@import "app/layout/styles/routing-console.scss";
+@import "app/layout/styles/mining-controls.scss";

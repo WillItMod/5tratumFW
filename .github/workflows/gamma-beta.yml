@@ -1,0 +1,106 @@
+name: Gamma BETA validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gamma-beta-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IDF_IMAGE: espressif/idf:v5.5.3@sha256:8ccd4d2ce413889c6c2bba57e986c670302094efb91c913c6091152e317a7805
+
+jobs:
+  gamma:
+    name: Gamma 601/602 paired OTA BETA
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source and pinned submodule
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.14.0'
+          cache: npm
+          cache-dependency-path: main/http_server/axe-os/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Check beta version and browser
+        run: |
+          node -e 'const fs=require("fs"); const v=fs.readFileSync("version.txt","utf8").trim(); if (!/^5tratumFW-\d+\.\d+\.\d+-beta\.\d+$/.test(v) || Buffer.byteLength(v)>31) throw new Error("Expected a named 5tratumFW BETA version that fits the app descriptor"); if (process.version!=="v24.14.0") throw new Error("Unexpected Node version");'
+          echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          test -n "$(command -v google-chrome)"
+
+      - name: Build compressed web interface and run frontend tests
+        working-directory: main/http_server/axe-os
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run test:ci
+
+      - name: Run Gamma host regression tests
+        run: python3 tools/test_gamma_host.py
+
+      - name: Check actual compressed web payload
+        run: python3 tools/check_web_budget.py --report artifacts/web-budget.json
+
+      - name: Compile ESP32-S3 application and WWW partition
+        run: |
+          docker run --rm -e GITHUB_ACTIONS=true \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/project" -w /project \
+            "$IDF_IMAGE" \
+            bash -c 'git config --global --add safe.directory /project
+          idf.py -D IDF_TARGET=esp32s3 build'
+
+      - name: Render production OLED layout with native LVGL
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 test/host/render_oled_native.py
+
+      - name: Verify and package paired OTA BETA images and source
+        run: python3 tools/package_5tratumfw.py
+
+      - name: Save verified BETA package
+        uses: actions/upload-artifact@v4
+        with:
+          name: 5tratumFW-Gamma-BETA-${{ github.sha }}
+          path: artifacts/5tratumFW-*-beta.*/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Save frontend test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-results-${{ github.sha }}
+          path: main/http_server/axe-os/report.xml
+          if-no-files-found: ignore
+
+      - name: Save native OLED fixture evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oled-native-fixtures-${{ github.sha }}
+          path: |
+            .cache/oled-native/output/*.png
+            .cache/oled-native/output/oled-native-report.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+# This workflow builds reviewable artifacts only. A maintainer may publish a
+# GitHub prerelease after reviewing its validation and hardware-test record.
+# It never generates factory/NVS images, flashes miners, or publishes a stable release.

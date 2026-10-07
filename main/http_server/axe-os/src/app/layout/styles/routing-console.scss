@@ -1,0 +1,79 @@
+/* Pool routing and network editors share a flat, local command surface. */
+.routing-console {
+  --routing-accent: #42d7f4;
+  --routing-line: #25364b;
+  --routing-muted: #93a9bf;
+  --routing-input: #0a1728;
+  --routing-ink: #e4edf7;
+  color: var(--routing-ink);
+  min-width: 0;
+  max-width: 1240px;
+  margin: 0 auto;
+
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  .routing-page-heading { padding: 0 0 20px; h1 { margin: 0; font-size: 26px; line-height: 1.12; font-weight: 550; letter-spacing: -1.3px; } p { margin: 0; color: var(--routing-muted); font-size: 13px; line-height: 1.6; max-width: 620px; } }
+  .routing-eyebrow { color: var(--routing-accent); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; }
+  .routing-warning { display: flex; align-items: flex-start; gap: 12px; border-left: 3px solid #eeb66e; background: rgba(238, 182, 110, .07); padding: 16px 18px; margin: 0 0 24px; color: #eeb66e; p { margin: 0; font-size: 12px; line-height: 1.6; } i { margin-top: 3px; } strong { font-weight: 600; } }
+  .routing-path { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-top: 1px solid var(--routing-line); border-bottom: 1px solid var(--routing-line); margin-bottom: 24px; button { display: flex; align-items: center; gap: 18px; width: 100%; min-width: 0; text-align: left; color: var(--routing-muted); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 16px 14px; cursor: pointer; + button { border-left: 1px solid var(--routing-line); } > i { margin-left: auto; font-size: 14px; color: var(--routing-muted); } &:hover { background: rgba(66, 215, 244, .035); } &.is-selected { border-bottom-color: var(--routing-accent); color: var(--routing-ink); .routing-path-number, > i { color: var(--routing-accent); } } } }
+  .routing-path-number { font-size: 24px; font-weight: 350; letter-spacing: -1px; flex: 0 0 auto; }
+  .routing-path-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; strong { font-size: 13px; font-weight: 600; } > span { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; color: var(--routing-muted); } small { font: inherit; } }
+  .routing-editor { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(0, 2fr); gap: 32px; padding: 0 0 32px; }
+  .routing-editor-intro { min-width: 0; h2 { font-size: 20px; font-weight: 500; line-height: 1.25; letter-spacing: -.65px; margin: 0 0 12px; } p { font-size: 12px; line-height: 1.7; color: var(--routing-muted); max-width: 245px; margin: 0; } }
+  .routing-protocol { display: inline-flex; align-items: center; gap: 9px; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--routing-accent); margin-top: 16px; span { color: var(--routing-line); } }
+  .routing-editor-body { min-width: 0; max-width: 760px; }
+  .routing-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-bottom: 24px; > label { font-size: 12px; font-weight: 500; color: var(--routing-ink); } small { color: var(--routing-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; } }
+  .routing-field-grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) 112px; }
+  input:not([type='checkbox']):not([type='file']), select, textarea { display: block; width: 100%; min-width: 0; max-width: 100%; background: var(--routing-input); color: var(--routing-ink); border: 1px solid var(--routing-line); border-radius: 3px; padding: 11px 13px; font: inherit; font-size: 13px; min-height: 43px; box-shadow: none; color-scheme: dark; &:enabled:hover { border-color: #44647e; } &:focus { outline: 2px solid var(--routing-accent) !important; outline-offset: 2px; box-shadow: none !important; border-color: var(--routing-accent); } &::placeholder { color: var(--routing-muted); opacity: .7; } }
+  select { padding-right: 30px; }
+  textarea { resize: vertical; line-height: 1.6; }
+  .routing-monospace { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .routing-input-action { display: flex; align-items: stretch; min-width: 0; input { flex: 1 1 auto; } button { flex: 0 0 auto; border: 1px solid var(--routing-line); border-left: 0; border-radius: 0 3px 3px 0; background: var(--routing-input); color: var(--routing-accent); cursor: pointer; min-height: 43px; padding: 0 14px; } &:has(button) input { border-radius: 3px 0 0 3px; } }
+  .routing-reveal { width: 46px; i { font-size: 15px; } }
+  .routing-scan { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; white-space: nowrap; }
+  .routing-advanced { border-top: 1px solid var(--routing-line); margin-top: 30px; summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; padding: 20px 0; color: var(--routing-ink); font-size: 13px; font-weight: 500; cursor: pointer; list-style: none; &::-webkit-details-marker { display: none; } small { grid-column: 1; font-size: 11px; font-weight: 400; color: var(--routing-muted); } &::after { content: '+'; grid-column: 2; grid-row: 1 / span 2; font-size: 22px; font-weight: 300; color: var(--routing-accent); } } &[open] > summary::after { content: '−'; } }
+  .routing-advanced-body { padding: 12px 0 0; }
+  .routing-check { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 24px; input { accent-color: var(--routing-accent); width: 17px; height: 17px; margin: 2px 0 0; flex: 0 0 17px; cursor: pointer; } label { font-size: 12px; font-weight: 500; cursor: pointer; } > div { min-width: 0; } small { display: block; color: var(--routing-muted); font-size: 11px; line-height: 1.6; margin-top: 7px; } }
+  .routing-diagnostic-option { padding-top: 22px; border-top: 1px solid var(--routing-line); }
+  .routing-certificate-action { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .routing-text-action { background: transparent; border: 0; color: var(--routing-accent); padding: 8px 0; min-height: 40px; font-size: 12px; cursor: pointer; i { margin-right: 7px; } }
+  .routing-file-input { display: none; }
+  .routing-field .routing-error { color: #f69892; }
+  .routing-field .routing-caution { color: #eeb66e; }
+  .routing-save-bar { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 0 12px; border-top: 1px solid var(--routing-line); strong { font-size: 12px; font-weight: 500; } p { color: var(--routing-muted); font-size: 11px; line-height: 1.6; margin: 6px 0 0; max-width: 480px; } }
+  .routing-save-actions { display: flex; gap: 10px; flex: 0 0 auto; }
+  .routing-button { padding: 11px 17px; min-height: 43px; font-size: 12px; font-weight: 600; border: 1px solid #38526b; border-radius: 3px; background: transparent; color: var(--routing-ink); white-space: nowrap; cursor: pointer; &:hover:not(:disabled) { background: rgba(66, 215, 244, .07); border-color: var(--routing-accent); } &.routing-button-primary { background: var(--routing-accent); border-color: var(--routing-accent); color: #071321; &:hover:not(:disabled) { background: #80e7fc; } } }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, summary:focus-visible, input[type='checkbox']:focus-visible { outline: 2px solid var(--routing-accent); outline-offset: 4px; }
+  &.routing-network { .routing-editor { padding: 22px 0; border-top: 1px solid var(--routing-line); } .routing-field:last-child { margin-bottom: 0; } }
+}
+.layout-theme-light .routing-console {
+  --routing-accent: #006f88;
+  --routing-line: #cbd8e0;
+  --routing-muted: #526b7e;
+  --routing-input: #fff;
+  --routing-ink: #14283a;
+  input, select, textarea { color-scheme: light; }
+  .routing-button.routing-button-primary { color: #fff; &:hover:not(:disabled) { background: #005c72; } }
+  .routing-warning, .routing-field .routing-caution { color: #8a530b; }
+  .routing-field .routing-error { color: #ac312b; }
+}
+@media (max-width: 950px) {
+  .routing-console { .routing-editor { gap: 30px; grid-template-columns: minmax(160px, .65fr) minmax(0, 1.6fr); } .routing-save-bar { align-items: flex-start; flex-direction: column; gap: 16px; } }
+}
+@media (max-width: 640px) {
+  .routing-console {
+    .routing-page-heading { padding: 0 0 20px; h1 { font-size: 26px; letter-spacing: -.9px; } p { font-size: 12px; } }
+    .routing-path { grid-template-columns: minmax(0, 1fr); margin-bottom: 28px; button { padding: 17px 4px; + button { border-left: 0; border-top: 1px solid var(--routing-line); } } }
+    .routing-editor { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-bottom: 24px; }
+    .routing-editor-intro { h2 { font-size: 21px; } p { max-width: none; } }
+    .routing-protocol { margin-top: 14px; }
+    .routing-field-grid { gap: 12px; grid-template-columns: minmax(0, 1fr) 86px; }
+    .routing-save-actions { width: 100%; flex-wrap: wrap; .routing-button { flex: 1 1 150px; } }
+    .routing-save-bar { padding-top: 20px; }
+    .routing-warning { padding: 14px 12px; }
+  }
+}
+@media (max-width: 370px) {
+  .routing-console { .routing-target-fields { grid-template-columns: minmax(0, 1fr); gap: 0; } .routing-wifi-input { flex-wrap: wrap; input { flex-basis: 100%; border-radius: 3px; } .routing-scan { border: 1px solid var(--routing-line); border-radius: 3px; margin-top: 8px; width: 100%; } } }
+}

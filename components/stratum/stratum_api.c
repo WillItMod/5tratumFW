@@ -15,6 +15,7 @@
 #include "esp_crt_bundle.h"
 #include "utils.h"
 #include "esp_timer.h"
+#include "five_tratum_mux_status.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -219,6 +220,7 @@ void STRATUM_V1_reset_message(StratumApiV1Message *message)
     message->method = STRATUM_UNKNOWN;
     message->message_id = -1;
     message->response_success = false;
+    message->mux_status_valid = false;
     message->new_difficulty = 0;
     message->version_mask = 0;
 }
@@ -229,7 +231,15 @@ void STRATUM_V1_parse(StratumApiV1Message * message, const char * stratum_json)
 
     ESP_LOGI(TAG, "rx: %s", stratum_json); // debug incoming stratum messages
 
-    cJSON * json = cJSON_Parse(stratum_json);
+    const char *parse_end = NULL;
+    cJSON * json = cJSON_ParseWithOpts(stratum_json, &parse_end, false);
+
+    if (five_tratum_mux_reserved(json)) {
+        message->method = MINING_5TRATUM_STATUS;
+        message->mux_status_valid = five_tratum_mux_status_valid(json, stratum_json, parse_end);
+        cJSON_Delete(json);
+        return;
+    }
 
     cJSON * id_json = cJSON_GetObjectItem(json, "id");
     int parsed_id = -1;
@@ -505,7 +515,7 @@ int STRATUM_V1_subscribe(esp_transport_handle_t transport, int send_uid, const c
     const esp_app_desc_t *app_desc = esp_app_get_description();
     const char *version = app_desc->version;	
     snprintf(subscribe_msg, sizeof(subscribe_msg),
-        "{\"id\":%d,\"method\":\"mining.subscribe\",\"params\":[\"bitaxe/%s/%s\"]}\n",
+        "{\"id\":%d,\"method\":\"mining.subscribe\",\"params\":[\"5tratumFW/%s/%s\"]}\n",
         send_uid, model, version);
     debug_stratum_tx(subscribe_msg);
 

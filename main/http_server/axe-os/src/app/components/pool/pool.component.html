@@ -1,244 +1,192 @@
-<form [formGroup]="form" *ngIf="form">
-    <div class="card">
-        <div *ngIf="isAnyPoolUsingDefaultAddress()" class="p-message p-message-warn mb-4 p-3 border-round flex align-items-center gap-2" style="background-color: var(--yellow-100); border: 1px solid var(--yellow-500); color: var(--yellow-900);">
-            <i class="pi pi-exclamation-triangle text-xl" style="color: var(--yellow-700);"></i>
-            <div>
-                <strong>Warning:</strong> You are using the default factory Bitcoin address. Please change the <strong>User</strong> field to your own Bitcoin address to receive mining rewards.
-            </div>
-        </div>
-        <ng-container *ngFor="let pool of pools">
-            <h2 *ngIf="pool === 'stratum'">Pool Configuration</h2>
-            <h2 *ngIf="pool === 'fallbackStratum'" class="mt-5">Fallback Pool Configuration</h2>
+<div class="routing-console routing-pool">
+    <header class="routing-page-heading">
+        <h1>Pool routing</h1>
+    </header>
 
-            <div class="card">
-                <div class="field grid p-fluid">
-                    <label [htmlFor]="pool + 'URL'" class="col-12 md:col-2 md:mb-0">Stratum Host</label>
-                    <div class="col-12 md:col-10">
-                        <input pInputText type="text" [id]="pool + 'URL'" [formControlName]="pool + 'URL'" (change)="onUrlChange(pool)" />
-                        <small *ngIf="isPoolV2Enabled(pool)" class="block text-blue-600 mt-1">
-                            SV2 Mode
-                        </small>
+    <form [formGroup]="form" *ngIf="form" [attr.aria-busy]="busy">
+        <fieldset class="connection-fields" [disabled]="busy">
+        <div class="connection-mode" role="group" aria-label="Connection type">
+            <button type="button" [class.is-selected]="connectionMode === 'direct'" [attr.aria-pressed]="connectionMode === 'direct'" (click)="selectConnectionMode('direct')">Direct pool</button>
+            <button type="button" [class.is-selected]="connectionMode === 'mux'" [attr.aria-pressed]="connectionMode === 'mux'" (click)="selectConnectionMode('mux')">5tratMux</button>
+            <small>Draft selection · save and restart to apply</small>
+        </div>
+        <div class="connection-observation" role="status" aria-live="polite">
+            <strong>{{deviceState}}</strong>
+            <small *ngIf="connectionMode === 'mux' && muxObservation">{{muxObservation.detail}}</small>
+            <span>Device primary: <span sensitive-data>{{savedPrimaryEndpoint}}</span></span>
+            <span *ngIf="telemetryFresh && info">Reported route: {{info.isUsingFallbackStratum ? 'Fallback' : 'Primary'}} · Accepted shares: {{info.sharesAccepted | number:'1.0-0'}}</span>
+        </div>
+        <div *ngIf="connectionMode === 'direct' && isAnyPoolUsingDefaultAddress()" class="routing-warning" role="alert">
+            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+            <p><strong>Factory Bitcoin address in use.</strong> Change the worker / user field to your own Bitcoin address to receive mining rewards.</p>
+        </div>
+
+        <div *ngIf="connectionMode === 'direct'" class="routing-path" aria-label="Choose a pool route to edit">
+            <button type="button" *ngFor="let pool of pools" [class.is-selected]="selectedPool === pool"
+                [attr.aria-pressed]="selectedPool === pool" (click)="selectedPool = pool">
+                <span class="routing-path-copy">
+                    <strong>{{ pool === 'stratum' ? 'Primary route' : 'Fallback route' }}</strong>
+                    <span>{{ form.get(pool + 'URL')?.value || 'No target configured' }}<small *ngIf="form.get(pool + 'URL')?.value">:{{ form.get(pool + 'Port')?.value }}</small></span>
+                </span>
+            </button>
+        </div>
+
+        <section class="routing-editor" *ngFor="let pool of editablePools" [hidden]="selectedPool !== pool"
+            [attr.aria-labelledby]="pool + 'RouteHeading'">
+            <div class="routing-editor-intro">
+                <h2 [id]="pool + 'RouteHeading'">{{connectionMode === 'mux' ? '5tratMux connection' : pool === 'stratum' ? 'Primary connection' : 'Fallback connection'}}</h2>
+                <p>{{connectionMode === 'mux' ? 'Worker identity and LAN endpoint.' : pool === 'stratum' ? 'The pool this device uses first.' : 'Used when the primary cannot be reached.'}}</p>
+                <span *ngIf="connectionMode === 'direct'" class="routing-protocol">{{ form.get(pool + 'Protocol')?.value }} <span>/</span> {{ isPoolV2Enabled(pool) ? 'Noise encryption' : (form.get(pool + 'TLS')?.value ? 'TLS' : 'TCP') }}</span>
+            </div>
+
+            <div class="routing-editor-body">
+                <div class="routing-field-grid routing-target-fields">
+                    <div class="routing-field">
+                        <label [htmlFor]="pool + 'URL'">{{connectionMode === 'mux' ? 'MUX host' : 'Pool host'}}</label>
+                        <input pInputText type="text" [id]="pool + 'URL'" [formControlName]="pool + 'URL'"
+                            (change)="onUrlChange(pool)" [placeholder]="connectionMode === 'mux' ? 'MUX IP address or hostname' : 'pool.example.com'" spellcheck="false"
+                            [attr.aria-describedby]="pool + 'HostHint'" />
+                        <small [id]="pool + 'HostHint'">{{connectionMode === 'mux' ? 'IP address or hostname only; no protocol, path or port.' : 'Paste a host or stratum URL. The port is extracted automatically.'}}</small>
+                    </div>
+                    <div class="routing-field">
+                        <label [htmlFor]="pool + 'Port'">Port</label>
+                        <input pInputText [id]="pool + 'Port'" [formControlName]="pool + 'Port'" type="number" min="0" max="65535" />
+                        <small *ngIf="connectionMode === 'mux'">Default: 7331</small>
                     </div>
                 </div>
-                <div class="field grid p-fluid">
-                    <label [htmlFor]="pool + 'Port'" class="col-12 md:col-2 md:mb-0">Stratum Port</label>
-                    <div class="col-12 md:col-10">
-                        <input pInputText [id]="pool + 'Port'" [formControlName]="pool + 'Port'" type="number" />
-                    </div>
+
+                <div class="routing-field">
+                    <label [htmlFor]="pool + 'User'">{{connectionMode === 'mux' ? 'Worker identity' : 'Worker / user'}}</label>
+                    <input pInputText [id]="pool + 'User'" [formControlName]="pool + 'User'" sensitive-data type="text"
+                        spellcheck="false" [attr.aria-describedby]="pool + 'UserHint'" />
+                    <small [id]="pool + 'UserHint'">{{connectionMode === 'mux' ? 'Unique worker name. Payout addresses are configured in MUX.' : 'Wallet address or account and worker name required by your pool.'}}</small>
                 </div>
-                <div class="field grid p-fluid">
-                    <label [htmlFor]="pool + 'User'" class="col-12 md:col-2 md:mb-0">User</label>
-                    <div class="col-12 md:col-10">
-                        <input pInputText [id]="pool + 'User'" [formControlName]="pool + 'User'" sensitive-data type="text" />
-                    </div>
-                </div>
-                <div class="field grid p-fluid">
-                    <label [htmlFor]="pool + 'Password'" class="col-12 md:col-2 md:mb-0">Password</label>
-                    <div class="col-12 md:col-10 p-input-icon-right">
-                        <i *ngIf="form.get(pool + 'Password')?.dirty" class="pi cursor-pointer"
-                        [ngClass]="{'pi-eye': !showPassword[pool], 'pi-eye-slash': showPassword[pool]}"
-                        (click)="showPassword[pool] = !showPassword[pool]"></i>
+
+                <div class="routing-field">
+                    <label [htmlFor]="pool + 'Password'">{{connectionMode === 'mux' ? 'MUX password' : 'Pool password'}}</label>
+                    <div class="routing-input-action">
                         <input pInputText [id]="pool + 'Password'" [formControlName]="pool + 'Password'"
-                            [type]="showPassword[pool] ? 'text' : 'password'" />
+                            [type]="showPassword[pool] ? 'text' : 'password'" autocomplete="new-password"
+                            [attr.aria-describedby]="pool + 'PasswordHint'" />
+                        <button type="button" *ngIf="form.get(pool + 'Password')?.dirty" class="routing-reveal"
+                            (click)="showPassword[pool] = !showPassword[pool]" [attr.aria-pressed]="showPassword[pool]"
+                            [attr.aria-label]="showPassword[pool] ? 'Hide pool password' : 'Show pool password'">
+                            <i class="pi" [ngClass]="showPassword[pool] ? 'pi-eye-slash' : 'pi-eye'" aria-hidden="true"></i>
+                        </button>
                     </div>
+                    <small [id]="pool + 'PasswordHint'">The saved password stays unchanged until you enter a replacement.</small>
                 </div>
 
-                <fieldset class="m-0 p-0 mt-4 border-200 border-bottom-none border-left-none border-right-none">
-                    <legend class="p-0 pr-3">
-                        <label class="cursor-pointer">
-                            <input type="checkbox" hidden (click)="showAdvancedOptions[pool] = !showAdvancedOptions[pool]">
-                            <i class="pi pi-angle-{{showAdvancedOptions[pool] ? 'down' : 'right'}} text-sm -ml-1 mr-1"></i>
-                            {{showAdvancedOptions[pool] ? 'Hide' : 'Show'}} Advanced Options
-                        </label>
-                    </legend>
-
-                    <ng-container *ngIf="showAdvancedOptions[pool]">
-                        <div class="field grid p-fluid mt-4">
-                            <label [htmlFor]="(pool === 'stratum' ? 'stratumProtocol' : 'fallbackStratumProtocol')" class="col-12 mb-2 md:col-2 md:mb-0">
-                                <tooltip-text-icon
-                                    text="Stratum Protocol"
-                                    tooltip="Select Stratum protocol version. Note: Not all pools support Stratum V2."
-                                />
-                            </label>
-                            <div class="col-12 md:col-10">
-                                <div class="flex flex-wrap gap-3">
-                                    <div *ngFor="let option of protocolOptions; trackBy: trackByFn" class="field-radiobutton mb-0">
-                                        <p-radioButton
-                                            [name]="pool === 'stratum' ? 'stratumProtocol' : 'fallbackStratumProtocol'"
-                                            [value]="option.value"
-                                            [formControlName]="pool === 'stratum' ? 'stratumProtocol' : 'fallbackStratumProtocol'"
-                                            [inputId]="(pool === 'stratum' ? 'stratumProtocol_' : 'fallbackStratumProtocol_') + option.value">
-                                        </p-radioButton>
-                                        <label [for]="(pool === 'stratum' ? 'stratumProtocol_' : 'fallbackStratumProtocol_') + option.value" class="ml-2 cursor-pointer">
-                                            {{ option.label }}
-                                        </label>
-                                    </div>
-                                </div>
-                                <small class="block text-orange-600 mt-2">
-                                    Note: Not all pools support Stratum V2
-                                </small>
-                            </div>
+                <details *ngIf="connectionMode === 'direct'" class="routing-advanced">
+                    <summary><span>Protocol &amp; advanced options</span><small>Security, channels and diagnostics</small></summary>
+                    <div class="routing-advanced-body">
+                        <div class="routing-field">
+                            <label [htmlFor]="pool + 'Protocol'">Stratum protocol</label>
+                            <select [id]="pool + 'Protocol'" [formControlName]="pool + 'Protocol'" [attr.aria-describedby]="pool + 'ProtocolHint'">
+                                <option *ngFor="let option of protocolOptions; trackBy: trackByFn" [ngValue]="option.value">{{ option.label }}</option>
+                            </select>
+                            <small [id]="pool + 'ProtocolHint'">Choose a protocol supported by your pool. Not all pools support Stratum V2.</small>
                         </div>
 
-                        <!-- SV2-only options -->
                         <ng-container *ngIf="isPoolV2Enabled(pool)">
-                            <div class="field grid p-fluid">
-                                <label class="col-12 mb-2 md:col-2 md:mb-0">
-                                    <tooltip-text-icon
-                                        text="SV2 Channel Type"
-                                        tooltip="Extended Channels are recommended for external pools — the pool sends the coinbase template so the miner can verify it. Standard Channels should only be used with a locally deployed SV2 node or JD client."
-                                    />
+                            <div class="routing-field">
+                                <label [htmlFor]="pool + 'V2ChannelType'">
+                                    <tooltip-text-icon text="SV2 channel type"
+                                        tooltip="Extended Channels are recommended for external pools. Standard Channels should only be used with a locally deployed SV2 node or JD client." />
                                 </label>
-                                <div class="col-12 md:col-10">
-                                    <div class="flex flex-wrap gap-3">
-                                        <div *ngFor="let option of sv2ChannelOptions; trackBy: trackByFn" class="field-radiobutton mb-0">
-                                            <p-radioButton
-                                                [name]="pool === 'stratum' ? 'stratumV2ChannelType' : 'fallbackStratumV2ChannelType'"
-                                                [value]="option.value"
-                                                [formControlName]="pool === 'stratum' ? 'stratumV2ChannelType' : 'fallbackStratumV2ChannelType'"
-                                                [inputId]="(pool === 'stratum' ? 'stratumV2ChannelType_' : 'fallbackStratumV2ChannelType_') + option.value"
-                                                [disabled]="option.value === 'standard' && isStandardChannelDisabled()">
-                                            </p-radioButton>
-                                            <label [for]="(pool === 'stratum' ? 'stratumV2ChannelType_' : 'fallbackStratumV2ChannelType_') + option.value"
-                                                class="ml-2 cursor-pointer"
-                                                [class.text-400]="option.value === 'standard' && isStandardChannelDisabled()">
-                                                {{ option.label }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <small class="block text-blue-600 mt-2" *ngIf="(pool === 'stratum' ? form.get('stratumV2ChannelType')?.value : form.get('fallbackStratumV2ChannelType')?.value) === 'extended'">
-                                        Recommended for external SV2 pools. The pool sends the coinbase template, enabling transaction verification.
-                                    </small>
-                                    <small class="block text-orange-600 mt-2" *ngIf="(pool === 'stratum' ? form.get('stratumV2ChannelType')?.value : form.get('fallbackStratumV2ChannelType')?.value) === 'standard'">
-                                        Only use with a self-deployed local SV2 node or JD client. Not supported on Bitaxe Max (BM1397).
-                                    </small>
-                                    <small class="block text-400 mt-2" *ngIf="isStandardChannelDisabled()">
-                                        Standard Channels are not available on BM1397 — Extended Channels are required.
-                                    </small>
-                                </div>
+                                <select [id]="pool + 'V2ChannelType'" [formControlName]="pool + 'V2ChannelType'"
+                                    [attr.aria-describedby]="pool + 'ChannelHint'">
+                                    <option *ngFor="let option of sv2ChannelOptions; trackBy: trackByFn" [ngValue]="option.value"
+                                        [disabled]="option.value === 'standard' && isStandardChannelDisabled()">{{ option.label }}</option>
+                                </select>
+                                <small [id]="pool + 'ChannelHint'">{{ isPoolV2Extended(pool) ? 'Recommended for external SV2 pools. The pool provides the coinbase template.' : 'Use with a self-deployed local SV2 node or JD client.' }}</small>
+                                <small class="routing-caution" *ngIf="isStandardChannelDisabled()">BM1397 requires Extended Channels. Standard Channels are unavailable.</small>
                             </div>
-
-                            <div class="field grid p-fluid">
-                                <label [htmlFor]="pool === 'stratum' ? 'stratumV2AuthorityPubkey' : 'fallbackStratumV2AuthorityPubkey'" class="col-12 mb-2 md:col-2 md:mb-0 flex align-self-baseline">
-                                    <tooltip-text-icon
-                                        text="SV2 Authority Pubkey"
-                                        tooltip="The pool operator provides this key to prove you are connecting to the real pool and not an impersonator. Without it, the connection is still encrypted but a man-in-the-middle attack could redirect your hashrate."
-                                    />
+                            <div class="routing-field">
+                                <label [htmlFor]="pool + 'V2AuthorityPubkey'">
+                                    <tooltip-text-icon text="SV2 authority public key"
+                                        tooltip="The pool operator provides this key to authenticate the pool. Without it, the connection is encrypted but an impersonator could redirect your hashrate." />
                                 </label>
-                                <div class="col-12 md:col-10">
-                                    <textarea
-                                        pInputTextarea
-                                        [id]="pool === 'stratum' ? 'stratumV2AuthorityPubkey' : 'fallbackStratumV2AuthorityPubkey'"
-                                        [formControlName]="pool === 'stratum' ? 'stratumV2AuthorityPubkey' : 'fallbackStratumV2AuthorityPubkey'"
-                                        rows="2"
-                                        class="w-full p-2 text-sm text-monospace"
-                                        placeholder="Enter base58-encoded authority public key (optional, e.g., 9auqWEzQ...)"></textarea>
-                                    <small *ngIf="form.get(pool === 'stratum' ? 'stratumV2AuthorityPubkey' : 'fallbackStratumV2AuthorityPubkey')?.errors?.['invalidBase58']" class="block text-red-500 mt-1">
-                                        Invalid base58 string. Only base58 characters allowed (no 0, O, I, l).
-                                    </small>
-                                    <small *ngIf="form.get(pool === 'stratum' ? 'stratumV2AuthorityPubkey' : 'fallbackStratumV2AuthorityPubkey')?.errors?.['invalidBase58Length']" class="block text-red-500 mt-1">
-                                        Invalid length. SV2 authority pubkeys are typically 51-52 characters.
-                                    </small>
-                                </div>
+                                <textarea pInputTextarea [id]="pool + 'V2AuthorityPubkey'" [formControlName]="pool + 'V2AuthorityPubkey'"
+                                    rows="2" class="routing-monospace" placeholder="Optional base58 authority key" spellcheck="false"></textarea>
+                                <small *ngIf="form.get(pool + 'V2AuthorityPubkey')?.errors?.['invalidBase58']" class="routing-error">Use base58 characters only (no 0, O, I or l).</small>
+                                <small *ngIf="form.get(pool + 'V2AuthorityPubkey')?.errors?.['invalidBase58Length']" class="routing-error">Invalid length. Authority keys are typically 51–52 characters.</small>
                             </div>
                         </ng-container>
 
-                        <!-- SV1-only options -->
                         <ng-container *ngIf="!isPoolV2Enabled(pool)">
-                            <div class="field grid p-fluid mt-4">
-                                <label [htmlFor]="pool + 'SuggestedDifficulty'" class="col-12 md:col-2 md:mb-0">
-                                    <tooltip-text-icon
-                                        text="Suggested Difficulty"
-                                        tooltip="Used to indicate a preference for share difficulty to the pool. Servers are not required to honour this request, even if they support the stratum method. (0 to disable)"
-                                    />
+                            <div class="routing-field">
+                                <label [htmlFor]="pool + 'SuggestedDifficulty'">
+                                    <tooltip-text-icon text="Suggested difficulty"
+                                        tooltip="Requests a preferred share difficulty. The pool is not required to honour it. Set to 0 to disable." />
                                 </label>
-                                <div class="col-12 md:col-10">
-                                    <input pInputText [id]="pool + 'SuggestedDifficulty'" [formControlName]="pool + 'SuggestedDifficulty'" type="number" />
-                                </div>
+                                <input pInputText [id]="pool + 'SuggestedDifficulty'" [formControlName]="pool + 'SuggestedDifficulty'" type="number" />
                             </div>
-
-                            <div class="field-checkbox grid">
-                                <div class="col-1 md:col-10 md:flex-order-2">
-                                    <p-checkbox [name]="pool + 'ExtranonceSubscribe'" [inputId]="pool + 'ExtranonceSubscribe'" [formControlName]="pool + 'ExtranonceSubscribe'"
-                                        [binary]="true"></p-checkbox>
-                                </div>
-                                <label [htmlFor]="pool + 'ExtranonceSubscribe'" class="col-11 m-0 pb-0 pl-3 md:col-2 md:flex-order-1 md:pl-2">
-                                    <tooltip-text-icon
-                                        text="Enable Extranonce Subscribe"
-                                        tooltip="Indicates to the server that the client supports the mining.set_extranonce method. Required by some pools, check the pool documentation."
-                                    />
+                            <div class="routing-check">
+                                <input type="checkbox" [id]="pool + 'ExtranonceSubscribe'" [formControlName]="pool + 'ExtranonceSubscribe'" />
+                                <label [htmlFor]="pool + 'ExtranonceSubscribe'">
+                                    <tooltip-text-icon text="Extranonce subscribe"
+                                        tooltip="Indicates support for mining.set_extranonce. Some pools require this option; check your pool documentation." />
                                 </label>
                             </div>
-
-                            <div class="field grid p-fluid">
-                                <label [htmlFor]="pool + 'TLS'" class="col-12 mb-2 md:col-2 md:mb-0">Connection Security</label>
-                                <div class="col-12 md:col-10">
-                                    <div class="flex flex-wrap gap-3">
-                                        <div *ngFor="let option of tlsOptions; trackBy: trackByFn" class="field-radiobutton mb-0">
-                                            <p-radioButton
-                                                [name]="pool + 'TLS'"
-                                                [value]="option.value"
-                                                [formControlName]="pool + 'TLS'"
-                                                [inputId]="pool + 'TLS_' + option.value">
-                                            </p-radioButton>
-                                            <label [for]="pool + 'TLS_' + option.value" class="ml-2 cursor-pointer">
-                                                {{ option.label }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div class="routing-field">
+                                <label [htmlFor]="pool + 'TLS'">Connection security</label>
+                                <select [id]="pool + 'TLS'" [formControlName]="pool + 'TLS'">
+                                    <option *ngFor="let option of tlsOptions; trackBy: trackByFn" [ngValue]="option.value">{{ option.label }}</option>
+                                </select>
                             </div>
-                            <div *ngIf="form.get(pool + 'TLS')?.value === 2" class="field grid p-fluid mb-0">
-                                <label [htmlFor]="pool + 'Cert'" class="col-12 mb-2 md:col-2 md:mb-0 flex align-self-baseline">Certificate</label>
-                                <div class="col-12 md:col-10">
-                                    <div class="p-inputgroup">
-                                        <textarea
-                                            pInputTextarea
-                                            [id]="pool + 'Cert'"
-                                            [formControlName]="pool + 'Cert'"
-                                            rows="6"
-                                            class="w-full p-2 text-sm text-monospace"
-                                            placeholder="Enter or choose a certificate file (.pem, .crt, .cer)"></textarea>
-                                        <span class="p-inputgroup-addon">
-                                            <button pButton
-                                                type="button"
-                                                icon="pi pi-upload"
-                                                class="p-button-secondary"
-                                                pTooltip="Choose a certificate file"
-                                                tooltipPosition="top"
-                                                (click)="certFileInput.click()"></button>
-                                            <input #certFileInput type="file" (change)="onCertFileSelected($event, pool + 'Cert')"
-                                                class="hidden" accept=".pem,.crt,.cer" />
-                                        </span>
-                                    </div>
-                                    <small *ngIf="form.get(pool + 'Cert')?.errors?.['invalidCertificate']" class="block text-red-500 mt-1">
-                                        Please enter a valid SSL/TLS certificate
-                                    </small>
+                            <div *ngIf="form.get(pool + 'TLS')?.value === 2" class="routing-field">
+                                <label [htmlFor]="pool + 'Cert'">CA certificate</label>
+                                <textarea pInputTextarea [id]="pool + 'Cert'" [formControlName]="pool + 'Cert'" rows="6"
+                                    class="routing-monospace" placeholder="Paste a PEM certificate or choose a file" spellcheck="false"></textarea>
+                                <div class="routing-certificate-action">
+                                    <button type="button" class="routing-text-action" (click)="certFileInput.click()"><i class="pi pi-upload" aria-hidden="true"></i> Choose certificate file</button>
+                                    <small>.pem, .crt or .cer</small>
                                 </div>
+                                <input #certFileInput type="file" (change)="onCertFileSelected($event, pool + 'Cert')" class="routing-file-input" accept=".pem,.crt,.cer" tabindex="-1" />
+                                <small *ngIf="form.get(pool + 'Cert')?.errors?.['invalidCertificate']" class="routing-error">Enter a valid SSL/TLS certificate.</small>
+                                <small *ngIf="form.get(pool + 'Cert')?.errors?.['required']" class="routing-error">A CA certificate is required for this security mode.</small>
                             </div>
                         </ng-container>
 
-                        <div *ngIf="!isPoolV2Enabled(pool) || isPoolV2Extended(pool)" class="field-checkbox grid">
-                            <div class="col-1 md:col-10 md:flex-order-2">
-                                <p-checkbox [name]="pool + 'DecodeCoinbase'" [inputId]="pool + 'DecodeCoinbase'" [formControlName]="pool + 'DecodeCoinbase'"
-                                    [binary]="true"></p-checkbox>
+                        <div *ngIf="!isPoolV2Enabled(pool) || isPoolV2Extended(pool)" class="routing-check routing-diagnostic-option">
+                            <input type="checkbox" [id]="pool + 'DecodeCoinbase'" [formControlName]="pool + 'DecodeCoinbase'" [attr.aria-describedby]="pool + 'CoinbaseHint'" />
+                            <div>
+                                <label [htmlFor]="pool + 'DecodeCoinbase'">
+                                    <tooltip-text-icon text="Decode Coinbase"
+                                        tooltip="Optional transaction diagnostics. Off by default; decoded outputs do not verify pool or MUX payouts." />
+                                </label>
+                                <small [id]="pool + 'CoinbaseHint'">Optional transaction diagnostics. Off by default; decoded outputs do not verify pool or MUX payouts.</small>
                             </div>
-                            <label [htmlFor]="pool + 'DecodeCoinbase'" class="col-11 m-0 pb-0 pl-3 md:col-2 md:flex-order-1 md:pl-2">
-                                <tooltip-text-icon
-                                    text="Decode Coinbase Tx"
-                                    tooltip="Enable decoding of the coinbase transaction to show payout addresses. Disable when mining on non-Bitcoin chains."
-                                />
-                            </label>
                         </div>
-                    </ng-container>
-                </fieldset>
+                    </div>
+                </details>
             </div>
-        </ng-container>
+        </section>
 
-        <div class="flex mt-5 gap-3">
-            <button pButton [disabled]="!form.dirty || form.invalid" (click)="updateSystem()"
-                class="btn btn-primary">Save</button>
-            <button pButton [disabled]="!savedChanges" (click)="restart()">Restart</button>
-        </div>
-    </div>
-</form>
+        <section *ngIf="connectionMode === 'mux'" class="connection-mux-options" aria-label="MUX connection options">
+            <p>Stratum V1 / TCP · extranonce on · difficulty 0 · coinbase decoding off · primary selected.</p>
+            <p>Saved fallback retained: <span sensitive-data>{{savedFallbackEndpoint}}</span>.</p>
+            <p *ngIf="fallbackDraftDirty" class="routing-caution">Fallback has unsaved edits. They are not included in a MUX save.</p>
+            <p *ngIf="fallbackUsesFactoryAddress" class="routing-caution">The retained fallback uses the factory Bitcoin address. Edit it under Direct pool before use.</p>
+            <a *ngIf="muxConsoleUrl" [href]="muxConsoleUrl" target="_blank" rel="noopener noreferrer">Open MUX console <i class="pi pi-external-link" aria-hidden="true"></i></a>
+            <small>Confirm the worker and upstream route in MUX. Device settings and share counts do not verify that route or payouts.</small>
+        </section>
+        <section *ngIf="connectionMode === 'mux' && reviewedPatch" class="connection-review" aria-label="Review MUX connection">
+            <h3>Review MUX connection</h3>
+            <dl><div><dt>Primary endpoint</dt><dd sensitive-data>{{reviewedPatch.stratumURL}}:{{reviewedPatch.stratumPort}}</dd></div><div><dt>Worker</dt><dd sensitive-data>{{reviewedPatch.stratumUser}}</dd></div><div><dt>Password</dt><dd>{{reviewedPatch.stratumPassword === undefined ? 'Keep saved password' : reviewedPatch.stratumPassword === '' ? 'Use an empty password' : 'Replace password'}}</dd></div></dl>
+            <p>The MUX options above replace the primary protocol settings. Fallback settings stay unchanged.</p>
+        </section>
+        <p *ngIf="error" class="connection-error" role="alert">{{error}}</p>
+        <footer class="routing-save-bar">
+            <div><strong>{{restartPending ? (restartRequested ? 'Restart requested' : 'Saved · restart required') : form.dirty ? 'Unsaved connection edits' : restartObserved ? 'Restart observed' : 'Device configuration'}}</strong><p>{{restartPending ? 'Restart applies the saved connection. Unsaved edits are not applied.' : connectionMode === 'mux' ? 'Review the primary connection, save, then restart separately.' : 'Save primary and fallback settings together. Restart required.'}}</p></div>
+            <div class="routing-save-actions">
+                <button *ngIf="connectionMode === 'direct'" type="button" class="routing-button routing-button-primary" [disabled]="busy || !form.dirty || form.invalid" (click)="updateSystem()">Save pool settings</button>
+                <button *ngIf="connectionMode === 'mux' && !reviewedPatch" type="button" class="routing-button routing-button-primary" [disabled]="busy" (click)="reviewMuxConnection()">Review MUX connection</button>
+                <button *ngIf="connectionMode === 'mux' && reviewedPatch" type="button" class="routing-button routing-button-primary" [disabled]="busy" (click)="updateSystem()">Save MUX connection</button>
+                <button type="button" class="routing-button" [disabled]="!restartPending || busy || restartRequested || !telemetryFresh" (click)="restart()">{{restartRequested ? 'Restart requested' : 'Restart device'}}</button>
+            </div>
+        </footer>
+        </fieldset>
+    </form>
+</div>

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, EMPTY, timer, merge, fromEvent } from 'rxjs';
-import { catchError, retry, share, tap, switchMap, startWith, scan, shareReplay, map, timeout, bufferTime, filter, distinctUntilChanged } from 'rxjs/operators';
+import { catchError, retry, share, tap, switchMap, exhaustMap, startWith, scan, shareReplay, map, timeout, bufferTime, filter, distinctUntilChanged } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { SystemInfo as ISystemInfo } from 'src/app/generated/models';
 import { SystemApiService } from './system.service';
@@ -14,6 +14,7 @@ export class LiveDataService {
   
   // Shared info stream for the whole app
   public readonly info$: Observable<ISystemInfo>;
+  public lastUpdateAt = 0;
   
   // Connection status for the UI
   private connectedSubject = new BehaviorSubject<boolean>(false);
@@ -35,10 +36,11 @@ export class LiveDataService {
       switchMap(state => {
         const interval = state === 'visible' ? 5000 : 60000; // 5s when visible, 60s when hidden
         return timer(interval, interval).pipe(
-          switchMap(() => {
+          exhaustMap(() => {
             // Only poll if not connected OR if backgrounded (to keep data fresh)
             if (this.connectedSubject.value && state === 'visible') return EMPTY;
-            return this.systemService.getInfo();
+            // A temporary read failure must not stop future polling attempts.
+            return this.systemService.getInfo().pipe(catchError(() => EMPTY));
           })
         );
       }),
@@ -64,11 +66,31 @@ export class LiveDataService {
     );
 
     this.info$ = merge(initialInfo$, updates$).pipe(
+      // Reject empty/malformed responses before merging with cached readings.
+      // Otherwise the old version field would make an invalid response look fresh.
+      filter(update => this.isValidUpdate(update)),
+      tap(() => this.lastUpdateAt = Date.now()),
       scan((acc: ISystemInfo, curr: Partial<ISystemInfo>) => ({ ...acc, ...curr } as ISystemInfo), {} as ISystemInfo),
       // Ensure we have at least once received a message with a recognizable field before emitting
       filter(info => !!info.version || !!info.uptimeSeconds),
       shareReplay(1)
     );
+  }
+
+  private isValidUpdate(update: Partial<ISystemInfo>): boolean {
+    if (!update || typeof update !== 'object' || Array.isArray(update)) return false;
+    const numericKeys: (keyof ISystemInfo)[] = [
+      'uptimeSeconds', 'hashRate', 'power', 'voltage', 'current', 'temp', 'temp2',
+      'coreVoltage', 'coreVoltageActual', 'responseTime', 'frequency', 'fanrpm',
+    ];
+    let hasTelemetry = false;
+    for (const key of numericKeys) {
+      if (!(key in update)) continue;
+      const value = update[key];
+      if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+      hasTelemetry = true;
+    }
+    return hasTelemetry || typeof update.miningPaused === 'boolean';
   }
 
   private connect(): Observable<any> {

@@ -1,7 +1,6 @@
 # Configuration files
 sdkconfig
 sdkconfig.old
-dependencies.lock
 
 # Visual Studio Code
 .vscode/*
@@ -39,3 +38,21 @@ debug.log
 
 # Device list file for tools/upload2device.py
 devices.txt
+
+# Local 5tratumFW build packages and private device observations
+artifacts/
+local-devices/
+__pycache__/
+main/http_server/axe-os/report.xml
+
+# Private records and generated validation/build outputs
+node_modules/
+dist/
+device-tools/
+*.log
+.env
+.env.*
+.venv/
+venv/
+*.nvs.bin
+*.backup

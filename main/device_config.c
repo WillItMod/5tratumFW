@@ -1,8 +1,10 @@
 #include <string.h>
+#include <stdlib.h>
 #include "device_config.h"
 #include "nvs_config.h"
 #include "global_state.h"
 #include "esp_log.h"
+#include "5tratumfw.h"
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -15,6 +17,15 @@ esp_err_t device_config_init(void * pvParameters)
     // TODO: Read board version from eFuse
 
     char * board_version = nvs_config_get_string(NVS_CONFIG_BOARD_VERSION);
+
+    if (board_version == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (!five_stratum_fw_board_supported(board_version)) {
+        ESP_LOGE(TAG, "This " FIVE_STRATUM_FW_NAME " pilot requires board 601 or 602");
+        free(board_version);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     for (int i = 0 ; i < ARRAY_SIZE(default_configs); i++) {
         if (strcmp(default_configs[i].board_version, board_version) == 0) {
@@ -29,54 +40,6 @@ esp_err_t device_config_init(void * pvParameters)
         }
     }
 
-    ESP_LOGI(TAG, "Custom Board Version: %s", board_version);
-
-    GLOBAL_STATE->DEVICE_CONFIG.board_version = strdup(board_version);
-
-    char * device_model = nvs_config_get_string(NVS_CONFIG_DEVICE_MODEL);
-
-    for (int i = 0 ; i < ARRAY_SIZE(default_families); i++) {
-        if (strcasecmp(default_families[i].name, device_model) == 0) {
-            GLOBAL_STATE->DEVICE_CONFIG.family = default_families[i];
-
-            ESP_LOGI(TAG, "Device Model: %s", GLOBAL_STATE->DEVICE_CONFIG.family.name);
-
-            break;
-        }
-    }
-
-    char * asic_model = nvs_config_get_string(NVS_CONFIG_ASIC_MODEL);
-
-    for (int i = 0 ; i < ARRAY_SIZE(default_asic_configs); i++) {
-        if (strcasecmp(default_asic_configs[i].name, asic_model) == 0) {
-            GLOBAL_STATE->DEVICE_CONFIG.family.asic = default_asic_configs[i];
-
-            ESP_LOGI(TAG, "ASIC: %dx %s (%d cores)", GLOBAL_STATE->DEVICE_CONFIG.family.asic_count, GLOBAL_STATE->DEVICE_CONFIG.family.asic.name, GLOBAL_STATE->DEVICE_CONFIG.family.asic.core_count);
-
-            break;
-        }
-    }
-
-    GLOBAL_STATE->DEVICE_CONFIG.plug_sense = nvs_config_get_bool(NVS_CONFIG_PLUG_SENSE);
-    GLOBAL_STATE->DEVICE_CONFIG.asic_enable = nvs_config_get_bool(NVS_CONFIG_ASIC_ENABLE);
-    GLOBAL_STATE->DEVICE_CONFIG.EMC2101 = nvs_config_get_bool(NVS_CONFIG_EMC2101);
-    GLOBAL_STATE->DEVICE_CONFIG.EMC2103 = nvs_config_get_bool(NVS_CONFIG_EMC2103);
-    GLOBAL_STATE->DEVICE_CONFIG.EMC2302 = nvs_config_get_bool(NVS_CONFIG_EMC2302);
-    GLOBAL_STATE->DEVICE_CONFIG.emc_internal_temp = nvs_config_get_bool(NVS_CONFIG_EMC_INTERNAL_TEMP);
-    GLOBAL_STATE->DEVICE_CONFIG.emc_ideality_factor = nvs_config_get_u16(NVS_CONFIG_EMC_IDEALITY_FACTOR);
-    GLOBAL_STATE->DEVICE_CONFIG.emc_beta_compensation = nvs_config_get_u16(NVS_CONFIG_EMC_BETA_COMPENSATION);
-    GLOBAL_STATE->DEVICE_CONFIG.temp_offset = nvs_config_get_i32(NVS_CONFIG_TEMP_OFFSET);
-    GLOBAL_STATE->DEVICE_CONFIG.DS4432U = nvs_config_get_bool(NVS_CONFIG_DS4432U);
-    GLOBAL_STATE->DEVICE_CONFIG.INA260 = nvs_config_get_bool(NVS_CONFIG_INA260);
-    GLOBAL_STATE->DEVICE_CONFIG.TPS546 = nvs_config_get_bool(NVS_CONFIG_TPS546);
-    GLOBAL_STATE->DEVICE_CONFIG.TMP1075 = nvs_config_get_bool(NVS_CONFIG_TMP1075);
-
-    // test values
-    GLOBAL_STATE->DEVICE_CONFIG.power_consumption_target = nvs_config_get_u16(NVS_CONFIG_POWER_CONSUMPTION_TARGET);
-
     free(board_version);
-    free(device_model);
-    free(asic_model);
-
-    return ESP_OK;
+    return ESP_ERR_NOT_SUPPORTED;
 }

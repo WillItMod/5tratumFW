@@ -1,98 +1,28 @@
-<div class="card">
-    <h2>Update</h2>
-
-    <div class="grid">
-        <div class="col-12 xl:col-4">
-            <div class="card h-full">
-                <h5>Current Version: {{(info$ | async)?.version}}</h5>
-
-                <ng-container *ngIf="checkLatestRelease == false; else afterCheck">
-                    <h3>Latest Release: <p-button (onClick)="handleReleaseCheck()">Check</p-button></h3>
-
-                    <app-modal #privacyModal [headline]="'Privacy Warning'">
-                        <p>
-                            Please note, this will connect to <strong>github.com</strong> to check for the latest release.
-                        </p>
-                        <p class="flex gap-2">
-                            <p-checkbox
-                                [binary]="true"
-                                inputId="ignoreWarning"
-                                #ignoreWarning></p-checkbox>
-                            <label for="ignoreWarning">Don't show again</label>
-                        </p>
-                        <div class="flex gap-3 mt-5">
-                            <p-button (onClick)="continueReleaseCheck(ignoreWarning.model)">Continue</p-button>
-                            <p-button styleClass="p-button-secondary" (onClick)="privacyModal.isVisible = false">Cancel</p-button>
-                        </div>
-                    </app-modal>
-                </ng-container>
-
-                <ng-template #afterCheck>
-                    <ng-container *ngIf="latestRelease$ | async as latestRelease">
-                        <h3>Latest Release:
-                            <a style="text-decoration: underline;" target="_blank"
-                            [href]="latestRelease.html_url">{{latestRelease.name}}</a>
-                        </h3>
-
-                        <div class="text-orange-500 mb-3">Download both files for update!</div>
-
-                        <div *ngFor="let asset of latestRelease.assets">
-                            <div *ngIf="asset.name == 'esp-miner.bin'">
-                                <a style="text-decoration: underline;" target="_blank"
-                                    [href]="asset.browser_download_url">esp-miner.bin</a>
-                            </div>
-                            <div *ngIf="asset.name == 'www.bin'">
-                                <a style="text-decoration: underline;" target="_blank"
-                                    [href]="asset.browser_download_url">www.bin</a>
-                            </div>
-                        </div>
-
-                        <a class="text-500 underline block mt-3 cursor-pointer" (click)="releaseNotesModal.isVisible = true">
-                            Release Notes
-                        </a>
-
-                        <app-modal #releaseNotesModal [headline]="latestRelease.name">
-                            <div [innerHTML]="simpleMarkdownParser(latestRelease.body)"></div>
-                        </app-modal>
-                    </ng-container>
-                </ng-template>
-            </div>
-        </div>
-        <div class="col-12 lg:col-6 xl:col-4">
-            <div class="card h-full">
-                <h3>Update AxeOS</h3>
-
-                <p-fileUpload #websiteUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaWWWUpdate($event)"
-                    [auto]="true" chooseLabel="Browse"></p-fileUpload>
-
-                <small>(www.bin)</small>
-            </div>
-        </div>
-        <div class="col-12 lg:col-6 xl:col-4">
-            <div class="card h-full">
-                <h3>Update Firmware</h3>
-                <p-fileUpload #firmwareUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaUpdate($event)"
-                    [auto]="true" chooseLabel="Browse"></p-fileUpload>
-
-                <small>(esp-miner.bin)</small>
-            </div>
-
-        </div>
-    </div>
+<header class="fw-config-heading fw-console-heading"><div><h1>Updates</h1><p>Installed firmware: {{(info$ | async)?.version}}</p></div></header>
+<div class="fw-update-console">
+  <p class="fw-update-note">BETA firmware for Gamma PCB601/602 only. Upload matching application and web builds.</p>
+  <section class="fw-update-target" aria-labelledby="web-update-title"><div class="fw-update-description"><h2 id="web-update-title">Web interface</h2></div><div class="fw-update-upload"><code>www.bin</code><p-fileUpload #websiteUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaWWWUpdate($event)" [auto]="true" chooseLabel="Choose www.bin"></p-fileUpload></div></section>
+  <section class="fw-update-target" aria-labelledby="firmware-update-title"><div class="fw-update-description"><h2 id="firmware-update-title">Miner firmware</h2></div><div class="fw-update-upload"><code>esp-miner.bin</code><p-fileUpload #firmwareUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaUpdate($event)" [auto]="true" chooseLabel="Choose esp-miner.bin"></p-fileUpload></div></section>
+  <section class="fw-upstream-channel"><div><h2>5tratumFW releases</h2><p>BETA releases require device validation; read the compatibility and release notes.</p></div>
+    <ng-container *ngIf="checkLatestRelease == false; else afterCheck"><button pButton type="button" class="p-button-outlined" (click)="handleReleaseCheck()">Check releases</button>
+      <app-modal #privacyModal [headline]="'Privacy warning'"><p>This checks the latest 5tratumFW release by connecting to <strong>github.com</strong>.</p><p class="flex gap-2"><p-checkbox [binary]="true" inputId="ignoreWarning" #ignoreWarning></p-checkbox><label for="ignoreWarning">Don't show again</label></p><div class="flex gap-3 mt-5"><p-button (onClick)="continueReleaseCheck(ignoreWarning.model)">Continue</p-button><p-button styleClass="p-button-secondary" (onClick)="privacyModal.isVisible = false">Cancel</p-button></div></app-modal>
+    </ng-container>
+    <ng-template #afterCheck><ng-container *ngIf="latestRelease$ | async as latestRelease"><div class="fw-upstream-result"><a target="_blank" rel="noopener noreferrer" [href]="latestRelease.html_url">{{latestRelease.name}} <i class="pi pi-external-link" aria-hidden="true"></i></a><div class="fw-upstream-assets"><ng-container *ngFor="let asset of latestRelease.assets"><a *ngIf="asset.name == 'esp-miner.bin' || asset.name == 'www.bin'" target="_blank" rel="noopener noreferrer" [href]="asset.browser_download_url">{{asset.name}}</a></ng-container><button type="button" class="fw-text-button" (click)="releaseNotesModal.isVisible = true">Release notes</button></div></div><app-modal #releaseNotesModal [headline]="latestRelease.name"><div [innerHTML]="simpleMarkdownParser(latestRelease.body)"></div></app-modal></ng-container></ng-template>
+  </section>
 </div>
-<app-modal #progressModal [headline]="'Updating ' + updateTarget" [closable]="updateStatus !== 'progress'">
+<app-modal #progressModal [headline]="updateTarget === 'Web' ? 'Updating web interface' : 'Updating firmware'" [closable]="updateStatus !== 'progress'">
     <div class="flex flex-column align-items-center justify-content-center p-4">
         <ng-container *ngIf="updateStatus === 'progress'">
-            <div class="text-xl mb-3" *ngIf="updateTarget === 'AxeOS' && websiteUpdateProgress !== null">
+            <div class="text-xl mb-3" *ngIf="updateTarget === 'Web' && websiteUpdateProgress !== null">
                 Uploading... {{ websiteUpdateProgress }}%
             </div>
             <div class="text-xl mb-3" *ngIf="updateTarget === 'Firmware' && firmwareUpdateProgress !== null">
                 Uploading... {{ firmwareUpdateProgress }}%
             </div>
-            <div class="text-xl mb-3" *ngIf="(updateTarget === 'AxeOS' && websiteUpdateProgress === null) || (updateTarget === 'Firmware' && firmwareUpdateProgress === null)">
+            <div class="text-xl mb-3" *ngIf="(updateTarget === 'Web' && websiteUpdateProgress === null) || (updateTarget === 'Firmware' && firmwareUpdateProgress === null)">
                 Applying update...
             </div>
-            <p-progressBar class="w-full" [styleClass]="'instant-progress'" [showValue]="false" [value]="updateTarget === 'AxeOS' ? websiteUpdateProgress : firmwareUpdateProgress" [style]="{'height': '1.5rem', 'width': '100%'}"></p-progressBar>
+            <p-progressBar class="w-full" [styleClass]="'instant-progress'" [showValue]="false" [value]="updateTarget === 'Web' ? websiteUpdateProgress : firmwareUpdateProgress" [style]="{'height': '1.5rem', 'width': '100%'}"></p-progressBar>
             <div class="text-center mt-3 text-500">
                 Please do not disconnect the power.
             </div>
@@ -101,7 +31,7 @@
         <ng-container *ngIf="updateStatus === 'success'">
             <i class="pi pi-check-circle text-green-500" style="font-size: 3.5rem; margin-bottom: 1rem;"></i>
             <div class="text-lg text-center">{{ updateMessage }}</div>
-            <div class="mt-4" *ngIf="updateTarget !== 'AxeOS'">
+            <div class="mt-4" *ngIf="updateTarget !== 'Web'">
                 <p-button (onClick)="progressModal.isVisible = false">Close</p-button>
             </div>
         </ng-container>

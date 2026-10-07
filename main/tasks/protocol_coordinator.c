@@ -7,6 +7,7 @@
 
 #include "protocol_coordinator.h"
 #include "stratum_v1_task.h"
+#include "mux_peer_status.h"
 #include "stratum_v2_task.h"
 #include "connect.h"
 #include "system.h"
@@ -169,6 +170,7 @@ static void start_protocol_task(GlobalState *gs, stratum_protocol_t protocol)
 // The V1 task handles its own full cleanup (destroy, queue clear) on exit.
 static void stop_v1_task(GlobalState *gs)
 {
+    mux_peer_status_disconnect();
     s_v1_should_shutdown = true;
 
     // Close transport to unblock V1's blocked recv()

@@ -68,7 +68,7 @@ void FAN_CONTROLLER_task(void * pvParameters)
     TickType_t taskWakeTime = xTaskGetTickCount();
 
     while (1) {
-        if (nvs_config_get_bool(NVS_CONFIG_OVERHEAT_MODE)) {
+        if (nvs_config_get_bool(NVS_CONFIG_OVERHEAT_MODE) || GLOBAL_STATE->SYSTEM_MODULE.hardware_fault) {
             update_fan_speed(GLOBAL_STATE, 100.0f, "Overheat");
         } else if (GLOBAL_STATE->SYSTEM_MODULE.mining_paused) {
             update_fan_speed(GLOBAL_STATE, 30.0f, "Paused");

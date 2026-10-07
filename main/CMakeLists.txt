@@ -5,6 +5,9 @@ SRCS
     "main.c"
     "log_buffer.c"
     "nvs_config.c"
+    "mining_schedule.c"
+    "mining_schedule_policy.c"
+    "mux_peer_status.c"
     "display.c"
     "screen.c"
     "input.c"
@@ -21,6 +24,7 @@ SRCS
     "device_config.c"
     "task_monitor.c"
     "./http_server/http_server.c"
+    "./http_server/mining_schedule_api.c"
     "./http_server/websocket.c"
     "./http_server/websocket_log.c"
     "./http_server/websocket_api.c"
@@ -133,6 +137,9 @@ else()
         "${WEB_SRC_DIR}/angular.json"
         "${WEB_SRC_DIR}/tsconfig.json"
         "${WEB_SRC_DIR}/tsconfig.app.json"
+        "${CMAKE_SOURCE_DIR}/version.txt"
+        "${WEB_SRC_DIR}/generate-version.js"
+        "${WEB_SRC_DIR}/only-gzip.js"
     )
 
     # Use a stamp file to track when the build was last done

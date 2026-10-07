@@ -1,6 +1,18 @@
-<ul class="layout-menu">
-    <ng-container *ngFor="let item of model; let i = index;">
-        <li app-menuitem *ngIf="!item.separator" [item]="item" [index]="i" [root]="true"></li>
-        <li *ngIf="item.separator" class="menu-separator"></li>
-    </ng-container>
-</ul>
+<nav class="fw-command-links" aria-label="Control sections">
+  <a routerLink="/" routerLinkActive="fw-nav-active" [routerLinkActiveOptions]="{exact:true}" (click)="closeMore()"><i class="pi pi-chart-line" aria-hidden="true"></i>Overview</a>
+  <a routerLink="/settings" routerLinkActive="fw-nav-active" (click)="closeMore()"><i class="pi pi-sliders-h" aria-hidden="true"></i>Miner controls</a>
+  <a routerLink="/scheduler" routerLinkActive="fw-nav-active" (click)="closeMore()"><i class="pi pi-calendar" aria-hidden="true"></i>Scheduler</a>
+  <a routerLink="/pool" routerLinkActive="fw-nav-active" (click)="closeMore()"><i class="pi pi-server" aria-hidden="true"></i>Pool routing</a>
+  <a routerLink="/network" routerLinkActive="fw-nav-active" (click)="closeMore()"><i class="pi pi-wifi" aria-hidden="true"></i>Network</a>
+  <a routerLink="/update" routerLinkActive="fw-nav-active" (click)="closeMore()"><i class="pi pi-upload" aria-hidden="true"></i>Updates</a>
+  <details class="fw-more-navigation" #moreMenu>
+    <summary>More<i class="pi pi-angle-down" aria-hidden="true"></i></summary>
+    <div>
+      <a routerLink="/system" routerLinkActive="fw-nav-active" (click)="closeMore()">System information</a>
+      <a routerLink="/logs" routerLinkActive="fw-nav-active" (click)="closeMore()">Device logs</a>
+      <a routerLink="/scoreboard" routerLinkActive="fw-nav-active" (click)="closeMore()">Mining records</a>
+      <a routerLink="/swarm" routerLinkActive="fw-nav-active" (click)="closeMore()">Network devices</a>
+      <a routerLink="/design" routerLinkActive="fw-nav-active" (click)="closeMore()">Appearance</a>
+    </div>
+  </details>
+</nav>

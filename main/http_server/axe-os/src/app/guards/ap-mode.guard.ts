@@ -1,6 +1,6 @@
 import { CanActivateFn, Router } from '@angular/router';
 import { inject } from '@angular/core';
-import { Observable, map, catchError, of, take } from 'rxjs';
+import { Observable, map, catchError, of, take, timeout } from 'rxjs';
 import { LiveDataService } from '../services/live-data.service';
 
 export const ApModeGuard: CanActivateFn = (): Observable<boolean> => {
@@ -9,6 +9,8 @@ export const ApModeGuard: CanActivateFn = (): Observable<boolean> => {
 
   return liveDataService.info$.pipe(
     take(1),
+    // An unreachable miner must not prevent the interface shell from opening.
+    timeout(3000),
     map(info => {
       if (info.apEnabled) {
         router.navigate(['/ap']);
@@ -18,4 +20,4 @@ export const ApModeGuard: CanActivateFn = (): Observable<boolean> => {
     }),
     catchError(() => of(true))
   );
-}; 
+};

@@ -108,7 +108,7 @@ Build, flash, and monitor the test binary. Output from the new test should be pr
 #### Running all the registered tests #####
 
 Running Foo returns what is provided...
-/home/dev/myrepos/ESP-Miner/components/foo/test/test_foo.c:4:Foo returns what is provided:PASS
+/workspace/ESP-Miner/test/main/unit_test_all.c:4:Foo returns what is provided:PASS
 ...
 ```
 

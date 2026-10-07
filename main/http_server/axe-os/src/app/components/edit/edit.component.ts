@@ -2,11 +2,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
-import { forkJoin, startWith, Subject, takeUntil, pairwise, BehaviorSubject, Observable, first } from 'rxjs';
+import { forkJoin, startWith, Subject, takeUntil, pairwise, BehaviorSubject, Observable, first, timer, exhaustMap, timeout, catchError, EMPTY, take, Subscription } from 'rxjs';
 import { LoadingService } from 'src/app/services/loading.service';
 import { LiveDataService } from 'src/app/services/live-data.service';
 import { SystemApiService } from 'src/app/services/system.service';
 import { ActivatedRoute } from '@angular/router';
+import { OperatingSettingsExportService } from 'src/app/services/operating-settings-export.service';
 
 type Dropdown = {
   name: string;
@@ -29,6 +30,10 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
 
   public savedChanges: boolean = false;
   public settingsUnlocked: boolean = false;
+  public activeControlSection: 'performance' | 'cooling' | 'display' | 'history' = 'performance';
+  public pendingRestart: boolean = false;
+  public initializationError: string | null = null;
+  private settingsLoadSubscription?: Subscription;
 
   @Input() uri = '';
 
@@ -53,6 +58,7 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
     private toastr: ToastrService,
     private loadingService: LoadingService,
     private route: ActivatedRoute,
+    public operatingSettingsExport: OperatingSettingsExportService,
   ) {
     // Check URL parameter for settings unlock
     this.route.queryParams.subscribe(params => {
@@ -126,20 +132,25 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
   private loadDeviceSettings(): void {
     const deviceUri = this.uri || '';
 
-    const info$ = deviceUri
-      ? this.systemService.getInfo(deviceUri)
-      : this.liveDataService.info$.pipe(first());
-
-    // Fetch both system info and ASIC settings in parallel
-    forkJoin({
-      info: info$,
-      asic: this.systemService.getAsicSettings(deviceUri)
-    })
-    .pipe(
-      this.loadingService.lockUIUntilComplete(),
+    this.settingsLoadSubscription?.unsubscribe();
+    this.initializationError = null;
+    // Initialization retries only until the first confirmed response. It does
+    // not lock the shell or poll over a user's subsequently edited form.
+    this.settingsLoadSubscription = timer(0, 5000).pipe(
+      exhaustMap(() => forkJoin({
+        info: deviceUri ? this.systemService.getInfo(deviceUri) : this.liveDataService.info$.pipe(first()),
+        asic: this.systemService.getAsicSettings(deviceUri)
+      }).pipe(
+        timeout(4500),
+        catchError(() => {
+          this.initializationError = 'Device settings unavailable. Retrying automatically.';
+          return EMPTY;
+        })
+      )),
+      take(1),
       takeUntil(this.destroy$)
-    )
-    .subscribe(({ info, asic }) => {
+    ).subscribe(({ info, asic }) => {
+      this.initializationError = null;
       // Store the frequency and voltage options from the API
       this.defaultFrequency = asic.defaultFrequency;
       this.frequencyOptions = asic.frequencyOptions;
@@ -224,6 +235,7 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
 
   public updateSystem() {
     const form = this.form.getRawValue();
+    const requiresRestart = this.isRestartRequired;
 
     if (form.stratumPassword === '*****') {
       delete form.stratumPassword;
@@ -235,11 +247,13 @@ export class EditComponent implements OnInit, OnDestroy, OnChanges {
       .subscribe({
         next: () => {
           const successMessage = this.uri ? `Saved settings for ${this.uri}` : 'Saved settings';
-          if (this.isRestartRequired) {
+          if (requiresRestart) {
             this.toastr.warning('You must restart this device after saving for changes to take effect.');
           }
           this.toastr.success(successMessage);
           this.savedChanges = true;
+          this.pendingRestart = this.pendingRestart || requiresRestart;
+          this.form.markAsPristine();
         },
         error: (err: HttpErrorResponse) => {
           const errorMessage = this.uri ? `Could not save settings for ${this.uri}. ${err.message}` : `Could not save settings. ${err.message}`;

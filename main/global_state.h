@@ -100,6 +100,7 @@ typedef struct
     char pool_connection_info[64];
     bool overheat_mode;
     bool mining_paused;
+    bool mining_runtime_ready;
     bool pools_unavailable;
     uint16_t power_fault;
     uint32_t lastClockSync;

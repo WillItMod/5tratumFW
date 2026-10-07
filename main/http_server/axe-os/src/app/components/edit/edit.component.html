@@ -1,180 +1,42 @@
-<form *ngIf="form" [formGroup]="form">
-    <div class="card">
-        <p-message *ngIf="settingsUnlocked" severity="warn" styleClass="w-full mb-3 py-4 border-round-xl"
-            text="Custom settings can cause damage & system instability. Only modify these settings if you understand the risks of running outside designed parameters.">
-        </p-message>
-
-        <div class="field grid p-fluid">
-            <ng-container *ngIf="settingsUnlocked">
-                <label for="frequency" class="col-12 md:col-2 md:m-0">Frequency</label>
-                <div class="col-12 md:col-10">
-                    <input pInputText id="frequency" formControlName="frequency" type="number" />
-                </div>
-            </ng-container>
-            <ng-container *ngIf="!settingsUnlocked">
-                <label (click)="frequencyDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Frequency</label>
-                <div class="col-12 md:col-10">
-                    <p-dropdown
-                        [options]="dropdownFrequency"
-                        optionLabel="name"
-                        optionValue="value"
-                        formControlName="frequency"
-                        #frequencyDropdown
-                    ></p-dropdown>
-                </div>
-            </ng-container>
+<p *ngIf="initializationError && !form" class="fw-control-warning" role="status">{{initializationError}}</p>
+<form *ngIf="form" [formGroup]="form" class="fw-control-console">
+  <div class="fw-control-layout">
+    <nav class="fw-control-sections" aria-label="Miner control sections">
+      <button type="button" (click)="activeControlSection = 'performance'" [class.fw-section-active]="activeControlSection === 'performance'" [attr.aria-current]="activeControlSection === 'performance' ? 'page' : null"><span>Frequency and voltage</span></button>
+      <button type="button" (click)="activeControlSection = 'cooling'" [class.fw-section-active]="activeControlSection === 'cooling'" [attr.aria-current]="activeControlSection === 'cooling' ? 'page' : null"><span>Fan control</span></button>
+      <button type="button" (click)="activeControlSection = 'display'" [class.fw-section-active]="activeControlSection === 'display'" [attr.aria-current]="activeControlSection === 'display' ? 'page' : null"><span>Display</span></button>
+      <button type="button" (click)="activeControlSection = 'history'" [class.fw-section-active]="activeControlSection === 'history'" [attr.aria-current]="activeControlSection === 'history' ? 'page' : null"><span>Data logging</span></button>
+    </nav>
+    <div class="fw-control-workbench">
+      <section [hidden]="activeControlSection !== 'performance'" aria-labelledby="operating-title">
+        <div class="fw-section-intro"><h2 id="operating-title">Frequency and voltage</h2></div>
+        <p-message *ngIf="settingsUnlocked" severity="warn" styleClass="w-full mb-4" text="Custom settings can damage hardware or cause instability. Only change them if you understand the risks of running outside designed parameters." />
+        <div class="fw-operating-fields">
+          <div class="fw-control-field"><label for="frequency">ASIC frequency <span>MHz</span></label><input *ngIf="settingsUnlocked" id="frequency" type="number" formControlName="frequency" /><select *ngIf="!settingsUnlocked" id="frequency" formControlName="frequency"><option *ngFor="let option of dropdownFrequency" [ngValue]="option.value">{{option.name}}</option></select><small>Device default {{defaultFrequency}} MHz</small></div>
+          <div class="fw-control-field"><label for="coreVoltage">Core voltage <span>mV</span></label><input *ngIf="settingsUnlocked" id="coreVoltage" type="number" formControlName="coreVoltage" /><select *ngIf="!settingsUnlocked" id="coreVoltage" formControlName="coreVoltage"><option *ngFor="let option of dropdownVoltage" [ngValue]="option.value">{{option.name}}</option></select><small>Device default {{defaultVoltage}} mV</small></div>
         </div>
-
-        <div class="field grid p-fluid">
-            <ng-container *ngIf="settingsUnlocked">
-                <label for="coreVoltage" class="col-12 md:col-2 md:m-0">Core Voltage</label>
-                <div class="col-12 md:col-10">
-                    <input pInputText id="coreVoltage" formControlName="coreVoltage" type="number" />
-                </div>
-            </ng-container>
-            <ng-container *ngIf="!settingsUnlocked">
-                <label (click)="voltageDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Core Voltage</label>
-                <div class="col-12 md:col-10">
-                    <p-dropdown
-                        [options]="dropdownVoltage"
-                        optionLabel="name"
-                        optionValue="value"
-                        formControlName="coreVoltage"
-                        #voltageDropdown
-                    ></p-dropdown>
-                </div>
-            </ng-container>
-        </div>
-
-        <div *ngIf="form.get('overheat_mode')?.value === 1" class="mt-4">
-            <button pButton type="button" label="Disable Overheat Mode"
-                    class="p-button-danger w-full"
-                    (click)="disableOverheatMode()">
-            </button>
-            <small class="block mt-1 text-center text-primary">
-                Make sure to reset Frequency and Voltage before clicking this button.
-            </small>
-        </div>
-
-        <div class="field-checkbox grid my-2">
-            <div class="col-1 md:col-10 md:flex-order-2">
-                <p-checkbox name="autofanspeed" formControlName="autofanspeed" inputId="autofanspeed" [binary]="true"></p-checkbox>
-            </div>
-            <label for="autofanspeed" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2">Automatic Fan Control</label>
-        </div>
-
-        <div *ngIf="form.controls['autofanspeed'].value" class="grid p-fluid my-2">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Target Temperature</label>
-            <div class="col-12 md:col-10">
-                <label class="block mb-1">
-                    <span class="md:hidden mr-1">Target Temperature:</span>{{form.controls['temptarget'].value}} °C
-                </label>
-                <p-slider [min]="35" [max]="66" formControlName="temptarget"></p-slider>
-            </div>
-        </div>
-
-        <div *ngIf="form.controls['autofanspeed'].value" class="grid p-fluid">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Minimum Fan Speed</label>
-            <div class="col-12 md:col-10">
-                <label class="block mb-1">
-                    <span class="md:hidden mr-1">Minimum Fan Speed:</span>{{form.controls['minfanspeed'].value}} %
-                </label>
-                <p-slider [min]="0" [max]="99" formControlName="minfanspeed"></p-slider>
-            </div>
-        </div>
-
-        <div *ngIf="!form.controls['autofanspeed'].value" class="grid p-fluid mt-2">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Fan Speed</label>
-            <div class="col-12 md:col-10">
-                <label class="block mb-1">
-                    <span class="md:hidden mr-1">Fan Speed:</span>{{form.controls['manualFanSpeed'].value}} %
-                    <b *ngIf="form.controls['manualFanSpeed'].value < 33" class="text-primary">
-                        Danger: Could Cause Overheating
-                    </b>
-                    <b *ngIf="form.controls['manualFanSpeed'].value == 100" class="text-orange-500 ml-2">
-                        S19 Simulator
-                    </b>
-                </label>
-                <p-slider formControlName="manualFanSpeed"></p-slider>
-            </div>
-        </div>
+        <div *ngIf="form.get('overheat_mode')?.value === 1" class="fw-recovery"><h3>Overheat protection is active</h3><p>Reset frequency and voltage to safe values before clearing protection.</p><button pButton type="button" class="p-button-danger" (click)="disableOverheatMode()">Clear overheat protection</button></div>
+      </section>
+      <section [hidden]="activeControlSection !== 'cooling'" aria-labelledby="cooling-title">
+        <div class="fw-section-intro"><h2 id="cooling-title">Fan control</h2></div>
+        <label class="fw-switch-row" for="autofanspeed"><span><strong>Automatic fan control</strong></span><input type="checkbox" id="autofanspeed" formControlName="autofanspeed" /></label>
+        <div *ngIf="form.controls['autofanspeed'].value" class="fw-range-field"><div><label for="temptarget">Target temperature</label><output>{{form.controls['temptarget'].value}} <small>°C</small></output></div><input type="range" id="temptarget" min="35" max="66" formControlName="temptarget" /><div class="fw-range-limits"><span>35°C</span><span>66°C</span></div></div>
+        <div *ngIf="form.controls['autofanspeed'].value" class="fw-range-field"><div><label for="minfanspeed">Minimum fan duty</label><output>{{form.controls['minfanspeed'].value}} <small>%</small></output></div><input type="range" id="minfanspeed" min="0" max="99" formControlName="minfanspeed" /><div class="fw-range-limits"><span>0%</span><span>99%</span></div></div>
+        <div *ngIf="!form.controls['autofanspeed'].value" class="fw-range-field"><div><label for="manualFanSpeed">Manual fan duty</label><output>{{form.controls['manualFanSpeed'].value}} <small>%</small></output></div><input type="range" id="manualFanSpeed" min="0" max="100" formControlName="manualFanSpeed" /><p *ngIf="form.controls['manualFanSpeed'].value < 33" class="fw-control-warning">Low fan duty can cause overheating. Monitor ASIC temperature.</p><div class="fw-range-limits"><span>0%</span><span>100%</span></div></div>
+      </section>
+      <section [hidden]="activeControlSection !== 'display'" aria-labelledby="display-title">
+        <div class="fw-section-intro"><h2 id="display-title">Display</h2><p>Panel type and rotation require a restart.</p></div>
+        <div class="fw-operating-fields"><div class="fw-control-field"><label for="deviceDisplay">Panel type</label><select id="deviceDisplay" formControlName="display"><option *ngFor="let display of displays" [ngValue]="display">{{display}}</option></select></div><div class="fw-control-field"><label for="displayRotation">Rotation <span>degrees</span></label><select id="displayRotation" formControlName="rotation"><option *ngFor="let rotation of rotations" [ngValue]="rotation">{{rotation}}°</option></select></div></div>
+        <div class="fw-range-field"><div><label for="displaySleep">Display sleep</label><output class="fw-text-output"><ng-container *ngIf="form.controls['displayTimeout'].value === 0">Always off</ng-container><ng-container *ngIf="form.controls['displayTimeout'].value > 0">After {{form.controls['displayTimeout'].value * 60 | dateAgo}}</ng-container><ng-container *ngIf="form.controls['displayTimeout'].value === -1">Always on</ng-container></output></div><input type="range" id="displaySleep" min="0" [max]="displayTimeoutMaxSteps" step="1" [formControl]="displayTimeoutControl" /><input type="hidden" formControlName="displayTimeout" /><div class="fw-range-limits"><span>Always off</span><span>Always on</span></div></div>
+        <label class="fw-switch-row" for="invertscreen"><span><strong>Invert display colors</strong></span><input type="checkbox" id="invertscreen" formControlName="invertscreen" /></label>
+      </section>
+      <section [hidden]="activeControlSection !== 'history'" aria-labelledby="history-title">
+        <div class="fw-section-intro"><h2 id="history-title">Data logging</h2><p>Capacity: {{statsLimit}} samples.</p></div>
+        <div class="fw-range-field"><div><label for="statsInterval">Logging interval</label><output class="fw-text-output"><ng-container *ngIf="form.controls['statsFrequency'].value === 0">Disabled</ng-container><ng-container *ngIf="form.controls['statsFrequency'].value > 0">Every {{form.controls['statsFrequency'].value | dateAgo: {strict: true} }}</ng-container></output></div><input type="range" id="statsInterval" min="0" [max]="statsFrequencyMaxSteps" step="1" [formControl]="statsFrequencyControl" /><input type="hidden" formControlName="statsFrequency" /><div class="fw-range-limits"><span>Disabled</span><span>1 hour</span></div></div>
+        <div class="fw-retention" *ngIf="form.controls['statsFrequency'].value > 0"><span>Estimated history window</span><strong>{{(form.controls['statsFrequency'].value * statsLimit) | dateAgo}}</strong></div>
+      </section>
     </div>
-
-    <h3 class="mt-5">Display</h3>
-
-    <div class="card">
-        <div class="field grid p-fluid">
-            <label (click)="displayDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Type</label>
-            <div class="col-12 md:col-10">
-                <p-dropdown [options]="displays" formControlName="display" #displayDropdown></p-dropdown>
-            </div>
-        </div>
-
-        <div class="field grid p-fluid">
-            <label (click)="rotationDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Rotation</label>
-            <div class="col-12 md:col-10">
-                <p-dropdown [options]="rotations" formControlName="rotation" #rotationDropdown></p-dropdown>
-            </div>
-        </div>
-
-        <div class="field grid p-fluid">
-            <label class="col-12 md:col-2 hidden md:flex md:m-0 relative hover-next-input">
-                Sleep
-            </label>
-            <div class="col-12 md:col-10">
-                <label class="block mb-1">
-                    <ng-container *ngIf="this.form.controls['displayTimeout'].value == 0">
-                        <span class="md:hidden mr-1">Display</span> Always Off
-                    </ng-container>
-                    <ng-container *ngIf="this.form.controls['displayTimeout'].value > 0">
-                        <span class="md:hidden mr-1">Display</span> Timeout: {{this.form.controls['displayTimeout'].value * 60 | dateAgo}}
-                    </ng-container>
-                    <ng-container *ngIf="this.form.controls['displayTimeout'].value == -1">
-                        <span class="md:hidden mr-1">Display</span> Always On
-                    </ng-container>
-                </label>
-                <p-slider [min]="0" [max]="displayTimeoutMaxSteps" [step]="1" [formControl]="displayTimeoutControl"></p-slider>
-                <input type="hidden" formControlName="displayTimeout" />
-            </div>
-        </div>
-
-        <div class="field-checkbox grid mt-2 mb-0">
-            <div class="col-1 md:col-10 md:flex-order-2">
-                <p-checkbox name="invertscreen" formControlName="invertscreen" inputId="invertscreen" [binary]="true"></p-checkbox>
-            </div>
-            <label for="invertscreen" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2">Invert Display Colors</label>
-        </div>
-    </div>
-
-    <h3 class="mt-5">Statistics</h3>
-
-    <div class="card">
-        <div class="grid p-fluid">
-            <label class="col-12 md:col-2 hidden md:flex md:m-0 relative hover-next-input">
-                Data Logging
-            </label>
-            <div class="col-12 md:col-10">
-                <label class="block mb-2">
-                    <ng-container *ngIf="this.form.controls['statsFrequency'].value == 0">
-                        <span class="md:hidden mr-1">Data Logging</span>Disabled
-                    </ng-container>
-                    <ng-container *ngIf="this.form.controls['statsFrequency'].value > 0">
-                        <span class="md:hidden mr-1">Log Data</span>Every {{form.controls['statsFrequency'].value | dateAgo: {strict: true} }} for {{(form.controls['statsFrequency'].value * statsLimit) | dateAgo}}
-                    </ng-container>
-                </label>
-                <p-slider [min]="0" [max]="statsFrequencyMaxSteps" [step]="1" [formControl]="statsFrequencyControl"></p-slider>
-                <input type="hidden" formControlName="statsFrequency" />
-            </div>
-        </div>
-    </div>
-
-    <div class="flex mt-5 gap-3">
-        <button pButton [disabled]="!form.dirty || form.invalid" (click)="updateSystem()"
-            class="btn btn-primary">Save</button>
-
-        <button pButton [disabled]="!savedChanges" (click)="restart()">Restart</button>
-
-        <button *ngIf="settingsUnlocked" pButton pButton="p-button-danger" (click)="toggleOverclockMode(false)"
-            class="p-button-danger" pTooltip="Return to safe preset values only">Disable Overclock Mode</button>
-    </div>
+  </div>
+  <div class="fw-control-actionbar"><div class="fw-save-state"><span [class.fw-unsaved-dot]="form.dirty"></span><div><strong>{{form.dirty ? 'Unsaved changes' : pendingRestart ? 'Saved · restart required' : savedChanges ? 'Settings saved' : 'Current device settings'}}</strong><small *ngIf="form.dirty || pendingRestart">{{form.dirty ? (isRestartRequired ? 'Restart required after saving.' : 'Applies when saved.') : pendingRestart ? 'Restart to apply pending changes.' : ''}}</small></div></div><div class="fw-control-actions"><button *ngIf="!uri" type="button" class="fw-export-button" aria-label="Export settings" (click)="operatingSettingsExport.exportSettings()" pTooltip="Operating settings record; excludes passwords. Not a full NVS backup."><i class="pi pi-download" aria-hidden="true"></i><span>Export settings</span></button><button pButton type="button" [disabled]="!savedChanges" class="p-button-outlined" (click)="restart()">Restart</button><button pButton type="button" [disabled]="!form.dirty || form.invalid" (click)="updateSystem()">Save changes</button></div></div>
+  <button *ngIf="settingsUnlocked" pButton type="button" class="p-button-danger p-button-outlined fw-lock-presets" (click)="toggleOverclockMode(false)" pTooltip="Return to safe preset values only">Disable custom settings</button>
 </form>

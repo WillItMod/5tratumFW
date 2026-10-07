@@ -11,10 +11,11 @@ import { SwarmComponent } from './components/swarm/swarm.component';
 import { ScoreboardComponent } from './components/scoreboard/scoreboard.component';
 import { DesignComponent } from './components/design/design.component';
 import { PoolComponent } from './components/pool/pool.component';
+import { SchedulerComponent } from './components/scheduler/scheduler.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
-const TITLE_PREFIX = 'AxeOS';
+const TITLE_PREFIX = '5tratumFW';
 
 const routes: Routes = [
   {
@@ -81,7 +82,17 @@ const routes: Routes = [
       {
         path: 'pool',
         component: PoolComponent,
-        title: `${TITLE_PREFIX} Pool`,
+        title: `${TITLE_PREFIX} Pool routing`,
+      },
+      {
+        path: 'mux',
+        redirectTo: 'pool',
+        pathMatch: 'full',
+      },
+      {
+        path: 'scheduler',
+        component: SchedulerComponent,
+        title: `${TITLE_PREFIX} Scheduler`,
       }
     ]
   },

@@ -15,6 +15,7 @@
 #include "display.h"
 #include "theme_api.h"
 #include "scoreboard.h"
+#include "5tratumfw.h"
 
 #define NVS_CONFIG_NAMESPACE "main"
 #define NVS_STR_LIMIT (4000 - 1) // See nvs_set_str
@@ -63,7 +64,7 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_STRATUM_CERT]                          = {.nvs_key_name = "stratumcert",     .type = TYPE_STR,   .default_value = {.str = (char *)CONFIG_STRATUM_CERT},                 .rest_name = "stratumCert",                        .min = 0,  .max = NVS_STR_LIMIT},
     [NVS_CONFIG_SV2_CHANNEL_TYPE]                      = {.nvs_key_name = "sv2chantype",     .type = TYPE_STR,   .default_value = {.str = SV2_CHANNEL_TYPE_EXTENDED},                   .rest_name = "stratumV2ChannelType",               .min = 8,  .max = 8},
     [NVS_CONFIG_SV2_AUTHORITY_PUBKEY]                  = {.nvs_key_name = "sv2authpubkey",   .type = TYPE_STR,   .default_value = {.str = ""},                                          .rest_name = "stratumV2AuthorityPubkey",           .min = 0,  .max = 52},   
-    [NVS_CONFIG_STRATUM_DECODE_COINBASE_TX]            = {.nvs_key_name = "stratumdecode",   .type = TYPE_BOOL,  .default_value = {.b   = true},                                        .rest_name = "stratumDecodeCoinbase",              .min = 0,  .max = 1},
+    [NVS_CONFIG_STRATUM_DECODE_COINBASE_TX]            = {.nvs_key_name = "stratumdecode",   .type = TYPE_BOOL,  .default_value = {.b   = false},                                       .rest_name = "stratumDecodeCoinbase",              .min = 0,  .max = 1},
     [NVS_CONFIG_FALLBACK_STRATUM_PROTOCOL]             = {.nvs_key_name = "fbstratumprot",   .type = TYPE_STR,   .default_value = {.str = STRATUM_V1},                                  .rest_name = "fallbackStratumProtocol",            .min = 3,  .max = 3},
     [NVS_CONFIG_FALLBACK_STRATUM_URL]                  = {.nvs_key_name = "fbstratumurl",    .type = TYPE_STR,   .default_value = {.str = (char *)CONFIG_FALLBACK_STRATUM_URL},         .rest_name = "fallbackStratumURL",                 .min = 0,  .max = NVS_STR_LIMIT},
     [NVS_CONFIG_FALLBACK_STRATUM_PORT]                 = {.nvs_key_name = "fbstratumport",   .type = TYPE_U16,   .default_value = {.u16 = CONFIG_FALLBACK_STRATUM_PORT},                .rest_name = "fallbackStratumPort",                .min = 0,  .max = UINT16_MAX},
@@ -75,7 +76,7 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_FALLBACK_STRATUM_CERT]                 = {.nvs_key_name = "fbstratumcert",   .type = TYPE_STR,   .default_value = {.str = (char *)CONFIG_FALLBACK_STRATUM_CERT},        .rest_name = "fallbackStratumCert",                .min = 0,  .max = NVS_STR_LIMIT},
     [NVS_CONFIG_FALLBACK_SV2_CHANNEL_TYPE]             = {.nvs_key_name = "fbsv2chantype",   .type = TYPE_STR,   .default_value = {.str = SV2_CHANNEL_TYPE_EXTENDED},                   .rest_name = "fallbackStratumV2ChannelType",       .min = 8,  .max = 8},
     [NVS_CONFIG_FALLBACK_SV2_AUTHORITY_PUBKEY]         = {.nvs_key_name = "fbsv2authpubk",   .type = TYPE_STR,   .default_value = {.str = ""},                                          .rest_name = "fallbackStratumV2AuthorityPubkey",   .min = 0,  .max = 52},
-    [NVS_CONFIG_FALLBACK_STRATUM_DECODE_COINBASE_TX]   = {.nvs_key_name = "fbstratumdecode", .type = TYPE_BOOL,  .default_value = {.b   = true},                                        .rest_name = "fallbackStratumDecodeCoinbase",      .min = 0,  .max = 1},
+    [NVS_CONFIG_FALLBACK_STRATUM_DECODE_COINBASE_TX]   = {.nvs_key_name = "fbstratumdecode", .type = TYPE_BOOL,  .default_value = {.b   = false},                                       .rest_name = "fallbackStratumDecodeCoinbase",      .min = 0,  .max = 1},
     [NVS_CONFIG_USE_FALLBACK_STRATUM]                  = {.nvs_key_name = "usefbstartum",    .type = TYPE_BOOL,                                                                         .rest_name = "useFallbackStratum",                 .min = 0,  .max = 1},
 
     [NVS_CONFIG_ASIC_FREQUENCY]                        = {.nvs_key_name = "asicfrequency_f", .type = TYPE_FLOAT, .default_value = {.f   = CONFIG_ASIC_FREQUENCY},                       .rest_name = "frequency",                          .min = 1,  .max = UINT16_MAX},
@@ -123,6 +124,7 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_SELF_TEST_TEMP_TARGET]                 = {.nvs_key_name = "selftest_temp",   .type = TYPE_U16,   .default_value = {.u16 = 65}},
     [NVS_CONFIG_SELF_TEST_TEMP_WARMUP]                 = {.nvs_key_name = "selftest_warm",   .type = TYPE_U16,   .default_value = {.u16 = 55}},
     [NVS_CONFIG_SELF_TEST_TEMP_MAX]                    = {.nvs_key_name = "selftest_max",    .type = TYPE_U16,   .default_value = {.u16 = 70}},
+    [NVS_CONFIG_MINING_SCHEDULE]                       = {.nvs_key_name = "mining_schedule", .type = TYPE_STR,   .default_value = {.str = "{\"enabled\":false,\"timezone\":\"UTC\",\"windows\":[]}"}},
 };
 
 Settings *nvs_config_get_settings(NvsConfigKey key)
@@ -150,59 +152,42 @@ static void get_nvs_key_name(const Settings * setting, const int index, char des
     }
 }
 
-static void nvs_config_init_fallback(NvsConfigKey key, Settings * setting)
+// Interpret older keys in RAM only. An OTA boot must not migrate or erase NVS.
+// User changes still use the existing save task and downgrade-compatible keys.
+static bool nvs_config_load_legacy(NvsConfigKey key, const Settings *setting, ConfigValue *value)
 {
-    esp_err_t ret;
+    uint16_t val;
     if (key == NVS_CONFIG_ASIC_FREQUENCY) {
-        if (nvs_find_key(handle, setting->nvs_key_name, NULL) == ESP_ERR_NVS_NOT_FOUND) {
-            uint16_t val;
-            ret = nvs_get_u16(handle, FALLBACK_KEY_ASICFREQUENCY, &val);
-            if (ret == ESP_OK) {
-                ESP_LOGI(TAG, "Migrating NVS config %s to %s (%d)", FALLBACK_KEY_ASICFREQUENCY, setting->nvs_key_name, val);
-                char buf[32];
-                snprintf(buf, sizeof(buf), "%d", val);
-                nvs_set_str(handle, setting->nvs_key_name, buf);
-            }
+        if (nvs_find_key(handle, setting->nvs_key_name, NULL) == ESP_ERR_NVS_NOT_FOUND &&
+            nvs_get_u16(handle, FALLBACK_KEY_ASICFREQUENCY, &val) == ESP_OK) {
+            value->f = val;
+            return true;
         }
     }
     if (key == NVS_CONFIG_MANUAL_FAN_SPEED) {
-        if (nvs_find_key(handle, setting->nvs_key_name, NULL) == ESP_ERR_NVS_NOT_FOUND) {
-            uint16_t val;
-            ret = nvs_get_u16(handle, FALLBACK_KEY_FANSPEED, &val);
-            if (ret == ESP_OK) {
-                ESP_LOGI(TAG, "Migrating NVS config %s to %s (%d)", FALLBACK_KEY_FANSPEED, setting->nvs_key_name, val);
-                nvs_set_u16(handle, setting->nvs_key_name, val);
-            }
+        if (nvs_find_key(handle, setting->nvs_key_name, NULL) == ESP_ERR_NVS_NOT_FOUND &&
+            nvs_get_u16(handle, FALLBACK_KEY_FANSPEED, &val) == ESP_OK) {
+            value->u16 = val;
+            return true;
         }
     }
     if (key == NVS_CONFIG_STRATUM_PROTOCOL || key == NVS_CONFIG_FALLBACK_STRATUM_PROTOCOL) {
-        uint16_t val;
         if (nvs_get_u16(handle, setting->nvs_key_name, &val) == ESP_OK) {
-            const char *str_val = (val == 1) ? STRATUM_V2 : STRATUM_V1;
-            ESP_LOGI(TAG, "Migrating NVS config %s from u16 (%d) to string (%s)", setting->nvs_key_name, val, str_val);
-            nvs_erase_key(handle, setting->nvs_key_name);
-            nvs_set_str(handle, setting->nvs_key_name, str_val);
+            value->str = strdup((val == 1) ? STRATUM_V2 : STRATUM_V1);
+            return value->str != NULL;
         }
     }
     if (key == NVS_CONFIG_SV2_CHANNEL_TYPE || key == NVS_CONFIG_FALLBACK_SV2_CHANNEL_TYPE) {
-        uint16_t val;
         esp_err_t res = nvs_get_u16(handle, setting->nvs_key_name, &val);
-        if (res == ESP_OK) {
-            const char *str_val = (val == 1) ? SV2_CHANNEL_TYPE_STANDARD : SV2_CHANNEL_TYPE_EXTENDED;
-            ESP_LOGI(TAG, "Migrating NVS config %s from u16 (%d) to string (%s)", setting->nvs_key_name, val, str_val);
-            nvs_erase_key(handle, setting->nvs_key_name);
-            nvs_set_str(handle, setting->nvs_key_name, str_val);
-        }
         if (res == ESP_ERR_NVS_NOT_FOUND) {
             res = nvs_get_u16(handle, "fbSv2ChanType", &val);
-            if (res == ESP_OK) {
-                const char *str_val = (val == 1) ? SV2_CHANNEL_TYPE_STANDARD : SV2_CHANNEL_TYPE_EXTENDED;
-                ESP_LOGI(TAG, "Migrating NVS config %s from u16 (%d) to string (%s)", setting->nvs_key_name, val, str_val);
-                nvs_erase_key(handle, "fbSv2ChanType");
-                nvs_set_str(handle, setting->nvs_key_name, str_val);
-            }
+        }
+        if (res == ESP_OK) {
+            value->str = strdup((val == 1) ? SV2_CHANNEL_TYPE_STANDARD : SV2_CHANNEL_TYPE_EXTENDED);
+            return value->str != NULL;
         }
     }
+    return false;
 }
 
 static void nvs_config_apply_fallback(NvsConfigKey key, Settings * setting)
@@ -296,9 +281,29 @@ static void nvs_task(void *pvParameters)
 esp_err_t nvs_config_init(void)
 {
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        nvs_flash_erase();
-        nvs_flash_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS initialization failed (%s); preserving flash and stopping boot", esp_err_to_name(err));
+        return err;
+    }
+
+    // Read the real stored identity before loading any defaults or starting a writer.
+    err = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READONLY, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Stored board identity is unavailable (%s)", esp_err_to_name(err));
+        return err;
+    }
+    char board_version[4] = {0};
+    size_t board_version_len = sizeof(board_version);
+    err = nvs_get_str(handle, settings[NVS_CONFIG_BOARD_VERSION].nvs_key_name,
+                      board_version, &board_version_len);
+    nvs_close(handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Stored board identity cannot be read (%s)", esp_err_to_name(err));
+        return err;
+    }
+    if (!five_stratum_fw_board_supported(board_version)) {
+        ESP_LOGE(TAG, "This " FIVE_STRATUM_FW_NAME " pilot requires stored board 601 or 602");
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     err = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &handle);
@@ -322,22 +327,27 @@ esp_err_t nvs_config_init(void)
     for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) {
         Settings *setting = &settings[key];
 
-        nvs_config_init_fallback(key, setting);
-
         esp_err_t ret;
 
         int count = get_array_size(setting);
         setting->value = calloc(count, sizeof(ConfigValue));
+        if (setting->value == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate settings cache");
+            return ESP_ERR_NO_MEM;
+        }
 
         for (int idx = 0; idx < count; idx++) {
             char nvs_key[NVS_KEY_NAME_MAX_SIZE];
             get_nvs_key_name(setting, idx, nvs_key);
 
+            if (idx == 0 && nvs_config_load_legacy(key, setting, &setting->value[idx])) {
+                continue;
+            }
             switch (setting->type) {
                 case TYPE_STR: {
                     size_t len = 0;
                     esp_err_t ret = nvs_get_str(handle, nvs_key, NULL, &len);
-                    if (ret == ESP_OK && len > 1) {
+                    if (ret == ESP_OK && len > 0) {
                         char *buf = malloc(len);
                         if (buf) {
                             ret = nvs_get_str(handle, nvs_key, buf, &len);
@@ -351,6 +361,9 @@ esp_err_t nvs_config_init(void)
 
                     const char *def = setting->default_value.str ? setting->default_value.str : "";
                     setting->value[idx].str = strdup(def);
+                    if (setting->value[idx].str == NULL) {
+                        return ESP_ERR_NO_MEM;
+                    }
                     break;
                 }
                 case TYPE_U16: {
@@ -400,6 +413,10 @@ esp_err_t nvs_config_init(void)
     }
 
     nvs_save_queue = xQueueCreate(20, sizeof(ConfigUpdate));
+    if (nvs_save_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create nvs_save_queue");
+        return ESP_ERR_NO_MEM;
+    }
 
     nvs_cache_mutex = xSemaphoreCreateMutex();
     if (!nvs_cache_mutex) {
@@ -465,6 +482,51 @@ void nvs_config_set_string(NvsConfigKey key, const char *value)
     ConfigUpdate update = { .key = key, .type = TYPE_STR, .value.str = strdup(value) };
     if (!update.value.str) return;
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
+}
+
+esp_err_t nvs_config_read_stored_string(NvsConfigKey key, char **value)
+{
+    Settings *setting = nvs_config_get_settings(key);
+    if (key != NVS_CONFIG_MINING_SCHEDULE || setting == NULL || value == NULL) return ESP_ERR_INVALID_ARG;
+    *value = NULL;
+    nvs_handle_t reader;
+    esp_err_t err = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READONLY, &reader);
+    if (err != ESP_OK) return err == ESP_ERR_NVS_NOT_FOUND ? ESP_ERR_INVALID_STATE : err;
+    size_t length = 0;
+    err = nvs_get_str(reader, setting->nvs_key_name, NULL, &length);
+    if (err == ESP_OK) {
+        if (length == 0 || length > 2048) err = ESP_ERR_INVALID_SIZE;
+        else {
+            *value = malloc(length);
+            err = *value ? nvs_get_str(reader, setting->nvs_key_name, *value, &length) : ESP_ERR_NO_MEM;
+        }
+    }
+    nvs_close(reader);
+    if (err != ESP_OK) { free(*value); *value = NULL; }
+    return err;
+}
+
+esp_err_t nvs_config_set_string_sync(NvsConfigKey key, const char *value)
+{
+    Settings *setting = nvs_config_get_settings(key);
+    if (key != NVS_CONFIG_MINING_SCHEDULE || setting == NULL || value == NULL) return ESP_ERR_INVALID_ARG;
+    char *copy = strdup(value);
+    if (copy == NULL) return ESP_ERR_NO_MEM;
+    nvs_handle_t writer;
+    esp_err_t err = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &writer);
+    if (err == ESP_OK) {
+        err = nvs_set_str(writer, setting->nvs_key_name, copy);
+        if (err == ESP_OK) err = nvs_commit(writer);
+        nvs_close(writer);
+    }
+    if (err == ESP_OK) {
+        xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+        char *old = setting->value[0].str;
+        setting->value[0].str = copy;
+        xSemaphoreGive(nvs_cache_mutex);
+        free(old);
+    } else free(copy);
+    return err;
 }
 
 void nvs_config_set_string_indexed(NvsConfigKey key, int index, const char *value)

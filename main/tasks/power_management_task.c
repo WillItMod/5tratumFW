@@ -11,6 +11,9 @@
 #include "asic_init.h"
 #include "asic_reset.h"
 #include "driver/uart.h"
+#include "serial.h"
+#include "mining_schedule.h"
+#include "mining_state.h"
 
 #define POLL_RATE 100
 #define MAX_TEMP 90.0
@@ -28,7 +31,13 @@
 
 static const char * TAG = "power_management";
 
-static void mining_stop(GlobalState * GLOBAL_STATE)
+static bool current_stop_request(GlobalState *state)
+{
+    if (!state->SELF_TEST_MODULE.is_active) mining_schedule_update();
+    return mining_state_should_stop(state);
+}
+
+static esp_err_t mining_stop(GlobalState * GLOBAL_STATE)
 {
     ESP_LOGI(TAG, "Stopping mining");
 
@@ -38,50 +47,99 @@ static void mining_stop(GlobalState * GLOBAL_STATE)
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = 50;
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate = 0;
 
-    ASIC_set_frequency(GLOBAL_STATE);
-    ASIC_set_nonce_space(GLOBAL_STATE);
+    if (GLOBAL_STATE->ASIC_initalized) {
+        ASIC_set_frequency(GLOBAL_STATE);
+        ASIC_set_nonce_space(GLOBAL_STATE);
+    }
+    GLOBAL_STATE->ASIC_initalized = false;
 
     // Cut ASIC power and hold in reset
-    VCORE_set_voltage(GLOBAL_STATE, 0.0f);
-    asic_hold_reset_low();
-
-    // Mark uninitialized immediately so tasks stop issuing UART commands
-    GLOBAL_STATE->ASIC_initalized = false;
+    esp_err_t power_ret = VCORE_set_voltage(GLOBAL_STATE, 0.0f);
+    esp_err_t reset_ret = asic_hold_reset_low();
 
     // Give tasks time to complete any in-progress UART operation
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
     // Flush any stale data from the UART buffers
-    uart_flush(UART_NUM_1);
+    if (SERIAL_is_initialized()) uart_flush(UART_NUM_1);
     vTaskDelay(100 / portTICK_PERIOD_MS);
 
-    ESP_LOGI(TAG, "Mining stopped");
+    esp_err_t ret = power_ret != ESP_OK ? power_ret : reset_ret;
+    if (ret == ESP_OK) ESP_LOGI(TAG, "Mining stopped");
+    else ESP_LOGE(TAG, "ASIC power-off or reset failed");
+    mining_schedule_report_power(ret == ESP_OK, ret == ESP_OK ? NULL : "ASIC power-off or reset failed");
+    return ret;
+}
+
+static void latch_power_fault(GlobalState *state, const char *message)
+{
+    state->SYSTEM_MODULE.hardware_fault = true;
+    snprintf(state->SYSTEM_MODULE.hardware_fault_msg, sizeof(state->SYSTEM_MODULE.hardware_fault_msg), "%s", message);
+    ESP_LOGE(TAG, "%s", message);
+}
+
+void POWER_MANAGEMENT_stop_for_fault(void *pvParameters, const char *message)
+{
+    GlobalState *state = pvParameters;
+    latch_power_fault(state, message);
+    mining_stop(state);
 }
 
 static uint8_t mining_start(GlobalState * GLOBAL_STATE)
 {
     ESP_LOGI(TAG, "Starting mining");
 
+    if (current_stop_request(GLOBAL_STATE)) {
+        mining_stop(GLOBAL_STATE);
+        return 0;
+    }
+
     // Restore voltage from NVS
     uint16_t voltage = nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE);
-    VCORE_set_voltage(GLOBAL_STATE, (double) voltage / 1000.0);
+    if (VCORE_set_voltage(GLOBAL_STATE, (double) voltage / 1000.0) != ESP_OK) {
+        latch_power_fault(GLOBAL_STATE, "ASIC voltage restore failed");
+        mining_stop(GLOBAL_STATE);
+        return 0;
+    }
+    // A successful voltage restore means the ASIC is no longer confirmed off.
+    mining_schedule_report_power(false, NULL);
 
     // Wait for voltage to stabilize before touching the ASIC
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
     // Clear any accumulated UART garbage before init
-    uart_flush(UART_NUM_1);
+    if (SERIAL_is_initialized()) uart_flush(UART_NUM_1);
     vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    if (current_stop_request(GLOBAL_STATE)) {
+        mining_stop(GLOBAL_STATE);
+        return 0;
+    }
 
     POWER_MANAGEMENT_init_frequency(GLOBAL_STATE);
     // Stabilization delay of 2000ms prevents race conditions where tasks are
     // just starting to use the ASIC while power management tries to change frequency
-    uint8_t chip_count = asic_initialize(GLOBAL_STATE, ASIC_INIT_RECOVERY, 2000);
+    uint8_t chip_count = asic_initialize(GLOBAL_STATE, ASIC_INIT_RECOVERY, 0);
 
     if (chip_count > 0) {
+        // Keep the settling interval while responding to a new pause/fault.
+        for (int i = 0; i < 20; i++) {
+            if (current_stop_request(GLOBAL_STATE)) {
+                mining_stop(GLOBAL_STATE);
+                return 0;
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        if (current_stop_request(GLOBAL_STATE)) {
+            mining_stop(GLOBAL_STATE);
+            return 0;
+        }
         ESP_LOGI(TAG, "Mining started successfully (%d chip(s))", chip_count);
+        mining_schedule_report_power(false, NULL);
     } else {
         ESP_LOGE(TAG, "Mining start failed - ASIC not detected");
+        latch_power_fault(GLOBAL_STATE, "ASIC initialization failed on resume");
+        mining_stop(GLOBAL_STATE);
     }
 
     return chip_count;
@@ -125,7 +183,7 @@ void POWER_MANAGEMENT_task(void * pvParameters)
 
     uint16_t last_known_asic_voltage = 0;
     float last_known_asic_frequency = 0.0;
-    bool is_paused = false;
+    bool is_paused = mining_schedule_applied_paused();
 
     while (1) {
         if (GLOBAL_STATE->SELF_TEST_MODULE.is_finished) {
@@ -142,14 +200,20 @@ void POWER_MANAGEMENT_task(void * pvParameters)
         power_management->chip_temp2_avg = Thermal_get_chip_temp2(GLOBAL_STATE);
 
         power_management->vr_temp = Power_get_vreg_temp(GLOBAL_STATE);
-        // User pause, hardware fault, or all pools unreachable
-        bool wants_stop = sys_module->mining_paused || sys_module->hardware_fault || sys_module->pools_unavailable;
+        // The power task owns ASIC transitions after main has prepared queues/tasks.
+        bool wants_stop = current_stop_request(GLOBAL_STATE);
         if (wants_stop && !is_paused) {
-            mining_stop(GLOBAL_STATE);
-            is_paused = true;
+            is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+            if (!is_paused) {
+                latch_power_fault(GLOBAL_STATE, "ASIC power-off or reset failed");
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+            }
         } else if (!wants_stop && is_paused) {
             mining_start(GLOBAL_STATE);
-            is_paused = false;
+            is_paused = mining_schedule_applied_paused();
+        } else if (!wants_stop && !GLOBAL_STATE->ASIC_initalized && !GLOBAL_STATE->SELF_TEST_MODULE.is_active) {
+            mining_start(GLOBAL_STATE);
+            is_paused = mining_schedule_applied_paused();
         }
 
         // If we've paused or have a hardware fault, skip doing anything else
@@ -175,7 +239,8 @@ void POWER_MANAGEMENT_task(void * pvParameters)
             nvs_config_set_u16(NVS_CONFIG_MANUAL_FAN_SPEED, 100);
             nvs_config_set_bool(NVS_CONFIG_OVERHEAT_MODE, true);
             ESP_LOGW(TAG, "Entering safe mode due to overheat condition. System operation halted.");
-            mining_stop(GLOBAL_STATE);
+            is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+            if (!is_paused) latch_power_fault(GLOBAL_STATE, "ASIC power-off failed during overheat");
             
             // Note: ASIC temperature readings are invalid when ASIC is powered down (returns -1)
             // For 600-series boards that use ASIC thermal diode, we rely on VR temp and fixed cooling time
@@ -218,12 +283,26 @@ void POWER_MANAGEMENT_task(void * pvParameters)
             ESP_LOGI(TAG, "Restoring at reduced settings: %umV (was %umV), %.0f MHz (was %.0f MHz)",
                      reduced_voltage, last_known_asic_voltage, reduced_asic_frequency, last_known_asic_frequency);
 
+            if (current_stop_request(GLOBAL_STATE)) {
+                // A pause requested during cooldown must never briefly power up.
+                continue;
+            }
             uint8_t chip_count = mining_start(GLOBAL_STATE);
+            is_paused = mining_schedule_applied_paused();
 
             if (chip_count > 0) {
                 // Frequency reduction will now be applied by normal power management loop
                 nvs_config_set_bool(NVS_CONFIG_OVERHEAT_MODE, false);
                 ESP_LOGI(TAG, "Resuming normal operation. Reduced frequency (%.0f MHz) will be applied automatically.", reduced_asic_frequency);
+            }
+            if (is_paused || current_stop_request(GLOBAL_STATE)) {
+                if (!is_paused) {
+                    is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+                    if (!is_paused) latch_power_fault(GLOBAL_STATE, "ASIC power-off failed after thermal recovery");
+                }
+                // A canceled/failed recovery must not fall through and restore
+                // the reduced VCORE while the ASIC is meant to remain off.
+                continue;
             }
         }
 
@@ -236,7 +315,11 @@ void POWER_MANAGEMENT_task(void * pvParameters)
 
         if (core_voltage != last_core_voltage) {
             ESP_LOGI(TAG, "setting new vcore voltage to %umV", core_voltage);
-            VCORE_set_voltage(GLOBAL_STATE, (double) core_voltage / 1000.0);
+            if (VCORE_set_voltage(GLOBAL_STATE, (double) core_voltage / 1000.0) != ESP_OK) {
+                latch_power_fault(GLOBAL_STATE, "ASIC voltage update failed");
+                is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+                continue;
+            }
             last_core_voltage = core_voltage;
         }
 

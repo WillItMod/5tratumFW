@@ -25,10 +25,12 @@
 #include "filesystem.h"
 #include "input.h"
 #include "log_buffer.h"
+#include "5tratumfw.h"
+#include "mining_schedule.h"
 
 static GlobalState GLOBAL_STATE;
 
-static const char * TAG = "bitaxe";
+static const char * TAG = FIVE_STRATUM_FW_NAME;
 
 void app_main(void)
 {
@@ -37,7 +39,7 @@ void app_main(void)
         log_buffer_init();
     }
 
-    ESP_LOGI(TAG, "Welcome to the bitaxe - FOSS || GTFO!");
+    ESP_LOGI(TAG, "Welcome to " FIVE_STRATUM_FW_NAME " - based on Bitaxe/ESP-Miner");
 
     if (xTaskCreate(cpu_monitor_task, "cpu_monitor", 4096, (void *)&GLOBAL_STATE, 1, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating cpu monitor task");
@@ -52,21 +54,7 @@ void app_main(void)
         ESP_LOGE(TAG, "No PSRAM available on ESP32 device!");
     }
 
-    // Init I2C
-    ESP_ERROR_CHECK(i2c_bitaxe_init());
-    ESP_LOGI(TAG, "I2C initialized successfully");
-
-    // Initialize RST pin to low early to minimize ASIC power consumption
-    ESP_ERROR_CHECK(asic_hold_reset_low());
-    ESP_LOGI(TAG, "RST pin initialized to low");
-
-    // wait for I2C to init
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    // Init ADC
-    ADC_init();
-
-    // initialize the ESP32 NVS
+    // Validate persisted board identity and load settings before touching hardware.
     if (nvs_config_init() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init NVS");
         return;
@@ -88,18 +76,34 @@ void app_main(void)
         return;
     }
 
+    // Only validated Gamma boards reach peripheral or ASIC initialization.
+    ESP_ERROR_CHECK(i2c_bitaxe_init());
+    ESP_LOGI(TAG, "I2C initialized successfully");
+
+    // Hold the ASIC in reset as soon as its board profile has been validated.
+    ESP_ERROR_CHECK(asic_hold_reset_low());
+    ESP_LOGI(TAG, "RST pin initialized to low");
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    ADC_init();
+
     if (self_test_init(&GLOBAL_STATE) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init self test");
         return;
     }
 
     SYSTEM_init_system(&GLOBAL_STATE);
+    if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && mining_schedule_init(&GLOBAL_STATE) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize mining schedule; keeping ASIC reset asserted");
+        return;
+    }
     if (scoreboard_init(&GLOBAL_STATE.SYSTEM_MODULE.scoreboard) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init scoreboard");
     }
 
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) {
         wifi_init(&GLOBAL_STATE);
+        mining_schedule_start_time_sync();
     }
 
     esp_err_t system_init_ret = SYSTEM_init_peripherals(&GLOBAL_STATE);
@@ -107,19 +111,27 @@ void app_main(void)
     if (system_init_ret == ESP_OK) {
         if (xTaskCreate(POWER_MANAGEMENT_task, "power management", 8192, (void *) &GLOBAL_STATE, 10, NULL) != pdPASS) {
             ESP_LOGE(TAG, "Error creating power management task");
+            POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Power management task could not start");
+            system_init_ret = ESP_FAIL;
         }
         if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) {
             if (xTaskCreate(FAN_CONTROLLER_task, "fan_controller", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
                 ESP_LOGE(TAG, "Error creating fan controller task");
+                POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Fan controller task could not start");
+                system_init_ret = ESP_FAIL;
             }
         }
     } else {
+        POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Peripheral initialization failed");
         ESP_LOGE(TAG, "Critical peripheral initialization failure (%s). Entering degraded mode.", esp_err_to_name(GLOBAL_STATE.SELF_TEST_MODULE.system_init_ret));
     }
     
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) {
         // start the API for AxeOS
-        start_rest_server((void *) &GLOBAL_STATE);
+        if (start_rest_server((void *) &GLOBAL_STATE) != ESP_OK) {
+            POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "HTTP server could not start");
+            system_init_ret = ESP_FAIL;
+        }
     }
 
     // After mounting SPIFFS
@@ -139,26 +151,31 @@ void app_main(void)
     queue_init(&GLOBAL_STATE.stratum_queue);
 
     if (system_init_ret == ESP_OK) {
-        if (asic_initialize(&GLOBAL_STATE, ASIC_INIT_COLD_BOOT, 0) == 0) {
-            if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) {
-                return;
-            }
-
+        if (GLOBAL_STATE.SELF_TEST_MODULE.is_active &&
+            asic_initialize(&GLOBAL_STATE, ASIC_INIT_COLD_BOOT, 0) == 0) {
             self_test_show_message(&GLOBAL_STATE, GLOBAL_STATE.SYSTEM_MODULE.asic_status);
             system_init_ret = ESP_FAIL;
         } else {
             if (xTaskCreate(create_jobs_task, "stratum miner", 8192, (void *) &GLOBAL_STATE, 20, NULL) != pdPASS) {
                 ESP_LOGE(TAG, "Error creating stratum miner task");
+                POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Mining job task could not start");
+                system_init_ret = ESP_FAIL;
             }
             if (xTaskCreate(ASIC_result_task, "asic result", 8192, (void *) &GLOBAL_STATE, 15, NULL) != pdPASS) {
                 ESP_LOGE(TAG, "Error creating asic result task");
+                POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "ASIC result task could not start");
+                system_init_ret = ESP_FAIL;
             }
 
             if (xTaskCreateWithCaps(hashrate_monitor_task, "hashrate monitor", 8192, (void *) &GLOBAL_STATE, 5, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
                 ESP_LOGE(TAG, "Error creating hashrate monitor task");
+                POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Hashrate monitor task could not start");
+                system_init_ret = ESP_FAIL;
             }
             if (xTaskCreateWithCaps(statistics_task, "statistics", 8192, (void *) &GLOBAL_STATE, 3, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
                 ESP_LOGE(TAG, "Error creating statistics task");
+                POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Statistics task could not start");
+                system_init_ret = ESP_FAIL;
             }
         }
     }
@@ -166,7 +183,11 @@ void app_main(void)
     protocol_coordinator_init(&GLOBAL_STATE);
     if (xTaskCreate(protocol_coordinator_task, "protocol coord", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating protocol coordinator task");
+        POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Protocol coordinator task could not start");
+        system_init_ret = ESP_FAIL;
     }
+
+    GLOBAL_STATE.SYSTEM_MODULE.mining_runtime_ready = system_init_ret == ESP_OK;
 
     if (GLOBAL_STATE.SELF_TEST_MODULE.is_active) {
         GLOBAL_STATE.SELF_TEST_MODULE.system_init_ret = system_init_ret;

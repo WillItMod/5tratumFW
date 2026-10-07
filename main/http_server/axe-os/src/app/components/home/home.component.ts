@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, Input, OnDestroy, ElementRef, HostListener, effect } from '@angular/core';
+import { Component, OnInit, ViewChild, Input, OnDestroy, HostListener } from '@angular/core';
 import { map, Observable, shareReplay, Subscription, switchMap, tap, first, Subject, takeUntil, BehaviorSubject, filter, combineLatest } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, FormGroup } from '@angular/forms';
@@ -22,8 +22,7 @@ import { eChartLabel } from 'src/models/enum/eChartLabel';
 import { chartLabelValue } from 'src/models/enum/eChartLabel';
 import { chartLabelKey } from 'src/models/enum/eChartLabel';
 import { LocalStorageService } from 'src/app/local-storage.service';
-import { GridStack, GridItemHTMLElement } from 'gridstack';
-import { DashboardEditService, WidgetDef } from 'src/app/services/dashboard-edit.service';
+import { DashboardEditService } from 'src/app/services/dashboard-edit.service';
 
 type PoolLabel = 'Primary' | 'Fallback';
 type ProtocolLabel = 'SV2 Standard Channel' | 'SV2 Extended Channel';
@@ -32,6 +31,7 @@ type MessageType =
   | 'MINING_PAUSED'
   | 'DEVICE_OVERHEAT'
   | 'POWER_FAULT'
+  | 'LOW_INPUT_VOLTAGE'
   | 'FREQUENCY_LOW'
   | 'FALLBACK_STRATUM'
   | 'VERSION_MISMATCH'
@@ -50,31 +50,21 @@ interface ISystemInfoError {
 }
 
 const HOME_CHART_DATA_SOURCES = 'HOME_CHART_DATA_SOURCES';
-const DASHBOARD_LAYOUT_KEY = 'DASHBOARD_LAYOUT_V1';
-const HIDDEN_WIDGETS_KEY = 'DASHBOARD_HIDDEN_WIDGETS';
-const DEFAULT_CELL_HEIGHT = 40;
-
-const WIDGET_DEFAULTS: WidgetDef[] = [
-  { id: 'hashrate',    label: 'Hashrate',            x: 0, y: 0,   w: 3,  h: 5,  minW: 2, minH: 3 },
-  { id: 'efficiency',  label: 'Efficiency',          x: 3, y: 0,   w: 3,  h: 5,  minW: 2, minH: 3 },
-  { id: 'shares',      label: 'Shares',              x: 6, y: 0,   w: 3,  h: 5,  minW: 2, minH: 3 },
-  { id: 'bestdiff',    label: 'Best Difficulty',     x: 9, y: 0,   w: 3,  h: 5,  minW: 2, minH: 3 },
-  { id: 'chart',       label: 'Chart',               x: 0, y: 5,   w: 12, h: 0,  minW: 4, minH: 8 },
-  { id: 'power',       label: 'Power',               x: 0, y: 5,   w: 4,  h: 7,  minW: 2, minH: 3 },
-  { id: 'heat',        label: 'Heat',                x: 4, y: 5,   w: 4,  h: 7,  minW: 2, minH: 3 },
-  { id: 'fan',         label: 'Fan',                 x: 8, y: 5,   w: 4,  h: 7,  minW: 2, minH: 3 },
-  { id: 'pool',        label: 'Pool',                x: 0, y: 12,  w: 4,  h: 6,  minW: 2, minH: 3 },
-  { id: 'blockheader', label: 'Block Header',        x: 4, y: 12,  w: 4,  h: 6,  minW: 2, minH: 3 },
-  { id: 'registers',   label: 'Hashrate Registers',  x: 8, y: 12,  w: 4,  h: 6,  minW: 2, minH: 3 },
-];
+const COINBASE_DISPLAY_KEY = '5TRATUMFW_SHOW_COINBASE';
 
 @Component({
   selector: 'app-home',
+  host: { class: 'orbit-dashboard' },
   templateUrl: './home.component.html',
   styleUrls: ['./home.component.scss']
 })
 export class HomeComponent implements OnInit, OnDestroy {
   public messages: ISystemMessage[] = [];
+  public operatingState = 'Waiting for telemetry';
+  public operatingSeverity: 'normal' | 'warning' | 'error' = 'normal';
+  public telemetryStale = false;
+  public showCoinbaseData = false;
+  public lowSupplyVoltage = false;
 
   public info$!: Observable<ISystemInfo>;
   public stats$!: Observable<ISystemStatistics>;
@@ -123,20 +113,6 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   @ViewChild('chart')
   private chart?: UIChart
-
-  private gridStackEl?: ElementRef<HTMLElement>;
-  @ViewChild('gridStack', { static: false })
-  set gridStackRef(el: ElementRef<HTMLElement>) {
-    if (el && !this.grid) {
-      this.gridStackEl = el;
-      this.initGridStack();
-    }
-  }
-  private grid!: GridStack;
-  public editMode = false;
-  public widgetDefs = WIDGET_DEFAULTS;
-  public hiddenWidgets = new Set<string>();
-  private stashedWidgets = new Map<string, HTMLElement>();
 
   private currentInterval: any = HomeComponent.ADAPTIVE_TICK_INTERVALS[0];
   private chartWidth: number = 800;
@@ -219,38 +195,11 @@ export class HomeComponent implements OnInit, OnDestroy {
   ) {
     this.initializeChart();
 
-    effect(() => {
-      // Refresh grid when wide view toggles
-      if (this.layoutService.isWideView() !== undefined) {
-        setTimeout(() => {
-          this.grid?.compact();
-          this.chart?.chart?.resize();
-        }, 100);
-      }
-    });
   }
 
   ngOnInit(): void {
-    this.dashboardEditService.widgetDefs = this.widgetDefs;
-    this.dashboardEditService.isActive$.next(true);
-
-    this.dashboardEditService.editMode$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(mode => {
-        this.editMode = mode;
-        if (this.grid) {
-          this.grid.enableMove(mode);
-          this.grid.enableResize(mode);
-        }
-      });
-
-    this.dashboardEditService.resetRequested$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => this.resetLayout());
-
-    this.dashboardEditService.toggleWidgetRequested$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(id => this.toggleWidgetVisibility(id));
+    this.dashboardEditService.isActive$.next(false);
+    this.showCoinbaseData = this.storageService.getBool(COINBASE_DISPLAY_KEY);
 
     this.themeService.getThemeSettings()
       .pipe(takeUntil(this.destroy$))
@@ -259,7 +208,6 @@ export class HomeComponent implements OnInit, OnDestroy {
       });
 
     this.pageDefaultTitle = this.titleService.getTitle();
-    this.loadingService.loading$.next(true);
 
     let dataSources = this.storageService.getItem(HOME_CHART_DATA_SOURCES);
     let parsedConfig: any = { chartY1Data: chartLabelKey(eChartLabel.hashrate), chartY2Data: chartLabelKey(eChartLabel.asicTemp) };
@@ -281,6 +229,9 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     this.staleCheckInterval = setInterval(() => this.checkStaleData(), 1000);
 
+    // Show genuine telemetry as soon as it arrives; history can load separately.
+    this.liveDataStarted = true;
+    this.startGetLiveData();
     this.loadPreviousData();
   }
 
@@ -298,15 +249,9 @@ export class HomeComponent implements OnInit, OnDestroy {
       // Immediately refresh the chart to display the accumulated data points and avoid a stale visual state
       this.updateChart(undefined, true);
 
-      // Reset lastMessageTime to prevent stale data warning immediately after wake up
-      if (this.lastMessageTime > 0) {
-        this.lastMessageTime = Date.now();
-      }
-      // Also clear any existing stale connection error
-      const systemInfoError = this.systemInfoError$.value;
-      if (!!systemInfoError.duration) {
-        this.systemInfoError$.next({ duration: 0, startTime: null });
-      }
+      // Visibility is not evidence of fresh telemetry. Keep stale readings flagged
+      // until the device delivers a valid update through the shared data service.
+      this.checkStaleData();
 
       const lastPoint = this.dataLabel[this.dataLabel.length - 1];
       const threshold = Math.max(15000, this.lastStatsFrequency * 1000 * 1.5);
@@ -324,7 +269,6 @@ export class HomeComponent implements OnInit, OnDestroy {
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       this.chart?.chart?.resize();
-      this.grid?.compact();
     }, 200);
   }
 
@@ -335,132 +279,6 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.dashboardEditService.editMode$.next(false);
     this.destroy$.next();
     this.destroy$.complete();
-    this.grid?.destroy(false);
-  }
-
-  private initGridStack(): void {
-    // Load hidden widgets before grid init
-    const savedHidden = this.storageService.getObject(HIDDEN_WIDGETS_KEY);
-    if (Array.isArray(savedHidden)) {
-      this.hiddenWidgets = new Set(savedHidden);
-    }
-    this.dashboardEditService.hiddenWidgets = new Set(this.hiddenWidgets);
-
-    // Stash hidden items out of the container before gridstack initializes
-    const container = this.gridStackEl!.nativeElement;
-    this.hiddenWidgets.forEach(id => {
-      const el = container.querySelector(`[gs-id="${id}"]`) as HTMLElement;
-      if (el) {
-        el.remove();
-        this.stashedWidgets.set(id, el);
-      }
-    });
-
-    this.grid = GridStack.init({
-      column: 12,
-      cellHeight: DEFAULT_CELL_HEIGHT,
-      margin: 8,
-      float: false,
-      disableResize: true,
-      disableDrag: true,
-      animate: false,
-      columnOpts: {
-        breakpointForWindow: true,
-        breakpoints: [
-          { w: 768, c: 1 },
-          { w: 1200, c: 6 },
-        ],
-        layout: 'list',
-      },
-    }, this.gridStackEl!.nativeElement);
-
-    const savedLayout = this.storageService.getObject(DASHBOARD_LAYOUT_KEY);
-    this.grid.load(savedLayout ?? this.getInitialLayout());
-
-    setTimeout(() => this.chart?.chart?.resize(), 100);
-
-    this.grid.on('change', () => {
-      this.saveLayout();
-    });
-
-    this.grid.on('resizestop', (_event: Event, el: GridItemHTMLElement) => {
-      if (el.gridstackNode?.id === 'chart') {
-        const isMobile = window.innerWidth < 768;
-        if (!isMobile && el.gridstackNode.h) {
-           el.dataset['desktopH'] = String(el.gridstackNode.h);
-        }
-        setTimeout(() => this.chart?.chart?.resize(), 100);
-      }
-    });
-  }
-
-  private saveLayout(): void {
-    const layout = this.grid.save(false);
-    this.storageService.setObject(DASHBOARD_LAYOUT_KEY, layout as object);
-  }
-
-  public toggleEditMode(): void {
-    this.dashboardEditService.toggleEditMode();
-  }
-
-  public resetLayout(): void {
-    localStorage.removeItem(DASHBOARD_LAYOUT_KEY);
-    localStorage.removeItem(HIDDEN_WIDGETS_KEY);
-    this.grid.load(this.getInitialLayout());
-  }
-
-  private getInitialLayout(): WidgetDef[] {
-    const chartDef = WIDGET_DEFAULTS.find(d => d.id === 'chart');
-    if (!chartDef) return WIDGET_DEFAULTS;
-
-    // The old layout set the chart height to 40vh. In gridstack, you need to set the height of 
-    // the card, so there's 100px to compensate for the dropdowns and padding.
-    const CHART_CHROME_PX = 100;
-    const targetPx = (window.innerHeight * 0.40) + CHART_CHROME_PX;
-    const chartH = Math.max(chartDef.minH ?? 8, Math.round(targetPx / DEFAULT_CELL_HEIGHT));
-
-    return WIDGET_DEFAULTS.map(widget => {
-      const w = { ...widget };
-      if (w.id === chartDef.id) {
-        w.h = chartH;
-      } else if (w.y >= chartDef.y) {
-        // Shift everything at or below the chart position
-        w.y += chartH;
-      }
-      return w;
-    });
-  }
-
-  public isWidgetVisible(id: string): boolean {
-    return !this.hiddenWidgets.has(id);
-  }
-
-  public toggleWidgetVisibility(id: string): void {
-    if (this.hiddenWidgets.has(id)) {
-      // Show widget — restore stashed DOM element
-      this.hiddenWidgets.delete(id);
-      const stashed = this.stashedWidgets.get(id);
-      if (stashed) {
-        this.stashedWidgets.delete(id);
-        this.grid.addWidget(stashed);
-      }
-    } else {
-      // Hide widget — remove from grid and stash the DOM element
-      const el = this.gridStackEl!.nativeElement.querySelector(`[gs-id="${id}"]`) as GridItemHTMLElement;
-      if (el) {
-        this.grid.removeWidget(el, false);
-        el.remove();
-        this.stashedWidgets.set(id, el);
-      }
-      this.hiddenWidgets.add(id);
-    }
-    this.saveHiddenWidgets();
-    this.saveLayout();
-  }
-
-  private saveHiddenWidgets(): void {
-    this.storageService.setObject(HIDDEN_WIDGETS_KEY, [...this.hiddenWidgets]);
-    this.dashboardEditService.hiddenWidgets = new Set(this.hiddenWidgets);
   }
 
   private checkStaleData() {
@@ -485,7 +303,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = documentStyle.getPropertyValue('--text-color-secondary');
     const surfaceBorder = documentStyle.getPropertyValue('--surface-border');
-    const primaryColor = documentStyle.getPropertyValue('--primary-color').trim();
+    const primaryColor = this.layoutService.config().colorScheme === 'light' ? '#006681' : '#20cfff';
     this.primaryColorRgb = this.hexToRgb(primaryColor);
 
     // Update chart colors
@@ -531,7 +349,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-color-secondary');
     const surfaceBorder = getComputedStyle(document.documentElement).getPropertyValue('--surface-border');
-    const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
+    const primaryColor = this.layoutService.config().colorScheme === 'light' ? '#006681' : '#20cfff';
     this.primaryColorRgb = this.hexToRgb(primaryColor);
 
     this.chartData = {
@@ -842,10 +660,13 @@ export class HomeComponent implements OnInit, OnDestroy {
       }),
       tap(info => {
         this.latestInfo = info;
-        this.lastMessageTime = new Date().getTime();
-        // Clear error indicators if data is flowing
-        const systemInfoError = this.systemInfoError$.value;
-        if (!!systemInfoError.duration) {
+        // Replay can provide cached readings when navigating back to the dashboard.
+        // Only a timestamp from the actual transport confirms fresh device data.
+        this.lastMessageTime = this.liveDataService.lastUpdateAt;
+        const elapsedMs = Date.now() - this.lastMessageTime;
+        if (elapsedMs > 5000) {
+          this.systemInfoError$.next({ duration: Math.floor(elapsedMs / 1000), startTime: this.lastMessageTime });
+        } else if (this.systemInfoError$.value.duration) {
           this.systemInfoError$.next({ duration: 0, startTime: null });
         }
 
@@ -1019,7 +840,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const parts = [this.pageDefaultTitle];
 
     if (info.showNewBlock) {
-      parts.push('Block found 🎉');
+      parts.push('Block candidate detected');
     } else if (!!systemInfoError.duration) {
       parts.push('Unable to reach the device');
     } else {
@@ -1070,7 +891,38 @@ export class HomeComponent implements OnInit, OnDestroy {
     return -1;
   }
 
+  public setCoinbaseDisplay(enabled: boolean): void {
+    this.showCoinbaseData = enabled;
+    this.storageService.setBool(COINBASE_DISPLAY_KEY, enabled);
+    if (this.latestInfo) this.handleSystemMessages(this.latestInfo, this.systemInfoError$.value);
+  }
+
   public handleSystemMessages(info: ISystemInfo, systemInfoError: ISystemInfoError) {
+    this.telemetryStale = systemInfoError.duration > 0;
+    this.lowSupplyVoltage = info.nominalVoltage > 0 && Number.isFinite(info.voltage)
+      && info.voltage < (info.nominalVoltage + .5) * .87;
+    this.operatingSeverity = 'normal';
+    if (info.power_fault || info.hardware_fault) {
+      this.operatingState = 'Hardware needs attention';
+      this.operatingSeverity = 'error';
+    } else if (info.overheat_mode) {
+      this.operatingState = 'Overheat protection';
+      this.operatingSeverity = 'error';
+    } else if (this.telemetryStale) {
+      this.operatingState = 'Telemetry stale';
+      this.operatingSeverity = 'warning';
+    } else if (this.lowSupplyVoltage) {
+      this.operatingState = 'Input voltage low';
+      this.operatingSeverity = 'warning';
+    } else if (info.miningPaused) {
+      this.operatingState = 'Mining paused';
+      this.operatingSeverity = 'warning';
+    } else if (info.temp >= 70) {
+      this.operatingState = 'Temperature high';
+      this.operatingSeverity = 'warning';
+    } else {
+      this.operatingState = info.hashRate > 0 ? 'Hashing' : 'Waiting for work';
+    }
     const updateMessage = (
       condition: boolean,
       type: MessageType,
@@ -1099,15 +951,14 @@ export class HomeComponent implements OnInit, OnDestroy {
     updateMessage(!!(info as any).miningPaused, 'MINING_PAUSED', 'warn', 'Mining is paused');
     updateMessage(!!info.overheat_mode, 'DEVICE_OVERHEAT', 'error', 'Device has overheated - See settings');
     updateMessage(!!info.power_fault, 'POWER_FAULT', 'error', `${info.power_fault} Check your Power Supply.`);
+    updateMessage(this.lowSupplyVoltage, 'LOW_INPUT_VOLTAGE', 'warn', this.lowSupplyVoltage ? `Input voltage low: ${info.voltage.toFixed(1)} V (nominal ${info.nominalVoltage} V). Check the power supply and cable.` : '');
     updateMessage(!!info.hardware_fault, 'HARDWARE_FAULT', 'error', `${info.hardware_fault}`);
     updateMessage(!info.frequency || info.frequency < 400, 'FREQUENCY_LOW', 'warn', 'Device frequency is set low - See settings');
     updateMessage(!!info.isUsingFallbackStratum, 'FALLBACK_STRATUM', 'warn', 'Using fallback pool - Share stats reset. Check Pool Settings and / or reboot Device.');
-    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and AxeOS (${info.axeOSVersion}) versions do not match. Please make sure to update both www.bin and esp-miner.bin.`);
-    if (info.coinbaseOutputs && info.coinbaseOutputs.length > 0) {
-      let percentage = this.getPayoutPercentage(info);
-      updateMessage(percentage > 0 && percentage < 95, 'NOT_SOLO_MINING', 'warn', `Your share of the mining reward is only ${percentage.toFixed(1)}%`);
-      updateMessage(percentage === 0, 'NO_MINING_REWARD', 'warn', `You don't have a share in the mining reward`);
-    }
+    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and web interface (${info.axeOSVersion}) versions do not match. Update both www.bin and esp-miner.bin.`);
+    const percentage = this.showCoinbaseData && info.coinbaseOutputs?.length ? this.getPayoutPercentage(info) : -1;
+    updateMessage(percentage > 0 && percentage < 95, 'NOT_SOLO_MINING', 'info', `Observed job coinbase allocation to the configured address: ${percentage.toFixed(1)}%. Pool or MUX payouts may differ.`);
+    updateMessage(percentage === 0, 'NO_MINING_REWARD', 'info', 'Payout could not be verified on this device. Check your pool or MUX.');
   }
 
   private calculateEfficiency(info: ISystemInfo, key: 'hashRate' | 'hashRate_1m' | 'expectedHashrate'): number {
