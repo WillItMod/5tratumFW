@@ -1,0 +1,149 @@
+import { HttpEventType } from '@angular/common/http';
+import { Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Observable, Subscription } from 'rxjs';
+import { shareReplay, switchMap } from 'rxjs/operators';
+import { NbToastrService } from '@nebular/theme';
+import { ISettingsV2 } from '../../models/ISettingsV2';
+import { LoadingService } from '../../services/loading.service';
+import { SystemService } from '../../services/system.service';
+import { OtpAuthService, EnsureOtpResult } from '../../services/otp-auth.service';
+import { EditComponent } from '../edit/edit.component';
+import { combineLatest } from 'rxjs';
+import { getAppVersion } from '../../app.module';
+
+@Component({
+  selector: 'app-settings',
+  templateUrl: './settings.component.html',
+  styleUrls: ['./settings.component.scss']
+})
+export class SettingsComponent implements OnInit, OnDestroy {
+  @ViewChild(EditComponent) editor?: EditComponent;
+  public readonly sections = [{id:'performance',label:'Performance'},{id:'cooling',label:'Cooling'},{id:'display',label:'Display'},{id:'advanced',label:'Integrations'}];
+  public page='controls';
+  public get title():string {return ({controls:'Miner controls',pool:'Pool routing',scheduler:'Scheduler',network:'Network',update:'Updates'} as Record<string,string>)[this.page] || 'Miner controls';}
+  public canLeave():boolean {return !this.editor?.hasUnsavedChanges || window.confirm('Leave this page and discard its unsaved changes?');}
+  public section = 'performance';
+  public deviceModel = '';
+  public currentVersion = '';
+  public currentWebVersion = getAppVersion();
+  public expectedFileName = '';
+  public selectedFirmwareFile: File | null = null;
+  public selectedWebsiteFile: File | null = null;
+  public firmwareUpdateProgress = 0;
+  public websiteUpdateProgress = 0;
+  public isFirmwareUploading = false;
+  public isWebsiteUploading = false;
+  public firmwareRestartPending = false;
+  public info$: Observable<ISettingsV2>;
+  private subscriptions = new Subscription();
+
+  constructor(
+    private systemService: SystemService,
+    private toastrService: NbToastrService,
+    private loadingService: LoadingService,
+    private otpAuth: OtpAuthService,
+    private route: ActivatedRoute,
+    private router: Router,
+  ) {
+    this.info$ = this.systemService.getSettingsV2().pipe(shareReplay({ refCount: true, bufferSize: 1 }));
+  }
+
+  ngOnInit(): void {
+    this.subscriptions.add(combineLatest([this.route.data,this.route.queryParamMap]).subscribe(([data,params])=>{
+      const legacy=params.get('section');
+      if(data['section']==='controls' && legacy && ['pool','scheduler','network','update','security'].includes(legacy)) {
+        this.router.navigate(['/pages',legacy],{replaceUrl:true});return;
+      }
+      this.page=data['section'] || 'controls';
+      this.section=this.page==='controls' ? (this.sections.some(item=>item.id===legacy)?legacy!:'performance') : this.page;
+    }));
+    this.subscriptions.add(this.info$.pipe(this.loadingService.lockUIUntilComplete()).subscribe(info => {
+      this.deviceModel = info.deviceModel;
+      this.currentVersion = info.version;
+      this.expectedFileName = `esp-miner-${info.deviceModel.replace(/γ/g, 'Gamma').replace(/\s+/g, '')}.bin`;
+    }));
+  }
+
+  ngOnDestroy(): void { this.subscriptions.unsubscribe(); }
+
+  selectSection(section: string): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { section }, queryParamsHandling: 'merge' });
+  }
+
+  get firmwareFileValid(): boolean {
+    return !!this.selectedFirmwareFile && this.selectedFirmwareFile.name === this.expectedFileName;
+  }
+
+  get websiteFileValid(): boolean {
+    return !!this.selectedWebsiteFile && this.selectedWebsiteFile.name === 'www.bin';
+  }
+
+  onFirmwareFileSelected(event: Event): void {
+    this.selectedFirmwareFile = (event.target as HTMLInputElement).files?.[0] ?? null;
+  }
+
+  onWebsiteFileSelected(event: Event): void {
+    this.selectedWebsiteFile = (event.target as HTMLInputElement).files?.[0] ?? null;
+  }
+
+  uploadFirmwareFile(): void {
+    if (!this.firmwareFileValid || !this.selectedFirmwareFile || this.isFirmwareUploading || this.isWebsiteUploading || this.firmwareRestartPending) return;
+    const file = this.selectedFirmwareFile;
+    this.otpAuth.ensureOtp$('', 'Authentication', 'Enter the code to update firmware.').pipe(
+      switchMap(({ totp }: EnsureOtpResult) => {
+        this.isFirmwareUploading = true;
+        this.firmwareUpdateProgress = 0;
+        return this.systemService.performOTAUpdate(file, totp).pipe(this.loadingService.lockUIUntilComplete());
+      })
+    ).subscribe({
+      next: event => {
+        if (event?.type === HttpEventType.UploadProgress && event.total) {
+          this.firmwareUpdateProgress = Math.round(100 * event.loaded / event.total);
+        } else if (event?.type === HttpEventType.Response) {
+          this.firmwareUpdateProgress = 100;
+          this.firmwareRestartPending = true;
+          this.selectedFirmwareFile = null;
+          this.toastrService.success('Application uploaded. The miner is restarting.', 'Firmware');
+        }
+      },
+      error: error => {
+        this.isFirmwareUploading = false;
+        this.firmwareUpdateProgress = 0;
+        this.toastrService.danger(error.message || 'Upload failed.', 'Firmware');
+      },
+      complete: () => { this.isFirmwareUploading = false; }
+    });
+  }
+
+  uploadWebsiteFile(): void {
+    if (!this.websiteFileValid || !this.selectedWebsiteFile || this.isFirmwareUploading || this.isWebsiteUploading || this.firmwareRestartPending) return;
+    const file = this.selectedWebsiteFile;
+    this.otpAuth.ensureOtp$('', 'Authentication', 'Enter the code to update the web interface.').pipe(
+      switchMap(({ totp }: EnsureOtpResult) => {
+        this.isWebsiteUploading = true;
+        this.websiteUpdateProgress = 0;
+        return this.systemService.performWWWOTAUpdate(file, totp).pipe(this.loadingService.lockUIUntilComplete());
+      })
+    ).subscribe({
+      next: event => {
+        if (event?.type === HttpEventType.UploadProgress && event.total) {
+          this.websiteUpdateProgress = Math.round(100 * event.loaded / event.total);
+        } else if (event?.type === HttpEventType.Response) {
+          this.websiteUpdateProgress = 100;
+          this.selectedWebsiteFile = null;
+          this.toastrService.success('Web interface uploaded. Reloading…', 'Firmware');
+          setTimeout(() => window.location.reload(), 1000);
+        }
+      },
+      error: error => {
+        this.isWebsiteUploading = false;
+        this.websiteUpdateProgress = 0;
+        this.toastrService.danger(error.message || 'Upload failed.', 'Web interface');
+      },
+      complete: () => { this.isWebsiteUploading = false; }
+    });
+  }
+}
+
+export function leaveSettings(component: SettingsComponent): boolean {return component.canLeave();}

@@ -1,0 +1,73 @@
+import { NgModule } from '@angular/core';
+import { RouterModule, Routes } from '@angular/router';
+
+import { PagesComponent } from './pages.component';
+import { NotFoundComponent } from '../@theme/components';
+import { HomeComponent } from './home/home.component';
+import { SettingsComponent, leaveSettings } from './settings/settings.component';
+import { InfluxdbComponent } from './influxdb/influxdb.component';
+import { SystemComponent } from './system/system.component';
+import { SwarmComponent } from './swarm/swarm.component';
+import { AlertComponent } from './alert/alert.component';
+import { SecurityComponent } from './security/security.component';
+import { CanSwarmComponent } from './can-swarm/can-swarm.component';
+
+const routes: Routes = [{
+  path: '',
+  component: PagesComponent,
+  children: [
+    {
+      path: '',
+      redirectTo: 'home',
+      pathMatch: 'full',
+    },
+    {
+      path: 'home',
+      component: HomeComponent
+    },
+    {
+      path: 'settings',
+      component: SettingsComponent, canDeactivate: [leaveSettings], data: { section: 'controls' }
+    },
+    {path: 'pool', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'pool'}},
+    {path: 'scheduler', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'scheduler'}},
+    {path: 'network', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'network'}},
+    {path: 'update', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'update'}},
+    {
+      path: 'influxdb',
+      component: InfluxdbComponent
+    },
+    {
+      path: 'system',
+      component: SystemComponent
+    },
+    {
+      path: 'swarm',
+      component: SwarmComponent
+    },
+    {
+      path: 'alert',
+      component: AlertComponent
+    },
+    {
+      path: 'security',
+      component: SecurityComponent
+    },
+    {
+      path: 'can-fleet',
+      component: CanSwarmComponent
+    },
+    {
+      path: '**',
+      component: NotFoundComponent,
+    },
+
+  ],
+}];
+
+@NgModule({
+  imports: [RouterModule.forChild(routes)],
+  exports: [RouterModule],
+})
+export class PagesRoutingModule {
+}

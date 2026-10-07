@@ -1,0 +1,59 @@
+:root, .nb-theme-dark, .nb-theme-cosmic {
+  --fw-bg:#0b131d; --fw-surface:#111d29; --fw-surface-alt:#192736;
+  --fw-border:#263545; --fw-text:#e5edf5; --fw-muted:#91a2b5;
+  --fw-accent:#5bd4f4; --fw-good:#60d7ad; --fw-warn:#f4bd70; --fw-danger:#ff8b92;
+}
+.nb-theme-default,.nb-theme-corporate {
+  --fw-bg:#f0f4f7; --fw-surface:#fff; --fw-surface-alt:#eaf0f5;
+  --fw-border:#d8e2eb; --fw-text:#162a3c; --fw-muted:#627589;
+  --fw-accent:#007b9b; --fw-good:#167553; --fw-warn:#9a620c; --fw-danger:#bc3847;
+}
+html,body,button,input,select,textarea,nb-layout,nb-menu,nb-card,nb-select { font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+body { font-size:14px; line-height:1.5; }
+button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible { outline:2px solid var(--fw-accent); outline-offset:3px; }
+/* Same compact command console as Gamma, without a permanent sidebar. */
+nb-layout.fw-command-shell {
+  --fw-masthead-height: 72px;
+  --fw-nav-height: 48px;
+}
+nb-layout.fw-command-shell .layout { background: var(--fw-bg); }
+nb-layout.fw-command-shell nb-layout-header { background: var(--fw-bg); }
+nb-layout.fw-command-shell nb-layout-header nav {
+  height: var(--fw-masthead-height) !important;
+  padding: 0 max(28px, calc((100vw - 1384px) / 2)) !important;
+  border-bottom: 1px solid var(--fw-border);
+  box-shadow: none !important;
+}
+nb-layout.fw-command-shell nb-layout-header.fixed ~ .layout-container { padding-top: var(--fw-masthead-height) !important; }
+nb-layout.fw-command-shell .layout .layout-container .content .columns nb-layout-column {
+  min-width: 0;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  padding: calc(var(--fw-nav-height) + 28px) 28px 24px;
+}
+nb-layout.fw-command-shell nb-layout-footer nav {
+  padding: 16px max(28px, calc((100vw - 1384px) / 2)) !important;
+  border-top: 1px solid var(--fw-border);
+  justify-content: flex-start !important;
+  background: var(--fw-bg);
+}
+nb-card { border:1px solid var(--fw-border)!important; border-radius:8px!important; box-shadow:none!important; }
+nb-card-header { font-weight:550!important; font-size:14px!important; border-bottom:1px solid var(--fw-border)!important; }
+h1,h2,h3,h4,h5,h6 { font-weight:550; letter-spacing:-.025em; }
+nb-card-body { min-width:0; }
+nb-select button, input[nbInput], textarea[nbInput] { max-width:100%; }
+nb-toggle,nb-checkbox { vertical-align:middle; }
+@media (max-width: 991px) {
+  nb-layout.fw-command-shell { --fw-nav-height: 0px; }
+  nb-layout.fw-command-shell nb-layout-header nav { padding: 0 22px !important; }
+  nb-layout.fw-command-shell .layout .layout-container .content .columns nb-layout-column { padding: 26px 22px 22px; }
+  nb-layout.fw-command-shell nb-layout-footer nav { padding-inline: 22px !important; }
+}
+@media (max-width: 575px) {
+  nb-layout.fw-command-shell nb-layout-header nav { padding-inline: 16px !important; }
+  nb-layout.fw-command-shell .layout .layout-container .content .columns nb-layout-column { padding: 22px 16px 20px; }
+  nb-layout.fw-command-shell nb-layout-footer nav { padding-inline: 16px !important; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:0s!important; animation-duration:0s!important; } }

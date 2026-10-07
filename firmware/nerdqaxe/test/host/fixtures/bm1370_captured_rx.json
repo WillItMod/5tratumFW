@@ -1,0 +1,14 @@
+{
+  "fixtureVersion": 1,
+  "evidenceKind": "third-party-captured-bm1370-frames",
+  "repository": "https://github.com/256foundation/mujina",
+  "revision": "980128574d8bb8b9619b0081b26e18eb4d0c5e31",
+  "scope": "Captured eleven-byte BM1370 frame CRC and decoding only. No own-QAxe, drain or work-isolation evidence.",
+  "cases": [
+    {"id":"bitaxe-mining-roundtrip","origin":"Bitaxe Gamma BM1370 capture","source":"mujina-miner/src/asic/bm13xx/test_data.rs","line":208,"packetHex":"aa554c0352750cd205a29c"},
+    {"id":"bitaxe-nonce","origin":"Bitaxe Gamma BM1370 capture","source":"mujina-miner/src/asic/bm13xx/response.rs","line":268,"packetHex":"aa551800a640029922f991"},
+    {"id":"s21pro-nonce-one","origin":"Antminer S21 Pro BM1370 capture","source":"mujina-miner/src/asic/bm13xx/response.rs","line":350,"packetHex":"aa550735cdcf025e002e96"},
+    {"id":"s21pro-nonce-two","origin":"Antminer S21 Pro BM1370 capture","source":"mujina-miner/src/asic/bm13xx/response.rs","line":363,"packetHex":"aa55460332e700c32c8399"},
+    {"id":"bm1370-chip-id","origin":"BM1370 register response labelled from captures upstream; exact board unavailable","source":"mujina-miner/src/asic/bm13xx/response.rs","line":214,"packetHex":"aa55137000000000000010"}
+  ]
+}

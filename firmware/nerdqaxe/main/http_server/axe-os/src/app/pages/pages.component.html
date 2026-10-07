@@ -1,0 +1,21 @@
+<ngx-one-column-layout #layout>
+  <nav fw-navigation id="fw-navigation" class="fw-command-links" aria-label="Main navigation"
+       (keydown.escape)="layout.closeNavigation()">
+    <a *ngFor="let item of primaryMenu" [routerLink]="item.link" routerLinkActive="fw-nav-active"
+       [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page"
+       (click)="more.open = false; layout.closeNavigation()">
+      <nb-icon [icon]="item.icon" aria-hidden="true"></nb-icon><span>{{ item.title }}</span>
+    </a>
+    <details #more class="fw-more-navigation" (keydown.escape)="more.open = false"
+             routerLinkActive="fw-more-active">
+      <summary>More<nb-icon icon="chevron-down-outline" aria-hidden="true"></nb-icon></summary>
+      <div class="fw-more-links">
+        <a *ngFor="let item of moreMenu" [routerLink]="item.link" routerLinkActive="fw-nav-active"
+           ariaCurrentWhenActive="page" (click)="more.open = false; layout.closeNavigation()">
+          <nb-icon [icon]="item.icon" aria-hidden="true"></nb-icon><span>{{ item.title }}</span>
+        </a>
+      </div>
+    </details>
+  </nav>
+  <router-outlet></router-outlet>
+</ngx-one-column-layout>

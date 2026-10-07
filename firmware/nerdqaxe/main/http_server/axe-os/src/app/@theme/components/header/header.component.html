@@ -1,0 +1,17 @@
+<div class="brand-group">
+  <a class="fw-brand" routerLink="/pages/home" aria-label="5tratumFW overview"><img src="assets/5tratum-brand.svg" width="40" height="40" alt=""><span>5tratum<span class="fw-wordmark">FW</span></span></a>
+  <span class="header-device">{{ deviceModel }}</span>
+  <span *ngIf="apActive" class="ap-badge">Wi-Fi setup</span>
+</div>
+<div class="header-tools">
+  <label class="theme-picker"><span class="sr-only">Colour theme</span>
+    <select [value]="currentTheme" (change)="changeTheme($any($event.target).value)">
+      <option *ngFor="let theme of themes" [value]="theme.value" [selected]="theme.value === currentTheme">{{ theme.name }}</option>
+    </select>
+  </label>
+  <button class="menu-toggle" type="button" (click)="navigationToggle.emit()"
+          [attr.aria-expanded]="navigationOpen" aria-controls="fw-navigation" aria-label="Main navigation">
+    <nb-icon [icon]="navigationOpen ? 'close-outline' : 'menu-2-outline'" aria-hidden="true"></nb-icon>
+    <span>Menu</span>
+  </button>
+</div>

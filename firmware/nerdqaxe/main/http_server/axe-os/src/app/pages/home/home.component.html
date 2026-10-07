@@ -1,0 +1,64 @@
+<ng-template #loading>
+  <div class="page-heading"><div><span class="eyebrow">MINER</span><h1>Overview</h1></div><span class="state-pill">Connecting</span></div>
+  <div class="empty-panel" role="status"><nb-icon icon="activity-outline"></nb-icon><h2>Waiting for telemetry</h2><p>The dashboard will appear when the miner responds.</p></div>
+</ng-template>
+
+<div *ngIf="info$ | async as info; else loading" class="miner-dashboard">
+  <div class="page-heading">
+    <div><span class="eyebrow">{{ deviceName }} <span class="heading-divider">/</span> {{ metric(info.performance.asicCount, 0) }} ASICs</span><h1>Overview</h1></div>
+    <div class="heading-status"><span class="coin-label">{{ coinLabel }}</span><span class="state-pill" [class.state-pill--good]="dashboardIsFresh && miningState === 'Mining'" [class.state-pill--danger]="info.system.shutdown || info.system.boardError"><i></i>{{ miningState }}</span></div>
+  </div>
+  <div *ngIf="!dashboardIsFresh" class="notice notice--warning" role="status"><nb-icon icon="wifi-off-outline"></nb-icon>Live telemetry is unavailable. Historical chart data is retained.</div>
+  <div *ngIf="dashboardIsFresh && info.system.shutdown" class="notice notice--danger" role="alert"><nb-icon icon="alert-triangle-outline"></nb-icon>The ASIC rail is off. Check the shutdown reason in System before restarting.</div>
+  <div *ngIf="dashboardIsFresh && info.system.boardError" class="notice notice--danger" role="alert"><nb-icon icon="alert-triangle-outline"></nb-icon>Board fault {{ info.system.boardError }}. Check System for details.</div>
+
+  <section class="metric-strip" aria-label="Mining performance">
+    <div class="metric metric--hash"><span class="metric-label">Hashrate</span><div class="metric-value">{{ hashValue(info.performance.hashRate) }} <span>{{ hashUnit(info.performance.hashRate) }}</span></div><div class="metric-foot"><span>1 min <b>{{ hashValue(info.performance.hashRate1m) }} {{ hashUnit(info.performance.hashRate1m) }}</b></span><span>1 hour <b>{{ hashValue(info.performance.hashRate1h) }} {{ hashUnit(info.performance.hashRate1h) }}</b></span></div></div>
+    <div class="metric"><span class="metric-label">Power</span><div class="metric-value">{{ metric(info.power.watts) }} <span>W</span></div><div class="metric-foot">{{ metric(info.power.voltage, 2) }} V <span class="dot-separator">·</span> {{ metric(info.power.currentA, 2) }} A</div></div>
+    <div class="metric"><span class="metric-label">Efficiency</span><div class="metric-value">{{ efficiency }} <span>J/TH</span></div><div class="metric-foot">Measured power / hashrate</div></div>
+    <div class="metric"><span class="metric-label">Board temperature</span><div class="metric-value" [class.value--warning]="dashboardIsFresh && isAsicTempWarn(info.thermal.asicTemp, 0, info.system.overheatTemp)" [class.value--danger]="dashboardIsFresh && isAsicTempCrit(info.thermal.asicTemp, 0, info.system.overheatTemp)">{{ metric(info.thermal.asicTemp) }} <span>°C</span></div><div class="metric-foot">Regulator {{ metric(info.thermal.vrTemp) }} °C</div></div>
+  </section>
+
+  <div class="dashboard-grid">
+    <section class="panel chart-panel" aria-label="Hashrate history">
+      <header class="panel-heading"><div><h2>Hashrate history</h2><span class="panel-meta">{{ dashboardIsFresh ? 'Live + device history' : 'Historical data' }}</span></div><div class="chart-tools"><span class="chart-window">{{ zoomWindowLabel }}</span><button type="button" (click)="zoomIn($event)" aria-label="Shorter chart time range">−</button><button type="button" (click)="zoomOut($event)" aria-label="Longer chart time range">+</button><button type="button" (click)="toggleChartCollapsed($event)" [attr.aria-expanded]="!isChartCollapsed" aria-label="Toggle chart"><nb-icon [icon]="isChartCollapsed ? 'expand-outline' : 'collapse-outline'"></nb-icon></button></div></header>
+      <div class="chart-frame" [class.chart-frame--collapsed]="isChartCollapsed"><canvas #myChart></canvas></div>
+      <div class="history-note" *ngIf="historyDrainRunning">Loading device history…</div>
+    </section>
+
+    <section class="panel routing-panel" aria-label="Pool routing">
+      <header class="panel-heading"><div><h2>Pool routing</h2><span class="panel-meta">{{ anyMuxConnected ? '5tratMUX connected' : 'Stratum connection' }}</span></div><a class="text-link" routerLink="/pages/pool">Edit <nb-icon icon="arrow-up-right-outline"></nb-icon></a></header>
+      <div class="route-list">
+        <div *ngFor="let pool of info.stratum.pools; let i = index" class="route-row">
+          <div class="route-title"><span class="route-number">{{ isDualPool ? (physicalPoolIndex(i) === 0 ? 'A' : 'B') : physicalPoolIndex(i) + 1 }}</span><span class="route-host" [title]="pool.host">{{ pool.host || 'Not configured' }}</span><span class="route-state" [class.route-state--online]="dashboardIsFresh && pool.connected && !pool.verifyBlocked">{{ !dashboardIsFresh ? '—' : pool.verifyBlocked ? 'Blocked' : pool.connected ? 'Online' : 'Offline' }}</span></div>
+          <div class="route-details"><span>{{ muxConnected(physicalPoolIndex(i)) ? '5tratMUX' : 'Stratum' }} <span *ngIf="pool.port">:{{ pool.port }}</span></span><span *ngIf="dashboardIsFresh && pool.connected">{{ routingAllocationLabel(i) }}</span></div>
+          <div class="route-counters"><span><b>{{ metric(pool.accepted, 0) }}</b> accepted</span><span><b>{{ metric(pool.rejected, 0) }}</b> rejected</span><span *ngIf="pool.connected && pool.pingRtt > 0">{{ metric(pool.pingRtt, 0) }} ms</span></div>
+          <div class="route-work" *ngIf="poolWorkContext(physicalPoolIndex(i)) as work"><span>{{ poolCoinLabel(physicalPoolIndex(i)) }}</span><span>Height {{ work.height === null ? '—' : (work.height | number:'1.0-0') }}</span><span>Difficulty (bdiff) {{ workDifficulty(work.networkDifficulty) }}</span><span class="job-id" [title]="work.jobId">Job {{ work.jobId }}</span></div>
+          <div class="route-warning" *ngIf="pool.verifyBlocked">{{ pool.verifyBlocked }}</div>
+        </div>
+      </div>
+      <div class="panel-foot"><nb-icon icon="layers-outline"></nb-icon>Shared ASIC work <span>{{ isDualPool ? 'Dual pool' : info.stratum.usingFallback ? 'Fallback active' : 'Single pool' }}</span></div>
+    </section>
+
+    <section class="panel asic-panel" aria-label="ASIC telemetry">
+      <header class="panel-heading"><div><h2>ASICs</h2><span class="panel-meta">One device · shared work</span></div><span class="quiet-badge">Individual routing unavailable</span></header>
+      <div class="asic-grid" *ngIf="asicRows.length; else noAsics">
+        <article class="asic-card" *ngFor="let chip of asicRows; trackBy: trackAsic">
+          <div class="asic-title"><span class="chip-symbol" aria-hidden="true"><nb-icon icon="hard-drive-outline"></nb-icon></span><h3>ASIC {{ chip.index + 1 }}</h3><span class="sample-dot" [class.sample-dot--fresh]="chipIsFresh(chip)" [title]="chipIsFresh(chip) ? 'Fresh hardware counter' : 'Counter unavailable or stale'"></span></div>
+          <div class="asic-hash">{{ chipHash(chip) }} <span>GH/s</span></div>
+          <div class="asic-detail"><span *ngIf="chip.temperatureC !== null && chip.temperatureC > 0">{{ chipTemperature(chip) }} °C</span><span>{{ chipIsFresh(chip) ? 'Live counter' : 'Unavailable' }}</span></div>
+        </article>
+      </div>
+      <ng-template #noAsics><p class="no-data">ASIC information unavailable.</p></ng-template>
+      <div class="panel-foot"><span>Hardware counter readings</span><span>Independent job targeting is not enabled</span></div>
+    </section>
+
+    <section class="panel operating-panel" aria-label="Operating settings">
+      <header class="panel-heading"><h2>Operating point</h2><a class="text-link" routerLink="/pages/settings" [queryParams]="{section:'performance'}">Settings <nb-icon icon="arrow-up-right-outline"></nb-icon></a></header>
+      <dl class="device-facts"><div><dt>Clock</dt><dd>{{ metric(info.performance.frequency, 0) }} <span>MHz</span></dd></div><div><dt>Core voltage</dt><dd>{{ metric(info.power.coreVoltageActual, 3) }} <span>V</span></dd></div><div *ngFor="let fan of info.thermal.fans; let i = index"><dt>Fan {{ info.thermal.fans.length > 1 ? i + 1 : '' }}</dt><dd>{{ metric(fan.speed, 0) }} <span>%</span><small>{{ metric(fan.rpm, 0) }} RPM</small></dd></div><div><dt>Uptime</dt><dd class="uptime">{{ dashboardIsFresh ? formatUptime(info.system.uptime) : '—' }}</dd></div></dl>
+    </section>
+  </div>
+
+  <section class="session-strip" aria-label="Session statistics"><div><span>Accepted shares</span><strong>{{ metric(info.performance.sharesAccepted, 0) }}</strong></div><div><span>Rejected shares</span><strong>{{ metric(info.performance.sharesRejected, 0) }}</strong></div><div><span>Acceptance</span><strong>{{ shareAcceptance }}</strong></div><div><span>Best share</span><strong>{{ displayDifficulty(info.performance.bestDiff) }}</strong></div><div><span>Session best</span><strong>{{ displayDifficulty(info.performance.bestSessionDiff) }}</strong></div></section>
+  <div class="dashboard-footer"><span>{{ liveStatus?.firmware?.product || 'Firmware' }} <span>{{ liveStatus?.firmware?.version || 'version unavailable' }}</span></span><a routerLink="/pages/system">System details <nb-icon icon="arrow-forward-outline"></nb-icon></a></div>
+</div>

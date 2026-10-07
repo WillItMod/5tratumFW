@@ -1,0 +1,42 @@
+@import '@nebular/theme/styles/theming';
+@import '@nebular/theme/styles/themes';
+
+$fw-common: (
+  font-family-primary: 'system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+  font-family-secondary: 'system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+  header-height: 4rem, sidebar-width: 13.75rem, sidebar-width-compact: 4.5rem,
+  layout-padding: 1.75rem, layout-medium-padding: 1.25rem, layout-small-padding: 1rem,
+  card-margin-bottom: 1rem, card-border-radius: .6rem, card-shadow: none,
+  card-header-padding: 1rem 1.25rem, card-padding: 1.25rem,
+  header-shadow: none, sidebar-shadow: none, footer-height: 3rem,
+  menu-item-icon-margin: 0 .7rem 0 0, menu-item-padding: .7rem .75rem,
+  select-min-width: 6rem, button-rectangle-border-radius: .4rem,
+  input-rectangle-border-radius: .4rem, color-primary-500: #23b9df,
+  color-primary-400: #5cd8f5, color-primary-600: #1594b6,
+  color-success-500: #36c996, color-warning-500: #f4b85a, color-danger-500: #f07179,
+);
+$fw-dark: map-merge($fw-common, (
+  background-basic-color-1: #111d29, background-basic-color-2: #0b131d,
+  background-basic-color-3: #192736, background-basic-color-4: #223142,
+  border-basic-color-1: #263545, border-basic-color-2: #263545,
+  border-basic-color-3: #354759, border-basic-color-4: #354759,
+  text-basic-color: #e5edf5, text-hint-color: #91a2b5,
+  header-background-color: #0e1823, sidebar-background-color: #0b141f,
+  layout-background-color: #0b131d, footer-background-color: #0b131d,
+  card-background-color: #111d29, input-basic-background-color: #0e1823,
+));
+$fw-light: map-merge($fw-common, (
+  background-basic-color-1: #ffffff, background-basic-color-2: #f0f4f7,
+  background-basic-color-3: #e8eff4, background-basic-color-4: #dde7ef,
+  border-basic-color-1: #d8e2eb, border-basic-color-2: #d8e2eb,
+  border-basic-color-3: #bfd0df, border-basic-color-4: #bfd0df,
+  text-basic-color: #162a3c, text-hint-color: #627589,
+  header-background-color: #ffffff, sidebar-background-color: #0b141f,
+  layout-background-color: #f0f4f7, footer-background-color: #f0f4f7,
+  card-background-color: #ffffff, color-primary-500: #047f9f,
+  input-basic-background-color: #f6f9fb,
+));
+$nb-themes: nb-register-theme($fw-light, default, default);
+$nb-themes: nb-register-theme($fw-light, corporate, corporate);
+$nb-themes: nb-register-theme($fw-dark, dark, dark);
+$nb-themes: nb-register-theme($fw-dark, cosmic, dark);

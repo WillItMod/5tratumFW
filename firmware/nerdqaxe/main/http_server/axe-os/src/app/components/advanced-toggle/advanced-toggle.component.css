@@ -1,0 +1,1 @@
+.support-mode{display:flex;align-items:center;gap:.6rem;font:inherit;font-size:.75rem;color:var(--fw-muted)}select{font:inherit;color:var(--fw-text);background:var(--fw-surface);border:1px solid var(--fw-border);border-radius:5px;min-height:44px;padding:.4rem .6rem}select:focus-visible{outline:2px solid var(--fw-accent);outline-offset:2px}

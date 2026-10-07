@@ -1,0 +1,179 @@
+<ng-template #loading><div class="loading-state">Loading device settings…</div></ng-template>
+<ng-container *ngIf="form; else loading">
+  <nav *ngIf="showSectionPicker" class="editor-section-nav" aria-label="Remote miner settings"><button *ngFor="let item of editorSections" type="button" [class.active]="section===item.id" (click)="section=item.id">{{ item.label }}</button></nav>
+  <form [formGroup]="form" class="device-config">
+    <section class="config-section" [hidden]="section !== 'pool'">
+      <header class="section-heading"><div><h2>Connections</h2><p>Stratum connections for this device.</p></div><button nbButton ghost size="small" type="button" (click)="swapPools()"><nb-icon icon="swap-outline"></nb-icon> Swap pools</button></header>
+      <div class="routing-controls config-panel">
+        <label class="field"><span>Routing mode</span><nb-select formControlName="poolMode"><nb-option [value]="0">Primary with failover</nb-option><nb-option [value]="1">Dual pool</nb-option></nb-select></label>
+        <label class="field" *ngIf="form.controls['poolMode'].value === 1"><span>Connection A share · {{ form.controls['poolBalance'].value }}%</span><input type="range" formControlName="poolBalance" min="0" max="100" step="1" /><small>Connection B receives {{ 100 - form.controls['poolBalance'].value }}%. Both use the shared ASIC chain.</small></label>
+        <div class="field"><nb-checkbox formControlName="stratumKeep">Stratum keepalive</nb-checkbox></div>
+      </div>
+      <details class="config-panel advanced-fields"><summary>Connection options</summary><div class="field-grid" *ngIf="supportLevel >= 1"><label class="field"><span>Requested Stratum difficulty</span><input nbInput formControlName="stratumDifficulty" type="number" min="1" /></label></div></details>
+      <div class="connection-note"><nb-icon icon="shuffle-2-outline"></nb-icon><div><strong>5tratMUX</strong><p>Use its Stratum host, port and miner user in either connection below. Connection status appears on Overview. Independent per ASIC routing is unavailable in this build.</p></div></div>
+      <div class="pool-grid">
+        <section class="config-panel pool-panel" *ngFor="let pool of poolPanels">
+          <header class="panel-heading"><span class="panel-index">0{{ pool.index + 1 }}</span><h3>{{ poolTabHeader(pool.index) }}</h3></header>
+          <div class="field-grid endpoint-grid">
+            <label class="field"><span>Host</span><input nbInput [id]="pool.url" [formControlName]="pool.url" type="text" spellcheck="false" autocomplete="off" /><small>Hostname or IP address; omit the protocol and port.</small></label>
+            <label class="field"><span>Port</span><input nbInput [id]="pool.port" [formControlName]="pool.port" type="number" /></label>
+          </div>
+          <label class="field"><span>Miner user / worker</span><input nbInput [id]="pool.user" [formControlName]="pool.user" type="text" spellcheck="false" autocomplete="off" /></label>
+          <label class="field"><span>Password</span><div class="password-field"><input nbInput [id]="pool.password" [formControlName]="pool.password" [type]="poolPasswordVisible(pool.index) ? 'text' : 'password'" autocomplete="new-password" /><button nbButton ghost type="button" (click)="togglePoolPassword(pool.index)" [attr.aria-label]="poolPasswordVisible(pool.index) ? 'Hide password' : 'Show password'"><nb-icon [icon]="poolPasswordVisible(pool.index) ? 'eye-off-outline' : 'eye-outline'"></nb-icon></button></div><small>Leave the masked value unchanged to keep the saved password.</small></label>
+          <details class="advanced-fields"><summary>Protocol and verification</summary>
+            <label class="field"><span>Protocol</span><nb-select [formControlName]="pool.protocol"><nb-option [value]="0">Stratum V1</nb-option><nb-option [value]="1">Stratum V2</nb-option></nb-select></label>
+            <div *ngIf="form.controls[pool.protocol].value === 1">
+              <label class="field"><span>Authority public key</span><input nbInput [formControlName]="pool.authority" type="text" spellcheck="false" /></label>
+              <label class="field"><span>Channel type</span><nb-select [formControlName]="pool.channel"><nb-option [value]="0">Extended</nb-option><nb-option [value]="1">Standard</nb-option></nb-select></label>
+            </div>
+            <div class="checkbox-stack" *ngIf="form.controls[pool.protocol].value === 0"><nb-checkbox [formControlName]="pool.tls">TLS</nb-checkbox><nb-checkbox [formControlName]="pool.enonce">Extranonce subscription</nb-checkbox></div>
+            <div class="checkbox-stack"><nb-checkbox [checked]="form.controls[pool.verify].value > 0" (checkedChange)="toggleCoinbaseVerify($event, pool.verify, pool.lastVerify)">Verify coinbase</nb-checkbox></div>
+            <div *ngIf="form.controls[pool.verify].value > 0" class="field-grid">
+              <label class="field"><span>Verification</span><nb-select [formControlName]="pool.verify"><nb-option [value]="1">Basic</nb-option><nb-option [value]="2">Extended</nb-option></nb-select></label>
+              <label class="field"><span>Maximum fee (%)</span><input nbInput [formControlName]="pool.maxFee" type="number" min="0" max="100" step="0.1" /></label>
+              <div class="field"><nb-checkbox [formControlName]="pool.force">Require verification</nb-checkbox></div>
+            </div>
+          </details>
+        </section>
+      </div>
+      <details class="profile-panel config-panel"><summary>Pool profiles · 10 slots</summary>
+        <p class="section-note">Stored on this miner. Capture copies the saved connection and its credentials. Save connection edits above first.</p><p *ngIf="profilesError" class="profile-error">{{ profilesError }}</p>
+        <ng-container *ngIf="profiles"><div class="profile-fields">
+          <label class="field"><span>Profile slot</span><select [ngModel]="poolSlot" [ngModelOptions]="{standalone:true}" (ngModelChange)="selectPoolSlot($event)"><option *ngFor="let item of profiles.pools" [ngValue]="item.slot">{{ item.slot+1 }} · {{ item.name || 'Empty' }}</option></select></label>
+          <label class="field"><span>Profile name</span><input nbInput [(ngModel)]="poolName" [ngModelOptions]="{standalone:true}" maxlength="48" /></label>
+          <label class="field"><span>Connection</span><select [(ngModel)]="poolTarget" [ngModelOptions]="{standalone:true}"><option value="primary">{{ form.controls['poolMode'].value === 1 ? 'Connection A' : 'Primary' }}</option><option value="fallback">{{ form.controls['poolMode'].value === 1 ? 'Connection B' : 'Fallback' }}</option></select></label></div>
+          <p *ngIf="selectedProfile('pool')?.configured" class="section-note">{{ selectedProfile('pool')?.host }}:{{ selectedProfile('pool')?.port }} · {{ selectedProfile('pool')?.user }} · {{ selectedProfile('pool')?.passwordConfigured ? 'Password stored' : 'No password' }}</p>
+          <div class="profile-actions"><button nbButton size="small" type="button" (click)="savePoolProfile()" [disabled]="profileBusy || !poolName.trim()">Save {{ poolTargetLabel }} to slot</button><button nbButton size="small" status="primary" type="button" (click)="applySavedProfile('pool')" [disabled]="profileBusy || !selectedProfile('pool')?.configured">Apply to {{ poolTargetLabel }}</button><button nbButton size="small" ghost type="button" (click)="clearProfile('pool')" [disabled]="profileBusy || !selectedProfile('pool')?.configured">Clear slot</button></div>
+          <p class="section-note">Per-ASIC Apply is unavailable: this firmware sends shared jobs to the ASIC chain.</p>
+        </ng-container>
+      </details>
+
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'scheduler'">
+      <header class="section-heading"><div><h2>Mining and pools</h2><p>Power windows and pool switches saved on this miner.</p></div></header>
+      <div class="config-panel">
+        <h3>Mining power</h3>
+        <p class="section-note">Pause powers down the ASIC chain. The controller, network and cooling remain active.</p>
+        <p *ngIf="powerError" class="profile-error">{{ powerError }}</p>
+        <ng-container *ngIf="powerReport as power">
+          <p *ngIf="!power.supported" class="section-note">Reversible power control is unavailable on this board or CAN configuration.</p>
+          <ng-container *ngIf="power.supported">
+            <div class="profile-actions"><button nbButton size="small" type="button" (click)="controlMining('pause')" [disabled]="powerBusy">Pause mining</button><button nbButton size="small" type="button" (click)="controlMining('resume')" [disabled]="powerBusy">Resume mining</button><button nbButton size="small" type="button" (click)="controlMining('schedule')" [disabled]="powerBusy">Follow schedule</button></div>
+            <p class="section-note">Requested: {{ power.status.requestedPaused ? 'paused' : 'running' }} · Applied: {{ power.status.appliedPaused ? 'paused' : 'running' }}{{ power.status.transitionPending ? ' · transition pending' : '' }}</p>
+            <p *ngIf="power.status.error" class="profile-error">{{ power.status.error }}</p>
+            <p class="section-note">Manual override: {{ power.status.manualOverride }}. Overrides expire at the next scheduled pause or resume.</p>
+            <ng-container *ngIf="powerSchedule as schedule">
+              <div class="profile-fields"><nb-checkbox [(ngModel)]="schedule.enabled" [ngModelOptions]="{standalone:true}">Enable power schedule</nb-checkbox><label class="field"><span>Time zone</span><select [(ngModel)]="schedule.timezone" [ngModelOptions]="{standalone:true}"><option *ngFor="let zone of power.limits.timezones" [value]="zone">{{ zone }}</option></select></label></div>
+              <p class="section-note">Weekly pause windows. End before start continues into the next day. Named zones adjust for daylight saving time.</p>
+              <p *ngIf="!power.status.clockValid" class="section-note">Waiting for network time. An enabled power schedule keeps mining paused until the clock is synchronized.</p>
+              <div class="schedule-event" *ngFor="let window of schedule.windows;let i=index"><div class="schedule-days"><button type="button" *ngFor="let day of weekDays" [attr.aria-pressed]="hasScheduleDay(window.days,day.bit)" [class.selected]="hasScheduleDay(window.days,day.bit)" (click)="togglePowerDay(window,day.bit)">{{ day.label }}</button></div><label>Pause <input nbInput type="time" [(ngModel)]="window.start" [ngModelOptions]="{standalone:true}" /></label><label>Resume <input nbInput type="time" [(ngModel)]="window.end" [ngModelOptions]="{standalone:true}" /></label><button nbButton ghost size="tiny" type="button" (click)="schedule.windows.splice(i,1)" [attr.aria-label]="'Remove pause window '+(i+1)">Remove</button></div>
+              <div class="profile-actions"><button nbButton size="small" type="button" (click)="addPowerWindow()" [disabled]="schedule.windows.length>=8 || powerBusy">Add pause window</button><button nbButton size="small" status="primary" type="button" (click)="savePower()" [disabled]="powerBusy || !validPowerSchedule">Save power schedule</button></div>
+            </ng-container>
+          </ng-container>
+        </ng-container>
+      </div>
+      <div class="config-panel">
+        <h3>Pool schedule</h3>
+        <p class="section-note">Weekly time points select a saved profile for the primary connection until the next point. The schedule runs on the miner.</p><p *ngIf="scheduleError" class="profile-error">{{ scheduleError }}</p>
+        <ng-container *ngIf="poolSchedule as schedule"><div class="profile-fields"><nb-checkbox [(ngModel)]="schedule.enabled" [ngModelOptions]="{standalone:true}">Enable pool schedule</nb-checkbox><label class="field"><span>Time zone (fixed offset)</span><select [(ngModel)]="schedule.utcOffsetMinutes" [ngModelOptions]="{standalone:true}"><option *ngFor="let offset of utcOffsets" [ngValue]="offset">{{ offsetText(offset) }}</option></select></label></div>
+          <p class="section-note" *ngIf="!schedule.clockValid">Waiting for network time. The current pool stays selected.</p><p class="section-note">Fixed offsets do not adjust for daylight saving time.</p>
+          <div class="schedule-event" *ngFor="let event of schedule.events;let i=index"><nb-checkbox [(ngModel)]="event.enabled" [ngModelOptions]="{standalone:true}" [attr.aria-label]="'Enable time point '+(i+1)"></nb-checkbox><div class="schedule-days"><button type="button" *ngFor="let day of weekDays" [attr.aria-pressed]="hasScheduleDay(event.dayMask,day.bit)" [class.selected]="hasScheduleDay(event.dayMask,day.bit)" (click)="toggleScheduleDay(event,day.bit)">{{ day.label }}</button></div>
+            <input nbInput type="time" [value]="timeText(event.timeMinutes)" (change)="changeEventTime(event,$any($event.target).value)" [attr.aria-label]="'Time point '+(i+1)" /><select [(ngModel)]="event.slot" [ngModelOptions]="{standalone:true}" [attr.aria-label]="'Pool profile for time point '+(i+1)"><option *ngFor="let item of profiles?.pools" [ngValue]="item.slot" [disabled]="!item.configured">{{ item.slot+1 }} · {{ item.name || 'Empty' }}</option></select><button nbButton ghost size="tiny" type="button" (click)="schedule.events.splice(i,1)" [attr.aria-label]="'Remove time point '+(i+1)">Remove</button></div>
+          <div class="profile-actions"><button nbButton size="small" type="button" (click)="addScheduleEvent()" [disabled]="schedule.events.length>=16 || !profiles">Add time point</button><button nbButton size="small" status="primary" type="button" (click)="saveSchedule()" [disabled]="profileBusy || !validPoolSchedule">Save pool schedule</button></div>
+        </ng-container>
+      </div>
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'performance'">
+      <header class="section-heading"><div><h2>Performance</h2><p>Saved clock and voltage for this hardware revision.</p></div><app-advanced-toggle (advancedToggled)="setDevToolsOpen($event)"></app-advanced-toggle></header>
+      <div class="config-panel">
+        <div class="manual-mode"><nb-checkbox [checked]="manualTuning" (checkedChange)="setManualTuning($event)">Manual clock and voltage</nb-checkbox><button *ngIf="manualTuning" nbButton size="small" status="primary" type="button" (click)="reviewTuning()" [disabled]="profileBusy || !profiles || form.controls['frequency'].invalid || form.controls['coreVoltage'].invalid">Review operating point</button></div>
+        <ng-container *ngIf="tuningReview?.source === 'manual'" [ngTemplateOutlet]="reviewPoint"></ng-container>
+        <div class="field-grid" *ngIf="supportLevel === 0 && !manualTuning">
+          <label class="field"><span>ASIC clock (MHz)</span><nb-select formControlName="frequency" [ngClass]="{'unsafe-setting': isFrequencyTooHigh()}"><nb-option *ngFor="let option of frequencyOptions" [value]="option.value">{{ option.name }}</nb-option></nb-select></label>
+          <label class="field"><span>Core voltage (mV)</span><nb-select formControlName="coreVoltage" [ngClass]="{'unsafe-setting': isVoltageTooHigh()}"><nb-option *ngFor="let option of voltageOptions" [value]="option.value">{{ option.name }}</nb-option></nb-select></label>
+        </div>
+        <div class="field-grid" *ngIf="supportLevel >= 1 || manualTuning">
+          <label class="field"><span>ASIC clock (MHz)</span><input nbInput formControlName="frequency" type="number" step="1" [min]="profiles?.limits?.frequency?.min || 50" [max]="profiles?.limits?.frequency?.max || 800" (input)="checkFrequencyLimit()" [ngClass]="{'unsafe-setting': isFrequencyTooHigh()}" /></label>
+          <label class="field"><span>Core voltage (mV)</span><input nbInput formControlName="coreVoltage" type="number" step="1" [min]="profiles?.limits?.coreVoltage?.min || 1005" [max]="profiles?.limits?.coreVoltage?.max || 1400" (input)="checkVoltageLimit()" [ngClass]="{'unsafe-setting': isVoltageTooHigh()}" /></label>
+        </div>
+        <p class="section-note">Current values are retained. Manual requests use 1 MHz and 1 mV steps; the ASIC PLL and regulator choose the nearest hardware setting. Changes apply to the whole ASIC chain.</p>
+        <div class="field-grid" *ngIf="supportLevel >= 2">
+          <label class="field"><span>Job interval (ms)</span><input nbInput formControlName="jobInterval" type="number" /></label>
+          <label class="field" *ngIf="defaultVrFrequency !== undefined"><span>Version rolling frequency</span><input nbInput formControlName="vrFrequency" type="number" /><small>Calculated wrap time: {{ wrapAroundTime | number:'1.2-2' }} s.</small></label>
+        </div>
+      </div>
+      <details class="profile-panel config-panel"><summary>Tuning profiles · 10 slots</summary><p class="section-note">Save the clock and voltage shown above without changing mining. Apply changes only those two settings.</p><p *ngIf="profilesError" class="profile-error">{{ profilesError }}</p>
+        <ng-container *ngIf="profiles"><div class="profile-fields"><label class="field"><span>Profile slot</span><select [ngModel]="tuningSlot" [ngModelOptions]="{standalone:true}" (ngModelChange)="selectTuningSlot($event)"><option *ngFor="let item of profiles.tuning" [ngValue]="item.slot">{{ item.slot+1 }} · {{ item.name || 'Empty' }}</option></select></label><label class="field"><span>Profile name</span><input nbInput [(ngModel)]="tuningName" [ngModelOptions]="{standalone:true}" maxlength="48" /></label></div>
+        <p *ngIf="selectedProfile('tuning')?.configured" class="section-note">{{ selectedProfile('tuning')?.frequencyMHz }} MHz · {{ selectedProfile('tuning')?.coreVoltageMv }} mV</p><div class="profile-actions"><button nbButton size="small" type="button" (click)="saveTuningProfile()" [disabled]="profileBusy || !tuningName.trim()">Save to slot</button><button nbButton size="small" status="primary" type="button" (click)="reviewTuning(true)" [disabled]="profileBusy || !selectedProfile('tuning')?.configured">Review profile</button><button nbButton size="small" ghost type="button" (click)="clearProfile('tuning')" [disabled]="profileBusy || !selectedProfile('tuning')?.configured">Clear slot</button></div><ng-container *ngIf="tuningReview?.source === 'slot'" [ngTemplateOutlet]="reviewPoint"></ng-container></ng-container>
+      </details>
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'cooling'">
+      <header class="section-heading"><div><h2>Cooling</h2><p>Fan control and thermal shutdown limits.</p></div><app-advanced-toggle (advancedToggled)="setDevToolsOpen($event)"></app-advanced-toggle></header>
+      <div class="fan-grid">
+        <ng-container *ngFor="let fan of fanPanels">
+          <section class="config-panel" *ngIf="fan.index < fanCount">
+            <header class="panel-heading"><span class="panel-index">0{{ fan.index + 1 }}</span><h3>{{ fanLabels[fan.index] || ('Fan ' + (fan.index + 1)) }}</h3></header>
+            <label class="field"><span>Control mode</span><nb-select [formControlName]="fan.mode">
+              <nb-option *ngIf="fan.index === 1" [value]="3">Linked to fan 1</nb-option>
+              <nb-option [value]="0">Manual</nb-option>
+              <nb-option *ngIf="fan.index === 0 && form.controls[fan.mode].value === 1" [value]="1">Automatic (legacy)</nb-option>
+              <nb-option *ngIf="form.controls[fan.target].value !== -1" [value]="2">Automatic · PID</nb-option>
+            </nb-select></label>
+            <p class="section-note" *ngIf="form.controls[fan.mode].value === 3">Uses fan 1's speed. The shutdown limit remains separate.</p>
+            <label class="field" *ngIf="form.controls[fan.mode].value === 0"><span>Fan speed · {{ form.controls[fan.manual].value }}%</span><input type="range" [formControlName]="fan.manual" min="0" max="100" step="1" /><small class="field-warning" *ngIf="form.controls[fan.manual].value < 40">Low fan speed can cause overheating.</small></label>
+            <label class="field" *ngIf="form.controls[fan.mode].value === 2 && form.controls[fan.target].value !== -1"><span>Target temperature (°C)</span><input nbInput [formControlName]="fan.target" type="number" /></label>
+            <div class="field-grid pid-grid" *ngIf="form.controls[fan.mode].value === 2 && supportLevel >= 2">
+              <label class="field"><span>PID P</span><input nbInput [formControlName]="fan.p" type="number" /></label>
+              <label class="field"><span>PID I</span><input nbInput [formControlName]="fan.i" type="number" step="0.01" /></label>
+              <label class="field"><span>PID D</span><input nbInput [formControlName]="fan.d" type="number" /></label>
+            </div>
+            <label class="field"><span>Shutdown temperature (°C)</span><input nbInput [formControlName]="fan.overheat" type="number" /></label>
+          </section>
+        </ng-container>
+      </div>
+      <div class="config-panel checkbox-stack" *ngIf="fanCount === 1 || supportLevel >= 2">
+        <nb-checkbox *ngIf="fanCount === 1" formControlName="pidUseMax">Use maximum ASIC temperature for PID</nb-checkbox>
+        <nb-checkbox *ngIf="supportLevel >= 2" formControlName="invertFanPolarity">Invert fan polarity</nb-checkbox>
+      </div>
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'network'">
+      <header class="section-heading"><div><h2>Network</h2><p>Device hostname and Wi-Fi connection.</p></div></header>
+      <div class="config-panel">
+        <label class="field"><span>Hostname</span><input nbInput formControlName="hostname" type="text" autocomplete="off" spellcheck="false" /></label>
+        <label class="field"><span>Wi-Fi network</span><div class="input-action"><input nbInput formControlName="ssid" type="text" autocomplete="off" /><button *ngIf="apActive" nbButton status="basic" size="small" type="button" (click)="scanWifi(wifiScanDialog)" [disabled]="wifiScanning">{{ wifiScanning ? 'Scanning…' : 'Scan' }}</button></div></label>
+        <label class="field"><span>Wi-Fi password</span><div class="password-field"><input nbInput formControlName="wifiPass" [type]="showWifiPassword ? 'text' : 'password'" autocomplete="new-password" /><button nbButton ghost type="button" (click)="toggleWifiPasswordVisibility()" [attr.aria-label]="showWifiPassword ? 'Hide password' : 'Show password'"><nb-icon [icon]="showWifiPassword ? 'eye-off-outline' : 'eye-outline'"></nb-icon></button></div><small>Leave the masked value unchanged to keep the saved password.</small></label>
+      </div>
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'display'">
+      <header class="section-heading"><div><h2>Display</h2><p>Miner screen and browser preferences.</p></div></header>
+      <div class="config-panel checkbox-stack"><nb-checkbox formControlName="flipScreen">Rotate miner screen</nb-checkbox><nb-checkbox formControlName="invertScreen">Invert screen colours</nb-checkbox><nb-checkbox formControlName="autoScreenOff">Automatic screen off</nb-checkbox></div>
+      <div class="config-panel"><label class="field"><span>Browser time format</span><nb-select formControlName="timeFormat"><nb-option value="24h">24 hour</nb-option><nb-option value="12h">12 hour</nb-option></nb-select></label></div>
+
+    </section>
+
+    <section class="config-section" [hidden]="section !== 'advanced'">
+      <header class="section-heading"><div><h2>Advanced</h2><p>Hardware extensions and external data services.</p></div></header>
+      <div class="config-panel" *ngIf="hasCanExtension"><nb-checkbox formControlName="canMaster">CAN master mode</nb-checkbox></div>
+      <details class="config-panel advanced-fields"><summary>Bitcoin data source</summary><div class="checkbox-stack"><nb-checkbox formControlName="customMempoolEnabled">Use a custom mempool server</nb-checkbox></div><label *ngIf="form.controls['customMempoolEnabled'].value" class="field"><span>Mempool URL</span><input nbInput formControlName="mempoolUrl" type="text" placeholder="https://mempool.mynode.local" /><small>This upstream data source describes Bitcoin; it does not identify the coin being mined.</small></label></details>
+      <p *ngIf="!hasCanExtension" class="section-note">No CAN extension reported by this device.</p>
+    </section>
+
+    <div class="save-bar" [hidden]="section === 'update' || section === 'security' || section === 'scheduler'">
+      <div><span *ngIf="sectionDirty">Unsaved changes</span><span *ngIf="!sectionDirty">Settings loaded</span><small *ngIf="requiresReboot || restartPending">Restart required after saving.</small></div>
+      <div class="save-actions"><button nbButton status="basic" size="small" type="button" (click)="restart()">Restart</button><button nbButton status="primary" size="small" type="button" [disabled]="sectionInvalid || !sectionDirty || saving" (click)="confirmSave(warningDialog)">{{ saving ? 'Saving…' : 'Save this section' }}</button></div>
+    </div>
+  </form>
+
+  <ng-template #reviewPoint><div *ngIf="tuningReview as point" class="tuning-review" role="region" aria-label="Operating point review"><strong>{{ point.name }}</strong><p>{{ point.frequencyMHz }} MHz · {{ point.coreVoltageMv }} mV · whole ASIC chain</p><p class="field-warning" *ngIf="point.frequencyMHz > defaultFrequency || point.coreVoltageMv > defaultCoreVoltage">Above the device default. Monitor temperatures and stability after applying.</p><div class="profile-actions"><button nbButton status="primary" size="small" type="button" (click)="applyReviewedTuning()" [disabled]="profileBusy">Apply reviewed point</button><button nbButton ghost size="small" type="button" (click)="tuningReview=null">Cancel</button></div></div></ng-template>
+  <ng-template #warningDialog>
+    <nb-card class="settings-dialog"><nb-card-header>Operating limits</nb-card-header><nb-card-body><p>The selected clock or voltage exceeds this device's supplied preset range. Higher values can cause overheating, instability or hardware damage.</p><nb-checkbox [(ngModel)]="dontShowWarning">Do not show this warning again</nb-checkbox><div class="dialog-actions"><button nbButton status="basic" type="button" (click)="dialogRef?.close()">Cancel</button><button nbButton status="danger" type="button" (click)="saveAfterWarning()">Save anyway</button></div></nb-card-body></nb-card>
+  </ng-template>
+  <ng-template #wifiScanDialog>
+    <nb-card class="settings-dialog"><nb-card-header>Wi-Fi networks</nb-card-header><nb-card-body><p *ngIf="wifiScanResults.length === 0">No networks found.</p><button *ngFor="let network of wifiScanResults" nbButton ghost fullWidth class="wifi-scan-entry" type="button" (click)="selectWifiNetwork(network.ssid)"><span>{{ network.ssid }}</span><small>{{ network.rssi }} dBm</small></button></nb-card-body></nb-card>
+  </ng-template>
+</ng-container>

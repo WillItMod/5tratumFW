@@ -1,0 +1,16 @@
+:host { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 20px; }
+.brand-group, .header-tools { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.fw-brand { display: flex; align-items: center; gap: 10px; font-size: 24px; letter-spacing: -1px; font-weight: 500; color: var(--fw-text); text-decoration: none; white-space: nowrap; }
+.fw-brand img { object-fit: contain; flex: 0 0 auto; }
+.fw-wordmark { color: var(--fw-accent); font-weight: 600; }
+.header-device { color: var(--fw-muted); border-left: 1px solid var(--fw-border); padding-left: 20px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-badge { color: var(--fw-accent); font-size: 11px; white-space: nowrap; }
+.theme-picker { margin: 0; }
+.theme-picker select { min-height: 44px; min-width: 88px; padding: 0 10px; border: 1px solid var(--fw-border); border-radius: 8px; background: var(--fw-bg); color: var(--fw-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.menu-toggle { display: none; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 10px; border: 1px solid var(--fw-border); border-radius: 8px; color: var(--fw-text); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.menu-toggle:hover, .theme-picker select:hover { background: var(--fw-surface-alt); color: var(--fw-text); }
+.menu-toggle nb-icon { font-size: 20px; }
+button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 991px) { .menu-toggle { display: inline-flex; } .header-device { display: none; } }
+@media (max-width: 575px) { :host { gap: 8px; } .brand-group, .header-tools { gap: 8px; } .fw-brand { font-size: 21px; gap: 8px; } .fw-brand img { width: 32px; height: 32px; } .theme-picker select { min-width: 72px; padding: 0 7px; } .menu-toggle span { display: none; } .menu-toggle { width: 44px; padding: 0; } .ap-badge { display: none; } }

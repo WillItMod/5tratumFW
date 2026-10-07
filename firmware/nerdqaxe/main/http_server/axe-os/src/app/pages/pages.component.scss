@@ -1,0 +1,24 @@
+:host { display: block; }
+.fw-command-links { min-height: 48px; display: flex; align-items: stretch; gap: 4px; width: 100%; }
+.fw-command-links > a, .fw-more-navigation > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 15px; border-bottom: 2px solid transparent; color: var(--fw-muted); text-decoration: none; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.fw-command-links nb-icon { font-size: 16px; flex: 0 0 auto; }
+.fw-command-links > a:hover, .fw-more-navigation > summary:hover { color: var(--fw-text); }
+.fw-command-links > a.fw-nav-active, .fw-more-active > summary { color: var(--fw-accent); border-bottom-color: var(--fw-accent); }
+.fw-command-links a:focus-visible, .fw-command-links summary:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -3px; }
+.fw-more-navigation { position: relative; margin-left: auto; }
+.fw-more-navigation > summary { height: 100%; list-style: none; }
+.fw-more-navigation > summary::-webkit-details-marker { display: none; }
+.fw-more-navigation[open] > summary nb-icon { transform: rotate(180deg); }
+.fw-more-links { position: absolute; right: 0; top: calc(100% + 6px); min-width: 210px; padding: 7px; border: 1px solid var(--fw-border); border-radius: 8px; background: var(--fw-surface); box-shadow: 0 14px 28px #0003; }
+.fw-more-links a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; border-radius: 5px; color: var(--fw-muted); text-decoration: none; font-size: 12px; }
+.fw-more-links a:hover, .fw-more-links a.fw-nav-active { color: var(--fw-accent); background: var(--fw-surface-alt); }
+@media (max-width: 1199px) { .fw-command-links > a, .fw-more-navigation > summary { padding-inline: 11px; } }
+@media (max-width: 991px) {
+  .fw-command-links { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5px; }
+  .fw-command-links > a, .fw-more-navigation > summary { min-height: 48px; border: 0; border-radius: 5px; padding: 0 12px; }
+  .fw-command-links > a.fw-nav-active { background: var(--fw-surface-alt); }
+  .fw-more-navigation { margin: 0; grid-column: 1 / -1; }
+  .fw-more-navigation > summary { width: 100%; justify-content: space-between; }
+  .fw-more-links { position: static; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 0; padding: 0; border: 0; border-top: 1px solid var(--fw-border); border-radius: 0; background: transparent; box-shadow: none; }
+}
+@media (max-width: 359px) { .fw-command-links { grid-template-columns: minmax(0, 1fr); } .fw-more-links { grid-template-columns: minmax(0, 1fr); } }
