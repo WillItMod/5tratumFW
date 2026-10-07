@@ -1,6 +1,6 @@
 # 5tratumFW — BETA
 
-**BETA — development firmware; the current build has not been installed on a miner.**
+**BETA — Gamma 601/602 only. The current source is `5tratumFW-0.1.0-beta.3`.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
@@ -9,7 +9,7 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ES
 
 | Hardware | This image | Validation |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Earlier `5tratumFW-0.1.0-a1` app and WWW installed; boot and mining observed. This new build needs device validation. |
+| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta 2 paired app/WWW installed, saved settings preserved and accepted shares observed. Beta 3 validation is recorded separately below. |
 | Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Compiled support. Device still runs stock v2.14.2; this firmware has not been installed/tested there. |
 | Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners | Incompatible | Do not flash these Gamma images. |
 
@@ -23,6 +23,8 @@ The guard validates an existing NVS board identity; it does not physically ident
 - Coinbase decoding off by default; explicitly saved choices preserved.
 - Direct SV1/SV2 pool configuration and miner-side 5tratMUX setup in **Pool routing**.
 - Gamma OLED mining/health views and optional fresh peer-advertised MUX status.
+- Ten named pool slots with direct Apply, ten named tuning slots, and fine manual clock/voltage requests.
+- Weekly pool-switch time points saved on the miner alongside the independent power scheduler.
 
 No autotuning, clock presets, authenticated native MUX management or independent per-chip mining are implemented or validated. Existing thermal protection remains active and may change operating settings after overheating.
 
@@ -34,12 +36,15 @@ Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` 
 - [Preserve settings](docs/settings-preservation.md)
 - [Weekly scheduler and manual power saving](docs/scheduler.md)
 - [Pool routing and 5tratMUX](docs/pool-routing.md)
+- [Saved pools, tuning slots and pool switching](docs/profiles-api.md)
 - [Recovery](docs/recovery.md)
 - [Build and test](docs/build.md)
 - [Validation and known limits](docs/validation.md)
 - [Attribution and licensing](docs/attribution.md)
 
-The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The matching MUX server update has not been deployed; receiver compilation/tests do not imply an installed end-to-end MUX status test.
+The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The test MUX candidate advertises live status to the Gamma 601. This Gamma receiver currently supports the legacy status acknowledgment; the QAxe's richer coin/block metadata protocol is a separate firmware capability.
+
+See [Beta 3 validation](docs/validation-beta3.md) for build and physical-device results. Gamma 602 remains unflashed; source/build compatibility is not hardware qualification.
 
 ## Build
 

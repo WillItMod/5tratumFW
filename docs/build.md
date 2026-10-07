@@ -1,6 +1,6 @@
 # Build and validate 5tratumFW BETA
 
-The current source version is **`5tratumFW-0.1.0-beta.2`**. The previously published Beta 1 remains a separate historical release. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
+The current source version is **`5tratumFW-0.1.0-beta.3`**. Earlier packages remain separate historical releases. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
 
 These instructions produce paired OTA images for **Bitaxe Gamma PCB revisions 601 and 602 only**. A successful compile does not establish compatibility with another board or prove operation on a physical miner. See [compatibility](compatibility.md) and [installation](installation.md) for the hardware and upgrade requirements.
 

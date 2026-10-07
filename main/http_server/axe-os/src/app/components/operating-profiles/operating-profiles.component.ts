@@ -65,6 +65,11 @@ export class OperatingProfilesComponent implements OnInit, OnDestroy {
     this.review = this.type === 'tuning' ? { body: { type: 'tuning', slot: slot.slot }, label: slot.name!, frequencyMHz: (slot as TuningSlot).frequencyMHz, coreVoltageMv: (slot as TuningSlot).coreVoltageMv } :
       { body: { type: 'pool', slot: slot.slot, poolTarget: this.poolTarget }, label: `${slot.name} → ${this.poolTarget}`, endpoint: `${(slot as PoolSlot).host}:${(slot as PoolSlot).port}` };
   }
+  applyPoolSlot(slot: TuningSlot | PoolSlot) {
+    if (this.type !== 'pool' || !slot.configured || this.busy) return;
+    this.reviewSlot(slot);
+    this.apply();
+  }
   apply() {
     const review = this.review; if (!review) return;
     this.execute(() => this.service.apply(review.body, this.uri), result => {
