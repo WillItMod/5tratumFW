@@ -36,7 +36,7 @@ def safe_relative(name: str) -> Path:
     path = Path(name)
     if not name or path.is_absolute() or ".." in path.parts or any(part in PRIVATE_PARTS for part in path.parts):
         raise ValueError("Source inventory contains an unsafe or private path")
-    if any(part == "build" or (part.startswith("build-") and part != "build-aux") for part in path.parts):
+    if any(part == "build" or (part.startswith("build-") and part != "build-aux") for part in path.parts[:-1]):
         raise ValueError("Source inventory contains generated build files")
     if path.name.startswith(".env") or path.suffix in {".bin", ".log", ".pyc", ".backup"}:
         raise ValueError("Source inventory contains a generated or private file")
