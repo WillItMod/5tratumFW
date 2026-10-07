@@ -8,7 +8,7 @@ Every GET response includes `identity.deviceId`, `hardware` and `firmware`:
 {
   "identity": {"deviceId": "5tfw:32-lowercase-hex-characters"},
   "hardware": {"boardModel": "Gamma 601", "asicModel": "BM1370", "asicCount": 1},
-  "firmware": {"product": "5tratumFW", "version": "5tratumFW-0.1.0-beta.2"}
+  "firmware": {"product": "5tratumFW", "version": "5tratumFW-0.1.0-beta.3"}
 }
 ```
 

@@ -41,13 +41,13 @@ Run the build from a clean source checkout rather than reusing an older `build/`
 
 ## Outputs
 
-The verified package is written under `artifacts/5tratumFW-0.1.0-beta.2/`:
+The verified package is written under `artifacts/5tratumFW-0.1.0-beta.3/`:
 
 | File | Purpose |
 | --- | --- |
 | `esp-miner.bin` | Application-only OTA image; use the firmware/app BIN uploader. |
 | `www.bin` | Complete WWW/SPIFFS image; use the web/WWW BIN uploader. |
-| `5tratumFW-0.1.0-beta.2-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
+| `5tratumFW-0.1.0-beta.3-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
 | `manifest.json` | Product version, upstream baseline, supported board identities, toolchain, image sizes and SHA-256 hashes. |
 | `SHA256SUMS` | Checksums for the images, source archive and web budget report. |
 | `web-budget.json` | Measurement of the compressed files actually placed in the WWW partition. |

@@ -33,7 +33,7 @@ Follow any order stated in the release notes. Otherwise:
 1. Open the miner's **Updates** page and choose the release's `esp-miner.bin` under **Miner firmware**. Keep power connected until the upload completes and the device restarts.
 2. Reconnect to the miner and confirm it reports the intended application version. Inspect any boot/storage errors before continuing.
 3. Choose the matching `www.bin` under **Web interface**. Keep power connected and wait for the success response and browser reload.
-4. Reload the page fully if old assets remain cached. Confirm the application and web versions match; check the exact configured clock, voltage, fans, pools, and network settings against your record.
+4. Restart the device once after the web upload, then reconnect. The application reads the web version at boot, so its mismatch warning can persist until this restart even after a successful WWW upload. Reload the page fully if old assets remain cached. Confirm the application and web versions match; check the exact configured clock, voltage, fans, pools, and network settings against your record.
 5. Confirm fresh telemetry, the selected pool route, and mining behavior expected from the current schedule or manual pause. A paused miner may legitimately show no new shares. After resuming, check accepted shares and pool-side worker activity separately.
 
 The **5tratumFW releases → Check releases** control opens the WillItMod/5tratumFW GitHub release channel, including BETA prereleases. Read the compatibility, release notes and validation record before selecting files. Obtain the paired images from that channel or build this repository yourself.
