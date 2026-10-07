@@ -43,6 +43,27 @@ The temporary80/20 B portfolio belonged to an active shared-fleet attack; natura
 
 ## Final branded pair
 
-The complete approved 5tratumFW logo replaces the generic OS emblem and separate lettering on startup, the recurring large-logo slide and the website header. Telemetry headers use the approved wordmark. The encoded LCD artwork consumes123,120bytes of flash with no runtime decoder. Its new pair requires its own build, served-asset and installation record before publication; the preliminary pair above is not substituted for that check.
+The complete approved 5tratumFW logo replaces the generic OS emblem and separate lettering on startup, the recurring large-logo slide and the website header. Telemetry headers use the approved wordmark. The original artwork SHA256 is `90b7f3f9fee2d758f974d07cbfc6ba386614f387fc4c0855fb12957479f15158`. The encoded LCD artwork consumes 123,120 bytes of flash with no runtime decoder.
+
+The final paired package was built from clean canonical commit `62f10df4ead69e0032c56c8a78995ab349fb36b2`, using the same pinned ESP-IDF 5.5.3 and Node 24.14.0 toolchain. Its target build, 47 browser unit tests, 20 production helper checks, host regressions, 40 native LVGL pages and strict image/source reconstruction checks passed again. All diagnostic/capture flags remain disabled.
+
+| Final OTA image | Bytes | SHA256 |
+| --- | ---: | --- |
+| `esp-miner-NerdQAxe++.bin` | 3,398,400 | `5a96f174666e6fbd6d2b70521e0736c8fb083743d80988e71b7ee71e58f2962b` |
+| QAxe `www.bin` | 3,145,728 | `e65e09703a2be1358cef43d6cfc64af446b24e95dc12501f3cf9c4f705d4f866` |
+
+The website payload is 1,678,840 bytes within its 3 MiB partition; the application fits its 4 MiB slot with 19% free. The corresponding source archive SHA256 is `49f83b44fa55ff80ea97ae3f651cf2ddf35cecc04ed298a4f75a9b524aa92a2e`.
+
+Both final images were accepted by normal paired OTA, followed by a normal reboot. Read-only checks verified all 94 decoded served assets, the root index and exact build provenance against this final pair. System/capability/profile/schedule endpoints report the same controller and BETA version. The saved 500 MHz / 1130 mV point, all settings, ten pool slots, ten tuning slots and both schedules were retained. After sessions settled, both native streams produced fresh accepted shares (1/1 in a short observation) and fresh mixed 5TRAT/BTC coin/job/nBits information matched the test MUX. The device operated near 4 TH/s with board temperature near 53°C. Application flash bytes are not exposed by these APIs; runtime version, upload acknowledgement and local descriptor/package checks are separate evidence.
+
+An independent Chromium run added 36 checks of the final actual Angular bundle: the complete logo displays at 104×64 inside its 72px header, without horizontal overflow at 1440, 390 or 320px. Navigation, theme and keyboard focus remain functional. Eight artwork/provenance checks verified original bytes, the exact resized image, decoded compressed assets and source/package identity. These browser checks use local fixtures and do not claim a physical LCD photograph.
+
+## Signed MUX 0.9.73 live acceptance
+
+The exact protected AMD64 MAIN candidate built from MUX source `513a976d3fb7017422170af53181e699927bcab0` was installed on the test server after independent checks of its trusted Ed25519 signature, both architecture image graphs/native binaries, asset checksums, source provenance and successful CI. Its archive SHA256 is `7e6b567ac77b95630190c12eb63c6a0b1d1fc0671bb5817e07bb5628a06eb15f`; its installed image/config digest is `sha256:9d5d995fbed171fbad4acc7e70bc57af683bae77c06a9069cb1203f216757806`. Existing environment, mounts, security configuration, licensing and saved state were preserved, with a consistent backup and the preceding container retained for rollback. An initial deployment stopped at its backup-helper step and restored the old container; the corrected helper completed before the new candidate started.
+
+After startup/session caches settled, read-only checks against the actual MAIN app and final branded firmware passed. Both native A/B identities had one active connection, used `warm-template-mux`, and retained their 100% 5TRAT / 100% BTC allocations. A reported fresh candidate height 23780 / nBits `192aa6c6`; B reported 970392 / `17021ef0`. Both matched the effective target, current forwarded job and compact-target difficulty; the mixed aggregate coin/job remained unselected. Accepted shares increased by 3/1 on A/B. All 94 served assets, saved settings, 20 slots and both schedules were checked again and retained.
+
+The actual native-control GET endpoint admitted the exact BETA for both stream selections, with saved/runtime Dual enabled, connected counts `[1,1]` and no restart pending. No mode Apply, forced route change or miner restart was issued during these acceptance checks. The combined sanitized receipt SHA256 is `31b62ae24cb375111c6eec57528779f3f4edfd21950bb727c7cd2b82efdc2cd1`.
 
 Only NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 has this package. Other QAxe/OctAxe revisions are unqualified. Gamma uses its separate validation records and image pair. Power pause/resume transitions were checked on the earlier a7 bench and were not repeated during this BETA's paired-update check. Native display fixtures verify layout/formatting, not a new physical-screen photograph. The installed image includes scrolling startup status and the periodic large-logo slide; the preserved Automatic screen off setting controls whether the panel remains awake long enough to show it. No physical per-ASIC work ownership or prolonged soak is claimed.
