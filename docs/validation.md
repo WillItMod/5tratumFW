@@ -12,6 +12,7 @@ The firmware was compiled from source commit `0a8d9485e67065afd7005fd987d7010d33
 | --- | --- |
 | Production Angular build, regenerated OpenAPI client, gzip assets | Passed with Node 24.14.0/npm 11.9.0. |
 | Frontend Karma/Jasmine suite | **105 passed**, Chrome Headless 154 on macOS. Includes the WillItMod BETA update channel and paired-image filtering. |
+| Responsive production-bundle browser QA | **36/36 passed** across Dashboard, Pool routing, Scheduler, Miner controls and Updates at 1440×1000 and 390×844; all API traffic mocked, no device writes/external calls or browser errors. |
 | Gamma boot/settings production-C tests | **12 passed**: 601/602 identity guard, NVS preservation/error behavior, saved operating point and Coinbase defaults. |
 | Production hashrate display regression | **1 passed** under ASan/UBSan: first/accepted/ignored/future/stale samples and reset; counter arithmetic/publication retained. |
 | Production power-control runtime | **11 passed**. |
