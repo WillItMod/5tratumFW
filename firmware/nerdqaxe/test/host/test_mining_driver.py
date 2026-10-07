@@ -112,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
                     "-Wno-sign-compare", "-Wno-vla-cxx-extension", "-Wno-unused-const-variable",
                     "-pthread", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
                     "-I", str(path), "-I", str(ROOT / "test/host"), "-I", str(COMPONENT / "include"),
-                    "-I", str(ROOT / "components/ArduinoJson"),
+                    "-I", str(ROOT / "components/arduinojson"),
                     "-I", str(ROOT / "main/tasks"), *generated, str(COMPONENT / "crc.cpp"),
                     str(path / "helpers.cpp"), str(path / "board.cpp"), str(path / "protection.cpp"), str(path / "control.cpp"),
                     str(path / "jobs-startup.cpp"),

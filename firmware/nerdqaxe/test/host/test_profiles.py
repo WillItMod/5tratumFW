@@ -16,11 +16,11 @@ class ProfileTests(unittest.TestCase):
             macros=set(re.findall(r'\bCONFIG_\w+',header)); macros.discard('CONFIG_DONATE_ADDR')
             (temp/'sdkconfig.h').write_text('\n'.join('#define '+m+' '+('""' if m in strings else '0') for m in sorted(macros)))
             executable=temp/'profile-tests'
-            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/ArduinoJson'),'-I',str(ROOT/'main/http_server'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'test/host/profile_harness.cpp'),'-o',str(executable)],check=True)
+            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main/http_server'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'test/host/profile_harness.cpp'),'-o',str(executable)],check=True)
             subprocess.run([str(executable)],check=True)
             for stub in (ROOT/'test/host/profile_api_stubs').iterdir(): shutil.copy(stub,temp/stub.name)
             shutil.copy(ROOT/'main/http_server/handler_profiles.cpp',temp/'handler_profiles.cpp')
             api=temp/'profile-api-tests'
-            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/ArduinoJson'),'-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'main'),str(temp/'handler_profiles.cpp'),str(ROOT/'main/http_server/profile_store.cpp'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'main/http_server/pool_schedule.cpp'),str(ROOT/'test/host/profile_api_harness.cpp'),'-o',str(api)],check=True)
+            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'main'),str(temp/'handler_profiles.cpp'),str(ROOT/'main/http_server/profile_store.cpp'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'main/http_server/pool_schedule.cpp'),str(ROOT/'test/host/profile_api_harness.cpp'),'-o',str(api)],check=True)
             subprocess.run([str(api)],check=True)
 if __name__=='__main__': unittest.main(verbosity=2)

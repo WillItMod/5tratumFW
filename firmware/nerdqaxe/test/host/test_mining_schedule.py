@@ -20,7 +20,7 @@ class MiningScheduleTests(unittest.TestCase):
             binary = temp/'test'
             subprocess.run(['clang++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
                 '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
-                '-I', str(temp), '-I', str(ROOT/'components/ArduinoJson'), '-I', str(ROOT/'main/tasks'),
+                '-I', str(temp), '-I', str(ROOT/'components/arduinojson'), '-I', str(ROOT/'main/tasks'),
                 str(temp/'mining_schedule.cpp'), str(ROOT/'main/tasks/mining_schedule_schema.cpp'),
                 '-x', 'c++', str(ROOT/'main/tasks/mining_schedule_policy.c'),
                 str(ROOT/'test/host/mining_schedule_harness.cpp'), '-o', str(binary)], check=True)
@@ -40,7 +40,7 @@ class MiningScheduleTests(unittest.TestCase):
             binary = temp/'test'
             subprocess.run(['clang++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
                 '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
-                '-I', str(temp), '-I', str(ROOT/'components/ArduinoJson'), '-I', str(ROOT/'main'),
+                '-I', str(temp), '-I', str(ROOT/'components/arduinojson'), '-I', str(ROOT/'main'),
                 '-I', str(ROOT/'main/tasks'), '-I', str(ROOT/'main/http_server'),
                 str(temp/'mining_schedule.cpp'), str(temp/'handler_mining.cpp'),
                 str(ROOT/'main/tasks/mining_schedule_schema.cpp'),
