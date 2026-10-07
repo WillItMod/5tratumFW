@@ -22,9 +22,10 @@ The firmware was compiled from source commit `0a8d9485e67065afd7005fd987d7010d33
 | Native production OLED layout | **27 actual 128×32 LVGL 9.3 I1 views passed**, ASan/UBSan; sample data only. |
 | Production `screen.c` runtime harness | Passed: startup/carousel, complete long self-test recovery, self-test/ASIC failure priority, safety warnings, pause transitions, stale positive rates and MUX fallback isolation. |
 | ESP32-S3 application and WWW target build | Passed in pinned ESP-IDF v5.5.3 Linux ARM64 container on macOS ARM64. |
-| Application BIN | **1,697,168 bytes**,59.54% of its 4 MiB application partition free. App descriptor confirms BETA version and ESP-IDF v5.5.3. |
+| GitHub Linux validation pipeline | [Passed](https://github.com/WillItMod/5tratumFW/actions/runs/37621331955) at `c3861c71127baa7ac146502e82595086335403ff`: frontend/host tests, compressed web budget, ESP32-S3 build, native OLED rendering and paired-source packaging. The firmware and web source match the local build commit. |
+| Application BIN | **1,697,168 bytes**, 59.54% of its 4 MiB application partition free. App descriptor confirms BETA version and ESP-IDF v5.5.3. |
 | WWW partition image | **3,145,728 bytes**: full 3 MiB SPIFFS image. |
-| Compressed web assets | **614,867 bytes**,19.55% of WWW capacity; 876,628-byte project budget passed. This payload measure excludes filesystem metadata. |
+| Compressed web assets | **614,867 bytes**, 19.55% of WWW capacity; 876,628-byte project budget passed. This payload measure excludes filesystem metadata. |
 | Source/credentials audit | Reviewed tracked source only; private-device directories, device tools, generated build outputs and caches excluded. Upstream GPL and third-party notices retained. |
 
 The host runner executed all **six** entry points. Native rendering also executes the production screen runtime harness. [Build instructions](build.md) reproduce the pipeline with the pinned SDK image, Node version, npm/component lockfiles and secp256k1 submodule. Package verification independently regenerates SPIFFS and compares the hash with `www.bin`; `SHA256SUMS` covers both OTA images and corresponding source.
