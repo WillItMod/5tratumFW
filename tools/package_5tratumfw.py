@@ -108,13 +108,15 @@ def main():
         archive.writestr('SOURCE_FILES.json', json.dumps({
             'files': {str(p.relative_to(root)): digest(p) for p in sorted(source_files)}
         }, indent=2) + '\n')
+    build_commit = (root / 'build/build-source-commit.txt').read_text().strip() if (root / 'build/build-source-commit.txt').is_file() else None
+    if source_commit and build_commit != source_commit:
+        raise SystemExit('Firmware build source receipt differs from the packaged source commit')
     manifest = {
         'product': '5tratumFW', 'version': version,
         'release_channel': 'BETA', 'github_prerelease': True,
         'repository': 'https://github.com/WillItMod/5tratumFW',
         'source_archive_commit': source_commit,
-        'firmware_build_commit': (root / 'build/build-source-commit.txt').read_text().strip()
-            if (root / 'build/build-source-commit.txt').is_file() else None,
+        'firmware_build_commit': build_commit,
         'built_at_utc': datetime.now(timezone.utc).isoformat(),
         'upstream': {'repository': 'https://github.com/bitaxeorg/ESP-Miner', 'tag': 'v2.14.2',
                      'commit': '64680f8a4da0b9a3b532051f0aa18429fcf04e82'},
@@ -128,7 +130,10 @@ def main():
                         'Coinbase decoding off by default; explicit saved settings preserved',
                         'Miner-side 5tratMux connection setup and explicit restart', 'Operating-settings JSON export',
                         'ASIC power-saving pause/resume with requested and applied state',
-                        'Persistent weekly pause windows with independent network time and temporary manual override'],
+                        'Persistent weekly pause windows with independent network time and temporary manual override',
+                        'Explicit fine frequency/voltage requests with on-device named tuning slots',
+                        'Ten on-device named pool slots with credential redaction and explicit Apply',
+                        'Persistent weekly pool switch timepoints and coordinated primary hot reload'],
         'not_implemented': ['Automatic tuning', 'Dedicated per-chip multi-coin mining', 'Native authenticated MUX control'],
         'files': {p.name: {'bytes': p.stat().st_size, 'sha256': digest(p)} for p in
                   (output / 'esp-miner.bin', output / 'www.bin', source_zip, output / 'web-budget.json')},
