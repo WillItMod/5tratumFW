@@ -10,6 +10,12 @@ Retain a private full backup for that exact unit and the exact original firmware
 
 The target's **16 MiB / 3 MiB WWW / 4 MiB OTA-slot** source layout was verified on that owned unit and must be checked separately on another unit. Confirm the current device layout can accept the images without replacing its partition table or NVS. Filename checks cannot detect a wrongly selected physical board. Gamma, QAxe, NERDOCTAXEPLUS/BM1368 and other Oct images are different targets.
 
+## Regulator selection and later PCB revisions
+
+This image is not hardcoded to PCB 2.2. The [inherited OctAxe driver](../main/boards/nerdoctaxegamma.cpp) reads the existing GPIO3 strap: LOW or an unconnected pin selects the four-phase TPS53647 path; HIGH selects the six-phase TPS53667 path. The latter path is inherited for the later 3.0+ designs. Sensor probing also retains the older temperature-request path when the newer TMP451 muxes are absent. Neither a strap result nor a responding sensor proves a PCB revision.
+
+A PCB 3.1 unit using the same **NERDOCTAXEGAMMA / NerdOCTAXE-γ / BM1370 ×8** design is expected to use this software target, but has **not been physically qualified here**. Before installation, confirm its actual regulator population and GPIO3 strap, controller/ASIC/regulator/fan/sensor pinout and the same 16 MiB flash with two 4 MiB OTA slots and a 3 MiB WWW partition. Preserve that unit's configured operating point and establish its own recovery record. A matching software target is not an all-revision compatibility promise; the installed-pair evidence remains scoped to the owned PCB 2.2 unit.
+
 ## Matched pair and routine OTA
 
 Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from one verified OctAxe BETA package after its dated installed-pair record is completed. For Beta3, both descriptor/web versions must be `5tratumFW-oct-0.1.0-beta.3`. Read the manifest, qualification notes and checksums. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
@@ -25,6 +31,12 @@ Once the exact unit/layout and recovery path are established for a supervised be
 **Updates → Check updates** selects published releases for the exact Oct model/family and complete app/WWW pair. It provides downloads; it does not install or restart the miner. No release is offered when there is no compatible published pair. Manual update and OTP rules remain in place.
 
 If the page cannot identify an older application, inspect only the model/version/ASIC fields from `/api/system/info` locally. The full response may contain private network/pool data. Retry the identity read or use the original firmware's supported updater. Do not rename a different board's image or bypass authentication to pass a filename check.
+
+## Central management and initial installation
+
+MUX **0.9.75** and 5tratumOS **0.8.31 → Devices** explicitly admit the matched OctAxe Beta3 (`5tratumFW-oct-0.1.0-beta.3`, `NerdOCTAXE-γ`, `NERDOCTAXEGAMMA`, BM1370 ×8) and QAxe Beta5 pairs from source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`, with the expected fresh capability, identity and matching app/web source reports. Release admission does not qualify a different physical PCB. Central controls keep saved and running pool mode distinct and require an explicit restart when changing mode. A/B sessions still share the ASIC chain; they do not assign individual chips.
+
+5tratumOS Devices can manage the pool/power schedules and verified application/web update pair on an already-qualified **5tratumFW** miner. It does not convert stock Nerd firmware. For an identified and qualified stock unit with a working web interface, use its manual application uploader first and then the matching Oct `www.bin`; newer upstream firmware places those controls in Danger Zone. The upstream USB browser flasher selects a different merged factory-image format and cannot install this OTA pair. See the [QAxe installation FAQ](installation-5tratumfw-qa.md#installation-faq) for the upstream format/API references; QAxe filenames and hardware qualification do not apply to OctAxe.
 
 ## Network recovery
 
