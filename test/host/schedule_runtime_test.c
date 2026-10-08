@@ -69,9 +69,13 @@ esp_err_t httpd_resp_send_err(httpd_req_t *req, int code, const char *message)
     req->code = code; snprintf(req->reply, sizeof(req->reply), "%s", message); return ESP_OK;
 }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *req, const char *k, const char *v) { (void)req; (void)k; (void)v; return ESP_OK; }
-esp_err_t httpd_resp_set_type(httpd_req_t *req, const char *type) { (void)req; (void)type; return ESP_OK; }
+esp_err_t httpd_resp_set_type(httpd_req_t *req, const char *type)
+{
+    snprintf(req->content_type, sizeof(req->content_type), "%s", type); return ESP_OK;
+}
 esp_err_t httpd_resp_sendstr(httpd_req_t *req, const char *body)
 {
+    snprintf(req->response_type, sizeof(req->response_type), "%s", req->content_type[0] ? req->content_type : "text/html");
     req->code = 200; snprintf(req->reply, sizeof(req->reply), "%s", body); return ESP_OK;
 }
 int httpd_req_recv(httpd_req_t *req, char *out, size_t size)
@@ -144,6 +148,22 @@ int main(int argc, char **argv)
         save_result = ESP_FAIL; httpd_req_t failure = request(HTTP_PUT, "/api/system/mining/schedule", disabled); assert(failure.code == 500 && global.SYSTEM_MODULE.mining_paused);
         save_result = ESP_OK; apply(disabled); assert(global.SYSTEM_MODULE.mining_paused); // Disable retains request.
         mining_schedule_manual_override(false); assert(!global.SYSTEM_MODULE.mining_paused);
+    } else if (strcmp(scenario, "http-json") == 0) {
+        httpd_req_t initial = request(HTTP_GET, "/api/system/mining/schedule", NULL);
+        assert(initial.code == 200 && writes == 0 && !strcmp(initial.response_type, "application/json"));
+        cJSON *json = cJSON_Parse(initial.reply);
+        assert(json && cJSON_IsObject(cJSON_GetObjectItem(json, "schedule")) && cJSON_IsObject(cJSON_GetObjectItem(json, "status")));
+        cJSON_Delete(json);
+        httpd_req_t saved = request(HTTP_PUT, "/api/system/mining/schedule", weekly);
+        assert(saved.code == 200 && writes == 1 && !strcmp(saved.response_type, "application/json"));
+        json = cJSON_Parse(saved.reply);
+        assert(json && boolean(cJSON_GetObjectItem(json, "schedule"), "enabled")); cJSON_Delete(json);
+        httpd_req_t readback = request(HTTP_GET, "/api/system/mining/schedule", NULL);
+        assert(writes == 1 && !strcmp(readback.response_type, "application/json") && !strcmp(readback.reply, saved.reply));
+        mining_schedule_manual_override(true);
+        httpd_req_t clear = request(HTTP_POST, "/api/system/mining/schedule/override", "{\"mode\":\"schedule\"}");
+        assert(clear.code == 200 && !strcmp(clear.response_type, "application/json") && !strcmp(clear.reply, "{}"));
+        assert(writes == 1); check_status(true, "none");
     } else if (strcmp(scenario, "validation") == 0) {
         const char *invalid[] = {
             "{}", "[]", "{\"enabled\":true,\"timezone\":\"UTC\",\"windows\":[]}",

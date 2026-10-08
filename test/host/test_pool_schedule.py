@@ -89,6 +89,12 @@ class PoolScheduleTests(unittest.TestCase):
         self.assertLess(shares.index("SYSTEM_stratum_io_lock()"), guard)
         self.assertGreater(shares.index("SYSTEM_stratum_io_unlock()"), submit)
 
+    def test_registered_get_and_post_readback_send_json_content_type(self):
+        result = subprocess.run([str(self.binary), "http-json"], text=True, capture_output=True,
+                                env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "PASS")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

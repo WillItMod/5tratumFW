@@ -112,13 +112,17 @@ esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *n,const char *v) { (void
 esp_err_t httpd_resp_send_err(httpd_req_t *r,int code,const char *message) { r->code=code; snprintf(r->reply,sizeof(r->reply),"%s",message); return ESP_OK; }
 esp_err_t httpd_resp_send_500(httpd_req_t *r) { return httpd_resp_send_err(r,500,"internal"); }
 esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *status) { r->code=atoi(status);return ESP_OK; }
-esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type) { (void)r;assert(!strcmp(type,"application/json"));return ESP_OK; }
-esp_err_t httpd_resp_sendstr(httpd_req_t *r,const char *body) { snprintf(r->reply,sizeof(r->reply),"%s",body);return ESP_OK; }
+esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type) { snprintf(r->content_type,sizeof(r->content_type),"%s",type);return ESP_OK; }
+esp_err_t httpd_resp_sendstr(httpd_req_t *r,const char *body)
+{
+    snprintf(r->response_type,sizeof(r->response_type),"%s",r->content_type[0] ? r->content_type : "text/html");
+    snprintf(r->reply,sizeof(r->reply),"%s",body);return ESP_OK;
+}
 int httpd_req_recv(httpd_req_t *r,char *out,size_t size)
 { if (size>7) size=7; memcpy(out,r->body+r->received,size); r->received+=size; return size; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t s,const httpd_uri_t *r) { (void)s; assert(route_count<2); routes[route_count++]=*r; return ESP_OK; }
 esp_err_t HTTP_send_json(httpd_req_t *r,const cJSON *json,int *prebuffer)
-{ (void)prebuffer; char *raw=cJSON_PrintUnformatted(json); assert(raw); snprintf(r->reply,sizeof(r->reply),"%s",raw); free(raw); r->code=200; return ESP_OK; }
+{ (void)prebuffer; char *raw=cJSON_PrintUnformatted(json); assert(raw); httpd_resp_sendstr(r,raw); free(raw); r->code=200; return ESP_OK; }
 
 static PoolSchedule parse(const char *raw)
 { cJSON *json=cJSON_Parse(raw); PoolSchedule result; assert(pool_schedule_parse(json,&result)); cJSON_Delete(json); return result; }
@@ -181,6 +185,24 @@ int main(int argc,char **argv)
         PoolSchedule s=parse(weekly);assert(pool_schedule_save(&s)==ESP_OK);synchronized=true;pool_schedule_tick();assert(applies==1 && current_hash==101);pool_schedule_tick();assert(applies==1);current_hash=109;pool_schedule_tick();assert(applies==2 && current_hash==101);now+=600*60;pool_schedule_tick();assert(applies==3 && current_hash==102);now+=7*86400;pool_schedule_tick();assert(applies==3);unchanged_power(&state);
     } else if (!strcmp(scenario,"failure")) {
         PoolSchedule s=parse(weekly);slots=1;assert(pool_schedule_save(&s)==ESP_ERR_NVS_NOT_FOUND && writes==0);slots=0x3ff;assert(pool_schedule_save(&s)==ESP_OK);assert(operating_profile_pool_referenced(1));fail_commit=1;s.enabled=false;assert(pool_schedule_save(&s)==ESP_FAIL);assert(pool_schedule_init(&state)==ESP_OK);synchronized=true;fail_apply=true;pool_schedule_tick();assert(applies==0 && current_hash==100);fail_apply=false;pool_schedule_tick();assert(applies==1 && current_hash==101);assert(operating_profile_pool_referenced(1));unchanged_power(&state);
+    } else if (!strcmp(scenario,"http-json")) {
+        assert(register_pool_schedule_api(NULL)==ESP_OK && route_count==2);
+        assert(routes[0].method==HTTP_GET && !strcmp(routes[0].uri,"/api/5tratum/pool-schedule"));
+        httpd_req_t initial={0};
+        assert(routes[0].handler(&initial)==ESP_OK && initial.code==200 && writes==0);
+        assert(!strcmp(initial.response_type,"application/json"));
+        cJSON *j=cJSON_Parse(initial.reply);assert(j && cJSON_GetObjectItem(j,"identity"));cJSON_Delete(j);
+        httpd_req_t saved={.body=weekly,.content_len=strlen(weekly)};
+        assert(routes[1].handler(&saved)==ESP_OK && saved.code==200 && writes==1);
+        assert(!strcmp(saved.response_type,"application/json"));
+        j=cJSON_Parse(saved.reply);assert(j && cJSON_IsTrue(cJSON_GetObjectItem(j,"enabled")) && cJSON_GetArraySize(cJSON_GetObjectItem(j,"events"))==2);cJSON_Delete(j);
+        httpd_req_t readback={0};
+        assert(routes[0].handler(&readback)==ESP_OK && writes==1);
+        assert(!strcmp(readback.response_type,"application/json") && !strcmp(readback.reply,saved.reply));
+        unauthorized=true;httpd_req_t denied={0};
+        assert(routes[0].handler(&denied)==ESP_OK && denied.code==401 && writes==1);
+        assert(!strcmp(denied.response_type,"application/json"));
+        unchanged_power(&state);
     } else if (!strcmp(scenario,"http")) {
         assert(register_pool_schedule_api(NULL)==ESP_OK && route_count==2 && routes[1].method==HTTP_POST);
         httpd_req_t r={.body=weekly,.content_len=strlen(weekly)};unauthorized=true;routes[1].handler(&r);assert(r.code==401 && writes==0);unauthorized=false;r.received=0;routes[1].handler(&r);assert(r.code==200 && writes==1);cJSON *j=cJSON_Parse(r.reply);assert(cJSON_IsNull(cJSON_GetObjectItem(j,"selectedSlot")) && cJSON_GetObjectItem(j,"identity"));cJSON_Delete(j);

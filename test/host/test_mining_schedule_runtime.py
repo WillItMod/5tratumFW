@@ -58,6 +58,9 @@ class ScheduleRuntimeTests(unittest.TestCase):
     def test_http_validation_authorization_and_chunked_body(self):
         self.run_case("validation")
 
+    def test_registered_get_put_status_and_override_send_json_content_type(self):
+        self.run_case("http-json")
+
     def test_json_allocation_failures_never_commit_a_partial_schedule(self):
         self.run_case("serialize-oom")
 

@@ -2,7 +2,7 @@
 
 The matched Gamma Beta7, QAxe Beta5 and OctAxe Beta3 pairs built from clean commit `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f` and passed their separate family CI and offline package checks. Build evidence is separate from the completed short installed-pair checks for Gamma 601/602, QAxe Beta5 and the owned PCB 2.2 OctAxe Beta3. See [Gamma Beta7 validation](validation-beta7.md), [QAxe Beta5 validation](../firmware/nerdqaxe/docs/validation-qa-beta5.md) and [OctAxe Beta3 validation](../firmware/nerdqaxe/docs/validation-oct-beta3.md).
 
-The current source version is **`5tratumFW-0.1.0-beta.7`** for the pool-routing layout update. Its matched pair passed the pinned build, family CI, offline package checks and separate short installed-device checks on Gamma 601/602. The published Beta6 pair and its validation remain separate historical evidence. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
+The current source version is **`5tratumFW-0.1.0-beta.8`** for the Gamma schedule API response-type fix. Successful pool and power schedule JSON responses now declare `application/json`, including their save/readback responses. Beta8 retains the Beta7 layout and existing scheduler/storage behavior. Its build and installed-device evidence must be recorded separately in [Beta8 validation](validation-beta8.md); the completed Beta7 checks are historical evidence for that earlier pair. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
 
 These instructions produce paired OTA images for **Bitaxe Gamma PCB revisions 601 and 602 only**. A successful compile does not establish compatibility with another board or prove operation on a physical miner. See [compatibility](compatibility.md) and [installation](installation.md) for the hardware and upgrade requirements.
 
@@ -43,13 +43,13 @@ Run the build from a clean source checkout rather than reusing an older `build/`
 
 ## Outputs
 
-When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.7/`:
+When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.8/`:
 
 | File | Purpose |
 | --- | --- |
 | `esp-miner.bin` | Application-only OTA image; use the firmware/app BIN uploader. |
 | `www.bin` | Complete WWW/SPIFFS image; use the web/WWW BIN uploader. |
-| `5tratumFW-0.1.0-beta.7-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
+| `5tratumFW-0.1.0-beta.8-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
 | `manifest.json` | Product version, upstream baseline, supported board identities, toolchain, image sizes and SHA-256 hashes. |
 | `SHA256SUMS` | Checksums for the images, source archive and web budget report. |
 | `web-budget.json` | Measurement of the compressed files actually placed in the WWW partition. |

@@ -43,6 +43,7 @@ static esp_err_t get_schedule(httpd_req_t *req)
     if (!allowed(req)) return ESP_OK;
     cJSON *json = mining_schedule_get_json();
     if (!json) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Schedule status unavailable");
+    httpd_resp_set_type(req, "application/json");
     esp_err_t err = HTTP_send_json(req, json, &prebuffer_len);
     cJSON_Delete(json);
     return err;
