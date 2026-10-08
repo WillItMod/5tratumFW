@@ -8,11 +8,11 @@ Edit the primary and fallback routes using the information supplied by your pool
 
 A saved password remains unchanged until you enter a replacement. Advanced settings include SV1/SV2 options, security, extranonce subscription, suggested difficulty, and optional coinbase decoding. Choose only options supported by the destination. Suggested difficulty is a request the pool may ignore; `0` disables the request. Coinbase decoding defaults off and is a diagnostic, not payout verification.
 
-Choose **Save pool settings**, then **Restart device** to apply the saved connection. Unsaved draft edits do not take effect. After restart, check fresh telemetry and the pool's own worker view.
+On Gamma, choose **Save pool settings**, then **Restart device** to apply the saved connection. Nerd QAxe/OctAxe settings and slot endpoints hot reload supported connection edits; changing the pool mode or protocol may require an explicit restart. Follow the reported restart requirement. Unsaved draft edits do not take effect. After application or restart, check fresh telemetry and the pool's own worker view.
 
-## Named pool slots in the next source layout
+## Named pool slots in the new BETA layout
 
-Gamma Beta7, QAxe Beta5 and OctAxe Beta3 source candidates place the **Primary** and **Secondary** connection editors above the ten saved slots. They are not yet released. On Nerd Dual pool, Primary and Secondary correspond to native A and B; in failover, Secondary is standby. Gamma's Secondary is its fallback route.
+The qualified Gamma Beta7, QAxe Beta5 and OctAxe Beta3 BETA pairs place the **Primary** and **Secondary** connection editors above the ten saved slots. All three have completed scoped installed-pair checks. See [Gamma Beta7](validation-beta7.md), [QAxe Beta5](../firmware/nerdqaxe/docs/validation-qa-beta5.md) and [OctAxe Beta3](../firmware/nerdqaxe/docs/validation-oct-beta3.md). On Nerd Dual pool, Primary and Secondary correspond to native A and B; in failover, Secondary is standby. Gamma's Secondary is its fallback route.
 
 Use **Save pool settings** to persist connection edits. Then select a slot, enter its name and choose **Save to slot** beside that route's save button. This stores the miner's saved connection and credentials; unsaved connection edits are refused with **Save pool settings first**. Each stored row has **Apply to Primary** and **Apply to Secondary**, followed by **Rename** and **Clear**. Rename changes only the slot name and retains its saved connection and password. An Apply to a destination with unsaved edits is refused. Secondary continues to use the existing `poolTarget: "fallback"` API; this naming change does not add a third connection or per-ASIC routing.
 

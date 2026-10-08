@@ -1,6 +1,8 @@
 # Build and validate 5tratumFW BETA
 
-The current source version is **`5tratumFW-0.1.0-beta.7`** for the pool-routing layout update. It has not yet been built or physically qualified. The published Beta6 pair and its validation remain separate historical evidence. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
+The matched Gamma Beta7, QAxe Beta5 and OctAxe Beta3 pairs built from clean commit `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f` and passed their separate family CI and offline package checks. Build evidence is separate from the completed short installed-pair checks for Gamma 601/602, QAxe Beta5 and the owned PCB 2.2 OctAxe Beta3. See [Gamma Beta7 validation](validation-beta7.md), [QAxe Beta5 validation](../firmware/nerdqaxe/docs/validation-qa-beta5.md) and [OctAxe Beta3 validation](../firmware/nerdqaxe/docs/validation-oct-beta3.md).
+
+The current source version is **`5tratumFW-0.1.0-beta.7`** for the pool-routing layout update. Its matched pair passed the pinned build, family CI, offline package checks and separate short installed-device checks on Gamma 601/602. The published Beta6 pair and its validation remain separate historical evidence. The application and web interface use the same value from `version.txt`. Keep release versions unique and within the ESP application descriptor's 31-byte limit. Published GitHub releases for this development build must be marked **prerelease/BETA**.
 
 These instructions produce paired OTA images for **Bitaxe Gamma PCB revisions 601 and 602 only**. A successful compile does not establish compatibility with another board or prove operation on a physical miner. See [compatibility](compatibility.md) and [installation](installation.md) for the hardware and upgrade requirements.
 
@@ -91,7 +93,7 @@ GitHub's **Gamma BETA validation** workflow repeats frontend tests, host tests, 
 
 ## Validation and BETA limits
 
-Record the exact version, commit, test results and build host for each release. Keep compiled support separate from installed-device testing. The earlier `5tratumFW-0.1.0-a1` app/WWW pair was smoke tested on a Gamma 601; that is historical evidence for that earlier build. It does not validate this BETA's new OLED and MUX receiver changes. Gamma 602 and physical schedule/power behavior require their own device tests. The package manifest's `hardware_tested: false` describes a compile/package result, not an installation claim.
+Record the exact version, commit, test results and build host for each release. Keep compiled support separate from installed-device testing. The earlier `5tratumFW-0.1.0-a1` app/WWW pair was smoke tested on a Gamma 601; that is historical evidence for that earlier build. [Beta7 validation](validation-beta7.md) records this exact pair's separate supervised updates on 601 and 602. Those short observations do not qualify physical OLED readability, a new schedule/power boundary, sustained soak or all protection faults. The package manifest's `hardware_tested: false` is the immutable pre-bench packaging result; the dated validation records add later scoped installation evidence.
 
 The matching MUX status server changes also need deployment and live end-to-end validation. This firmware's receiver can be compiled and host tested without claiming that a connected peer advertises the protocol. No hub deployment or device flashing occurs in CI or these build commands.
 

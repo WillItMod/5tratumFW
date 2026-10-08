@@ -1,12 +1,12 @@
-# Build the NerdOCTAXE-Gamma candidate
+# Build the NerdOCTAXE-Gamma BETA
 
-This path selects only `BOARD=NERDOCTAXEGAMMA`: **NerdOCTAXE-γ / BM1370 ×8 / ESP32-S3**. It produces a matched application/WWW OTA candidate, not a factory image or physical compatibility qualification. Read [selection](../../../docs/firmware-selection.md) and [qualification](validation-oct-beta2.md) first.
+This path selects only `BOARD=NERDOCTAXEGAMMA`: **NerdOCTAXE-γ / BM1370 ×8 / ESP32-S3**. It produces matched application/WWW OTA images, not a factory image. Building alone does not establish physical compatibility. Read [selection](../../../docs/firmware-selection.md) and the current scoped [Beta3 qualification](validation-oct-beta3.md) first.
 
 ## Source and separate identity
 
-The combined repository keeps the Nerd derivative in `firmware/nerdqaxe/`. Its upstream baseline is [ESP-Miner-NerdQAxePlus v1.1.0-rc1-test1, commit 8b45522a6695c6bbccc3d032370fe08a29856d80](https://github.com/shufps/ESP-Miner-NerdQAxePlus/tree/8b45522a6695c6bbccc3d032370fe08a29856d80). The exact modified source commit and dependency inventory belong in each candidate's manifest and source archive. `SOURCE_ORIGIN.json` records the earlier QAxe import; its QAxe count/model fields are not OctAxe qualification evidence.
+The combined repository keeps the Nerd derivative in `firmware/nerdqaxe/`. Its upstream baseline is [ESP-Miner-NerdQAxePlus v1.1.0-rc1-test1, commit 8b45522a6695c6bbccc3d032370fe08a29856d80](https://github.com/shufps/ESP-Miner-NerdQAxePlus/tree/8b45522a6695c6bbccc3d032370fe08a29856d80). The exact modified source commit and dependency inventory belong in each BETA package's manifest and source archive. `SOURCE_ORIGIN.json` records the earlier QAxe import; its QAxe count/model fields are not OctAxe qualification evidence.
 
-OctAxe uses `version-oct.txt` and `main/http_server/axe-os/src/app/firmware-web-version.oct.ts`, both `5tratumFW-oct-0.1.0-beta.3`. This is the next unbuilt pool-routing layout candidate; the earlier Beta2 installation record does not qualify it. Angular's Oct production configuration selects the Oct web version. The existing QAxe `version.txt` and default web-version file remain QAxe Beta5. Do not rename a QAxe binary or globally replace its version to make an Oct image.
+OctAxe uses `version-oct.txt` and `main/http_server/axe-os/src/app/firmware-web-version.oct.ts`, both `5tratumFW-oct-0.1.0-beta.3`. The matched Beta3 pair built successfully from clean source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`; full family CI and offline checks passed. The exact pair passed the scoped supervised update on the owned PCB 2.2 unit. Read [Beta3 validation](validation-oct-beta3.md); the earlier Beta2 record does not qualify the new pair. Angular's Oct production configuration selects the Oct web version. The existing QAxe `version.txt` and default web-version file remain QAxe Beta5. Do not rename a QAxe binary or globally replace its version to make an Oct image.
 
 ## Requirements and build
 
@@ -73,6 +73,6 @@ python3 test/host/test_status_report.py
 python3 test/host/test_nerd_package_identity.py
 ```
 
-The separate [OctAxe candidate workflow](../../../.github/workflows/octaxe-beta.yml) runs the pinned full Oct helper and retains candidate packages and simulated screen evidence. It has read-only repository permissions and no publication or flashing step. A successful workflow is build evidence only. The optional production-MUX wire test explicitly skips without reviewed MUX source; that skip is not a live MUX pass.
+The separate [OctAxe BETA workflow](../../../.github/workflows/octaxe-beta.yml) runs the pinned full Oct helper and retains BETA packages and simulated screen evidence. It has read-only repository permissions and no publication or flashing step. A successful workflow is build evidence only. The optional production-MUX wire test explicitly skips without reviewed MUX source; that skip is not a live MUX pass.
 
 For standalone frontend work, use `npm run build:oct` in `main/http_server/axe-os/`; ordinary `npm run build` deliberately remains the QAxe build. Target compile, mocked GPIO/UART/regulators and rendered fixtures cannot establish electrical behavior, installed flash compatibility, sustained mining or physical-screen readability.
