@@ -9,7 +9,12 @@
         <label class="field" *ngIf="form.controls['poolMode'].value === 1"><span>Connection A share · {{ form.controls['poolBalance'].value }}%</span><input type="range" formControlName="poolBalance" min="0" max="100" step="1" /><small>Connection B receives {{ 100 - form.controls['poolBalance'].value }}%. Both use the shared ASIC chain.</small></label>
         <div class="field"><nb-checkbox formControlName="stratumKeep">Stratum keepalive</nb-checkbox></div>
       </div>
-      <details class="config-panel advanced-fields"><summary>Connection options</summary><div class="field-grid" *ngIf="supportLevel >= 1"><label class="field"><span>Requested Stratum difficulty</span><input nbInput formControlName="stratumDifficulty" type="number" min="1" /></label></div></details>
+      <details class="config-panel advanced-fields">
+        <summary>Connection options</summary>
+        <div class="field-grid">
+          <label class="field"><span>Requested Stratum difficulty</span><input nbInput formControlName="stratumDifficulty" type="number" min="1" /></label>
+        </div>
+      </details>
       <div class="connection-note"><nb-icon icon="shuffle-2-outline"></nb-icon><div><strong>5tratMUX</strong><p>Use its Stratum host, port and miner user in either connection below. Connection status appears on Overview. Independent per ASIC routing is unavailable in this build.</p></div></div>
       <div class="pool-grid">
         <section class="config-panel pool-panel" *ngFor="let pool of poolPanels">

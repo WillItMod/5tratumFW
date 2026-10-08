@@ -1,8 +1,18 @@
 import { FormBuilder } from '@angular/forms';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { NbDialogService, NbLayoutModule, NbThemeModule, NbToastrService } from '@nebular/theme';
+import { NbEvaIconsModule } from '@nebular/eva-icons';
+import { TranslateModule } from '@ngx-translate/core';
 import { of } from 'rxjs';
 import { EditComponent } from './edit.component';
+import { EditModule } from './edit.module';
 import { ISettingsV2 } from '../../models/ISettingsV2';
 import { eASICModel } from '../../models/enum/eASICModel';
+import { SystemService } from '../../services/system.service';
+import { LoadingService } from '../../services/loading.service';
+import { LocalStorageService } from '../../services/local-storage.service';
+import { OtpAuthService } from '../../services/otp-auth.service';
 
 function settingsFixture(): ISettingsV2 {
   return {
@@ -194,5 +204,116 @@ describe('Nerd settings payload preservation', () => {
     expect(component.fanCount).toBe(1);
     expect(update.calls.mostRecent().args).toEqual(['', { fans: [{ overheatTemp: 74 }] }, undefined]);
     expect(component.form.get('manualFanSpeed')?.value).toBe(83);
+  });
+});
+
+describe('Pool connection options in the production template', () => {
+  let fixture: ComponentFixture<EditComponent>;
+  let source: ISettingsV2;
+  let update: jasmine.Spy;
+  let authorize: jasmine.Spy;
+
+  beforeEach(async () => {
+    source = settingsFixture();
+    update = jasmine.createSpy('updateSettingsV2').and.returnValue(of({}));
+    authorize = jasmine.createSpy('ensureOtp$').and.returnValue(of({ totp: '123456' }));
+    await TestBed.configureTestingModule({
+      imports: [EditModule, NbThemeModule.forRoot({ name: 'default' }), NbLayoutModule,
+        NbEvaIconsModule, NoopAnimationsModule, TranslateModule.forRoot()],
+      providers: [
+        { provide: SystemService, useValue: {
+          getSettingsV2: () => of(source), updateSettingsV2: update,
+          getProfiles: () => of({ tuning: [], pools: [] }),
+          getPoolSchedule: () => of({ schemaVersion: 1, enabled: false, utcOffsetMinutes: 0, events: [] }),
+          getPowerSchedule: () => of({ supported: false, schedule: { enabled: false, timezone: 'UTC', windows: [] } }),
+        } },
+        { provide: NbToastrService, useValue: { success: () => {}, danger: () => {} } },
+        { provide: LoadingService, useValue: { lockUIUntilComplete: () => (stream: any) => stream } },
+        { provide: LocalStorageService, useValue: {
+          getItem: () => '24h', getBool: () => false, getNumber: () => undefined,
+          setItem: () => {}, setBool: () => {}, setNumber: () => {},
+        } },
+        { provide: NbDialogService, useValue: { open: jasmine.createSpy('open') } },
+        { provide: OtpAuthService, useValue: { ensureOtp$: authorize } },
+      ],
+    }).compileComponents();
+  });
+
+  afterEach(() => fixture?.destroy());
+
+  function render(model = 'NerdQAxe++'): EditComponent {
+    source.deviceModel = model;
+    fixture = TestBed.createComponent(EditComponent);
+    fixture.componentInstance.section = 'pool';
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  function connectionOptions(): HTMLDetailsElement {
+    const details = Array.from(fixture.nativeElement.querySelectorAll('details')) as HTMLDetailsElement[];
+    return details.find(item => item.querySelector('summary')?.textContent?.trim() === 'Connection options')!;
+  }
+
+  for (const model of ['NerdQAxe++', 'NerdOCTAXE-γ']) {
+    it(`shows the saved difficulty when ${model} opens Connection options at the default level`, () => {
+      const component = render(model);
+      expect(component.supportLevel).toBe(0);
+      const disclosure = connectionOptions();
+      expect(disclosure).toBeTruthy();
+      disclosure.querySelector('summary')!.click();
+      fixture.detectChanges();
+      expect(disclosure.open).toBeTrue();
+      const input = disclosure.querySelector('input[formControlName="stratumDifficulty"]') as HTMLInputElement;
+      expect(input).not.toBeNull();
+      expect(input.value).toBe('16384');
+      expect(input.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(component.sectionDirty).toBeFalse();
+      expect(update).not.toHaveBeenCalled();
+      expect(authorize).not.toHaveBeenCalled();
+    });
+  }
+
+  it('saves only an edited connection difficulty through the existing OTP action', () => {
+    const component = render();
+    const disclosure = connectionOptions();
+    disclosure.open = true;
+    const input = disclosure.querySelector('input[formControlName="stratumDifficulty"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    input.value = '32768';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    const save = Array.from(fixture.nativeElement.querySelectorAll('.save-actions button'))
+      .find((button: any) => button.textContent.includes('Save this section')) as HTMLButtonElement;
+    expect(save.disabled).toBeFalse();
+    save.click();
+    fixture.detectChanges();
+    expect(authorize).toHaveBeenCalledTimes(1);
+    expect(update.calls.mostRecent().args).toEqual(['', { stratumDifficulty: 32768 }, '123456']);
+    expect(component.form.get('frequency')?.value).toBe(source.frequency);
+    expect(component.form.get('coreVoltage')?.value).toBe(source.coreVoltage);
+    expect(component.form.get('stratumPassword')?.value).toBe('*****');
+    expect(component.form.get('fallbackStratumProtocol')?.value).toBe(source.pools[1].protocol);
+    expect(component.form.get('fallbackCoinbaseVerifyForce')?.value).toBeTrue();
+    expect(component.restartPending).toBeTrue();
+  });
+
+  it('keeps unchanged and invalid difficulty from writing and leaves tuning gates intact', () => {
+    const component = render();
+    const save = Array.from(fixture.nativeElement.querySelectorAll('.save-actions button'))
+      .find((button: any) => button.textContent.includes('Save this section')) as HTMLButtonElement;
+    expect(save.disabled).toBeTrue();
+    expect(fixture.nativeElement.querySelector('input[formControlName="jobInterval"]')).toBeNull();
+    const disclosure = connectionOptions();
+    disclosure.open = true;
+    const input = disclosure.querySelector('input[formControlName="stratumDifficulty"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    input.value = '0';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    expect(component.sectionInvalid).toBeTrue();
+    expect(save.disabled).toBeTrue();
+    save.click();
+    expect(update).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
   });
 });
