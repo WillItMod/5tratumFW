@@ -20,6 +20,12 @@ p { color: var(--fw-muted, #93a4b8); font-size: .84rem; line-height: 1.55; margi
 .version-strip strong { font-size: .82rem; font-weight: 500; overflow-wrap: anywhere; }
 .version-note { color: var(--fw-warn, #e5b675); }
 .update-note { padding: .6rem 0 1.2rem; }
+.release-check { margin: 1rem 0; }
+.release-check-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.release-check-heading button { flex: 0 0 auto; }
+.release-downloads { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; margin-top: .8rem; }
+.release-downloads a { color: var(--fw-accent, #72d4b7); font-size: .8rem; }
+.file-error { color: var(--fw-danger, #ec7b7b); }
 .upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .upload-panel header { display: flex; align-items: center; gap: .8rem; }
 .part-number { color: var(--fw-accent, #72d4b7); font-size: .72rem; }
@@ -35,4 +41,4 @@ p { color: var(--fw-muted, #93a4b8); font-size: .84rem; line-height: 1.55; margi
 .advanced-links a span { flex: 1; }
 .advanced-links nb-icon { color: var(--fw-muted, #93a4b8); }
 @media (max-width: 900px) { .upload-grid { grid-template-columns: 1fr; } .advanced-links { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { h1 { font-size: 1.7rem; } .workspace-heading { align-items: flex-start; } .device-model { max-width: 40%; overflow-wrap: anywhere; } .version-strip { grid-template-columns: 1fr; } .shortcut-panel, .language-panel { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 600px) { h1 { font-size: 1.7rem; } .workspace-heading { align-items: flex-start; } .device-model { max-width: 40%; overflow-wrap: anywhere; } .version-strip { grid-template-columns: 1fr; } .shortcut-panel, .language-panel, .release-check-heading { align-items: flex-start; flex-direction: column; } }

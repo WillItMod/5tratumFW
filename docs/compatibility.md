@@ -1,6 +1,6 @@
 # Gamma compatibility — BETA
 
-**5tratumFW-0.1.0-beta.4 is a development BETA. The paired application and web image have been installed on a Gamma 601. Gamma 602 remains unflashed.**
+**Current source: 5tratumFW-0.1.0-beta.5, a development BETA. The earlier Beta 4 pair was installed on a Gamma 601; those results remain historical. Read [Beta 5 validation](validation-beta5.md) for this version. Gamma 602 remains unflashed.**
 
 The published application and WWW pair supports **Bitaxe Gamma PCB revisions 601 and 602 only**, using the ESP32-S3 target and the upstream Gamma hardware/partition baseline. The same image serves both revisions; it retains each device's existing clock and voltage settings.
 

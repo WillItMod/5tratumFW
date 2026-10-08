@@ -14,7 +14,7 @@ button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible { outline:2px solid var(--fw-accent); outline-offset:3px; }
 /* Same compact command console as Gamma, without a permanent sidebar. */
 nb-layout.fw-command-shell {
-  --fw-masthead-height: 72px;
+  --fw-masthead-height: 88px;
   --fw-nav-height: 48px;
 }
 nb-layout.fw-command-shell .layout { background: var(--fw-bg); }

@@ -12,6 +12,7 @@ describe('5tratumFW settings navigation and OTA', () => {
   let webUpload: jasmine.Spy;
   let auth: jasmine.Spy;
   let identity: jasmine.Spy;
+  let checkRelease: jasmine.Spy;
 
   beforeEach(() => {
     params = new BehaviorSubject(convertToParamMap({}));
@@ -21,13 +22,14 @@ describe('5tratumFW settings navigation and OTA', () => {
     webUpload = jasmine.createSpy('performWWWOTAUpdate').and.returnValue(of({ type: HttpEventType.UploadProgress, loaded: 1, total: 2 }));
     auth = jasmine.createSpy('ensureOtp$').and.returnValue(of({ totp: '123456' }));
     identity = jasmine.createSpy('getUpdateInfo').and.returnValue(of({ deviceModel: 'NerdQAxe++', version: '5tratumFW-test' }));
+    checkRelease = jasmine.createSpy('check').and.returnValue(of({ status: 'no-release', release: null }));
     component = new SettingsComponent({
       getUpdateInfo: identity,
       performOTAUpdate: appUpload, performWWWOTAUpdate: webUpload,
     } as any, { success: () => {}, danger: () => {} } as any,
     { lockUIUntilComplete: () => (stream: any) => stream } as any,
     { ensureOtp$: auth } as any, { data: routeData, queryParamMap: params } as any,
-    { navigate } as any);
+    { navigate } as any, { check: checkRelease } as any);
     component.ngOnInit();
   });
 
@@ -114,6 +116,47 @@ describe('5tratumFW settings navigation and OTA', () => {
     expect(component.firmwareRestartPending).toBeTrue();
     expect(component.firmwareUpdateProgress).toBe(100);
     expect(webUpload).not.toHaveBeenCalled();
+  });
+
+  it('checks public releases only on request and never authorizes or uploads an image', () => {
+    expect(checkRelease).not.toHaveBeenCalled();
+    component.checkUpdates();
+    expect(checkRelease).toHaveBeenCalledOnceWith('NerdQAxe++', '5tratumFW-test');
+    expect(component.releaseCheckState).toBe('no-release');
+    expect(component.releaseCheckMessage).toContain('No complete QAxe');
+    expect(auth).not.toHaveBeenCalled();
+    expect(appUpload).not.toHaveBeenCalled();
+    expect(webUpload).not.toHaveBeenCalled();
+  });
+
+  it('shows checking, error and retry states while clearing outdated download links', () => {
+    const delayed = new Subject<any>();
+    checkRelease.and.returnValue(delayed);
+    component.checkUpdates();
+    expect(component.releaseCheckState).toBe('checking');
+    component.checkUpdates();
+    expect(checkRelease).toHaveBeenCalledTimes(1);
+    delayed.error(new Error('unavailable'));
+    expect(component.releaseCheckState).toBe('error');
+    expect(component.availableRelease).toBeNull();
+    checkRelease.and.returnValue(of({ status: 'up-to-date', release: null }));
+    component.checkUpdates();
+    expect(component.releaseCheckState).toBe('up-to-date');
+    expect(component.releaseCheckMessage).toContain('up to date');
+  });
+
+  it('holds release checking until identity arrives and cancels it when identity is reloaded', () => {
+    component.identityLoading = true;
+    component.checkUpdates();
+    expect(checkRelease).not.toHaveBeenCalled();
+    component.identityLoading = false;
+    const delayed = new Subject<any>();
+    checkRelease.and.returnValue(delayed);
+    component.checkUpdates();
+    component.loadDeviceIdentity();
+    delayed.next({ status: 'available', release: { version: 'stale-version' } });
+    expect(component.releaseCheckState).toBe('idle');
+    expect(component.availableRelease).toBeNull();
   });
 
   it('uses the separate WWW OTA handler and rejects non-www filenames', () => {

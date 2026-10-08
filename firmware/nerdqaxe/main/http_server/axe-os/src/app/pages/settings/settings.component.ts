@@ -10,6 +10,7 @@ import { OtpAuthService, EnsureOtpResult } from '../../services/otp-auth.service
 import { EditComponent } from '../edit/edit.component';
 import { combineLatest } from 'rxjs';
 import { getAppVersion } from '../../app.module';
+import { QaxeRelease, QaxeUpdateCheck, QaxeUpdateService } from '../../services/qaxe-update.service';
 
 @Component({
   selector: 'app-settings',
@@ -36,8 +37,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public isFirmwareUploading = false;
   public isWebsiteUploading = false;
   public firmwareRestartPending = false;
+  public releaseCheckState: 'idle' | 'checking' | 'error' | QaxeUpdateCheck['status'] = 'idle';
+  public availableRelease: QaxeRelease | null = null;
   public info$: Observable<UpdateDeviceIdentity>;
   private subscriptions = new Subscription();
+  private releaseSubscription?: Subscription;
 
   constructor(
     private systemService: SystemService,
@@ -46,6 +50,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     private otpAuth: OtpAuthService,
     private route: ActivatedRoute,
     private router: Router,
+    private qaxeUpdates: QaxeUpdateService,
   ) {
     this.info$ = this.systemService.getUpdateInfo().pipe(shareReplay({ refCount: true, bufferSize: 1 }));
   }
@@ -64,6 +69,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   loadDeviceIdentity(): void {
     if (this.isFirmwareUploading || this.isWebsiteUploading || this.firmwareRestartPending) return;
+    this.releaseSubscription?.unsubscribe();
+    this.releaseCheckState = 'idle';
+    this.availableRelease = null;
     this.identityLoading = true;
     this.identityError = '';
     this.deviceModel = this.currentVersion = this.expectedFileName = '';
@@ -82,6 +90,32 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void { this.subscriptions.unsubscribe(); }
+
+  get releaseCheckMessage(): string {
+    const version = this.availableRelease?.version || '';
+    switch (this.releaseCheckState) {
+      case 'checking': return 'Checking public QAxe releases…';
+      case 'error': return 'Could not check GitHub releases. Check the connection and retry.';
+      case 'available': return `${version} is available.`;
+      case 'up-to-date': return 'Your application is up to date.';
+      case 'newer-build': return 'Your application is newer than the published release.';
+      case 'no-release': return 'No complete QAxe firmware pair is published.';
+      case 'unsupported': return 'This release check supports NerdQAxe++ only.';
+      default: return '';
+    }
+  }
+
+  checkUpdates(): void {
+    if (this.identityLoading || this.identityError || !this.deviceModel || this.releaseCheckState === 'checking'
+      || this.isFirmwareUploading || this.isWebsiteUploading || this.firmwareRestartPending) return;
+    this.releaseCheckState = 'checking';
+    this.availableRelease = null;
+    this.releaseSubscription = this.qaxeUpdates.check(this.deviceModel, this.currentVersion).subscribe({
+      next: result => { this.releaseCheckState = result.status; this.availableRelease = result.release; },
+      error: () => { this.releaseCheckState = 'error'; this.availableRelease = null; },
+    });
+    this.subscriptions.add(this.releaseSubscription);
+  }
 
   selectSection(section: string): void {
     this.router.navigate([], { relativeTo: this.route, queryParams: { section }, queryParamsHandling: 'merge' });

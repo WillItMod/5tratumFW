@@ -1,5 +1,5 @@
 <div class="layout-topbar fw-masthead">
-  <a routerLink="/" class="fw-brand" aria-label="5tratumFW overview"><img src="assets/5tratum-emblem.png" width="46" height="46" alt="5tratumOS" /><span>5tratum<b>FW</b></span></a>
+  <a routerLink="/" class="fw-brand" aria-label="5tratumFW overview"><img src="assets/5tratumfw-logo.png" width="128" height="79" alt="5tratumFW" /></a>
   <ng-container *ngIf="info$ | async as info">
     <div class="fw-masthead-device"><span>{{info.hostname}}</span><small>{{info.ASICModel}} <span>·</span> {{info.boardVersion}}</small></div>
     <div *ngIf="!isAPMode" class="fw-masthead-actions">
