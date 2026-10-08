@@ -11,6 +11,7 @@
 uint64_t hostClockMs = 0;
 std::array<int, 32> gpioLevels{};
 bool serialShortWrite = false;
+bool hostCanEnabled = false;
 static bool failNextWrite = false;
 static bool failFinalBaud = false;
 unsigned simulatedChips = 4;
@@ -376,15 +377,49 @@ int main(int argc, char **argv) {
     }
     if (argc == 2) {
         resetFixture();
-        const std::string test = argv[1]; BM1370 driver; Buck buck; NerdQaxePlus2 board;
+        std::string test = argv[1];
+        const bool oct47 = test.rfind("oct47-", 0) == 0;
+        const bool oct67 = test.rfind("oct67-", 0) == 0;
+        const bool oct = oct47 || oct67;
+        if (oct) test = test.substr(6);
+        BM1370 driver; Buck buck; NerdQaxePlus2 board;
+        const unsigned expectedCount = oct ? 8 : 4;
+        const unsigned savedFrequency = oct ? 700 : 500, savedVoltage = oct ? 1180 : 1130;
+        if (oct) {
+            // Constructor/regulator detection is separately exercised by the
+            // whole-production-Oct-board fixture. Here the external profile
+            // feeds the actual inherited init/power methods and UART driver.
+            board.model = "NerdOCTAXE-γ"; board.m_asicCount = 8;
+            board.m_asicFrequency = savedFrequency; board.m_asicVoltageMillis = savedVoltage;
+            board.m_initVoltageMillis = 0;
+            board.m_numPhases = oct47 ? 4 : 6; board.m_imax = oct47 ? 180 : 240;
+            board.m_ifault = oct47 ? 160 : 235;
+            simulatedChips = 8;
+        }
         board.m_hasRev7TPS546 = test == "cold-rev7"; board.m_asics = &driver; board.m_tps = &buck;
         POWER_MANAGEMENT_MODULE.m_board = &board;
         SYSTEM_MODULE.board = &board;
-        if (test == "wrong-chip-count") simulatedChips = 3;
+        if (test == "wrong-chip-count") simulatedChips = expectedCount - 1;
+        if (test == "extra-chip-count") simulatedChips = expectedCount + 1;
+        if (test == "zero-chip-count") simulatedChips = 0;
+        if (test == "buck-init-failed") buck.initOkay = false;
+        if (test == "buck-voltage-failed") buck.voltageOkay = false;
+        if (test == "buck-disable-failed") buck.disableOkay = false;
         if (test == "voltage-mismatch") board.measuredVoutOverride = 1.0f;
         if (test == "voltage-nan") board.measuredVoutOverride = std::numeric_limits<float>::quiet_NaN();
         if (test == "baud-failed") failFinalBaud = true;
         using namespace FiveTratumMining;
+        if (test == "wrong-declared-count" || test == "wrong-asic" || test == "wrong-model" || test == "can-slave" || test == "can-enabled") {
+            if (test == "wrong-declared-count") board.m_asicCount = expectedCount - 1;
+            if (test == "wrong-asic") board.asicModel = "BM1397";
+            if (test == "wrong-model") board.model = "NerdOCTAXE+";
+            if (test == "can-enabled") hostCanEnabled = true;
+            assert(!initializeControl(&board, test == "can-slave"));
+            assert(!controlSupported() && buck.voltages.empty() && transmittedPackets == 0);
+            JsonDocument unsupported; assert(writeControlReport(unsupported) && !unsupported["supported"].as<bool>());
+            return 0;
+        }
+        if (test == "paused-boot-resume") policyPause = true;
         assert(initializeControl(&board, false));
         if (test == "pause-during-ramp") policyPauseAtMs = 4500;
         if (test == "invalid-vr") sensedVr = 0;
@@ -394,20 +429,25 @@ int main(int argc, char **argv) {
         setRuntimeReady(test != "no-workers");
         updateControl(); // Exact production backend and actual regulator/ASIC initialization.
         JsonDocument report; assert(writeControlReport(report));
-        const bool failed = test == "wrong-chip-count" || test == "voltage-mismatch" || test == "voltage-nan" || test == "invalid-vr" || test == "baud-failed";
+        const bool failed = test == "wrong-chip-count" || test == "extra-chip-count" || test == "zero-chip-count" || test == "buck-init-failed" || test == "buck-voltage-failed" || test == "buck-disable-failed" || test == "voltage-mismatch" || test == "voltage-nan" || test == "invalid-vr" || test == "baud-failed";
         const bool cancelled = test == "pause-during-ramp";
+        const bool bootPaused = test == "paused-boot-resume";
         const bool noWorkers = test == "no-workers" || test == "no-job-ack" || test == "job-timer-create-failed" || test == "job-timer-start-failed";
-        assert(report["status"]["appliedPaused"].as<bool>() == (failed || cancelled || noWorkers));
+        assert(report["status"]["appliedPaused"].as<bool>() == (failed || cancelled || noWorkers || bootPaused));
         assert(!report["status"]["transitionPending"].as<bool>());
-        assert(miningWritesAllowed() == !(failed || cancelled || noWorkers));
-        if (!noWorkers) assert(POWER_MANAGEMENT_MODULE.firstBuckPoll > 0 && POWER_MANAGEMENT_MODULE.maximumPollGapMs <= 2000);
-        assert(board.m_asicFrequency == 500 && board.m_asicVoltageMillis == 1130 && board.m_vrFrequency == 25011);
+        assert(miningWritesAllowed() == !(failed || cancelled || noWorkers || bootPaused));
+        if (!noWorkers && !bootPaused && !failed) assert(POWER_MANAGEMENT_MODULE.firstBuckPoll > 0 && POWER_MANAGEMENT_MODULE.maximumPollGapMs <= 2000);
+        assert(board.m_asicFrequency == savedFrequency && board.m_asicVoltageMillis == savedVoltage && board.m_vrFrequency == 25011);
         if (failed) {
             assert(!report["status"]["error"].isNull());
             assert(gpioLevels[BM1368_RST_PIN] == 0 && gpioLevels[TPS53647_EN_PIN] == 0 && gpioLevels[LDO_EN_PIN] == 0);
-            simulatedChips = 4; board.measuredVoutOverride = -1;
+            simulatedChips = expectedCount; board.measuredVoutOverride = -1;
             updateControl(); // A corrected measurement does not clear the failure latch.
             assert(!miningWritesAllowed());
+        } else if (bootPaused) {
+            assert(report["status"]["error"].isNull() && !board.m_isInitialized && buck.voltages.empty() && transmittedPackets == 0);
+            policyPause = false; updateControl();
+            assert(miningWritesAllowed() && board.m_isInitialized && board.m_chipsDetected == static_cast<int>(expectedCount));
         } else if (noWorkers) {
             assert(!report["status"]["error"].isNull() && buck.voltages.empty() && transmittedPackets == 0);
             if (test == "job-timer-start-failed") assert(timersDeleted == 1);
@@ -418,6 +458,8 @@ int main(int argc, char **argv) {
         } else {
             assert(report["status"]["error"].isNull() && board.m_isInitialized);
             assert(POWER_MANAGEMENT_MODULE.m_vrTemp == 55); // Genuine first buck telemetry, not cold cached zero.
+            assert(board.m_chipsDetected == static_cast<int>(expectedCount));
+            if (oct) assert(buck.initializedPhases == (oct47 ? 4u : 6u) && buck.initializedCurrent == (oct47 ? 180u : 240u) && buck.initializedFaultCurrent == (oct47 ? 160 : 235));
         }
         if (test == "resume") {
             const uint64_t oldEpoch = workGeneration();
@@ -445,11 +487,12 @@ int main(int argc, char **argv) {
             asicJobs.storeJob(job("pre-ramp"), 5, oldEpoch);
             const float previousVoltage = buck.voltages.back();
             const auto writesBefore = transmittedPackets;
-            board.m_asicFrequency = 600;
+            const unsigned newFrequency = oct ? 750 : 600;
+            board.m_asicFrequency = newFrequency;
             if (test == "live-ramp-pause") policyPauseAtMs = hostClockMs + 500;
             if (test == "live-ramp-thermal") thermalFaultAtMs = hostClockMs + 500;
             if (test == "live-ramp-uart-failure") failNextWrite = true;
-            const bool updated = applyFrequency(600);
+            const bool updated = applyFrequency(newFrequency);
             assert(updated == (test == "live-ramp"));
             assert(!asicJobs.getClone(5, oldEpoch) && workGeneration() > oldEpoch && transmittedPackets > writesBefore);
             assert(POWER_MANAGEMENT_MODULE.maximumPollGapMs <= 2000);

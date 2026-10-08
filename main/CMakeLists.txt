@@ -28,6 +28,8 @@ SRCS
     "./http_server/http_server.c"
     "./http_server/mining_schedule_api.c"
     "./http_server/operating_profiles.c"
+    "./http_server/five_tratum_status.c"
+    "./http_server/five_tratum_status_report.c"
     "./http_server/pool_schedule_api.c"
     "./http_server/websocket.c"
     "./http_server/websocket_log.c"

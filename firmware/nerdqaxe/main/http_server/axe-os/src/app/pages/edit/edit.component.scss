@@ -48,3 +48,22 @@ p { margin: .35rem 0 0; color: var(--fw-muted, #93a4b8); font-size: .84rem; line
 .profile-fields {display:flex;gap:1rem;flex-wrap:wrap;align-items:end;} .profile-fields>.field {flex:1;min-width:180px;} .profile-panel select {background:#0e171d;color:#dce8ed;border:1px solid #294049;border-radius:5px;padding:.6rem;width:100%;} .profile-actions {margin-top:1rem;margin-bottom:0;} .profile-error {color:#ffb692;} .schedule-event {display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;border-top:1px solid #20343b;padding:.75rem 0;} .schedule-event>select {flex:1;min-width:130px;} .schedule-event>input {width:110px;} .schedule-days {display:flex;gap:3px;flex-wrap:wrap;} .schedule-days button {font:inherit;font-size:.75rem;background:#111e25;color:#95a8b1;border:1px solid #294049;border-radius:4px;padding:.4rem;} .schedule-days button.selected {color:#b5f1d1;border-color:#409c72;background:#16372a;}
 
 .editor-section-nav{display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:1.25rem}.editor-section-nav button{font:inherit;color:var(--fw-muted);background:var(--fw-surface);border:1px solid var(--fw-border);border-radius:5px;min-height:44px;padding:.5rem .75rem}.editor-section-nav button.active{color:var(--fw-text);border-color:var(--fw-accent)}.tuning-review{border-left:3px solid var(--fw-accent);padding:.8rem 1rem;margin-bottom:1rem;background:var(--fw-surface-alt)}.tuning-review .field-warning{color:var(--fw-warn)}
+
+.pool-save { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: .65rem; border-top: 1px solid var(--fw-border, #243044); margin-top: 1.25rem; padding-top: 1rem; }
+.pool-save > p { grid-column: 1 / -1; }
+.pool-slot-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; }
+.pool-slot-fields .field { margin: 0; }
+.pool-slot-fields select { width: 100%; min-width: 0; background: var(--fw-surface, #101824); color: var(--fw-text, #dce8ed); border: 1px solid var(--fw-border, #243044); border-radius: 5px; padding: .65rem; }
+.pool-save button, .saved-pool-actions button, .pool-restart button { min-height: 44px; }
+.pool-restart { display: flex; gap: 1rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.saved-pool-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 1rem; padding: 1rem 0; border-top: 1px solid var(--fw-border, #243044); }
+.saved-pool-row:first-of-type { margin-top: 1rem; }
+.saved-pool-info { min-width: 0; overflow-wrap: anywhere; }
+.saved-pool-info strong { font-size: .85rem; }
+.saved-pool-actions, .pool-apply-actions, .pool-rename-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.saved-pool-actions { align-items: stretch; flex-direction: column; }
+.pool-rename-actions .field { flex: 1; margin: 0; min-width: 120px; }
+.pool-rename-actions button { align-self: flex-end; }
+@media (max-width: 800px) { .saved-pool-row { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .pool-save { grid-template-columns: 1fr; } }
+@media (max-width: 400px) { .pool-slot-fields { grid-template-columns: 1fr; gap: 0; } .pool-restart { align-items: flex-start; flex-direction: column; } .pool-apply-actions button { flex: 1 1 100%; } }

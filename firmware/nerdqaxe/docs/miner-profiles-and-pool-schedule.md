@@ -4,6 +4,12 @@ This API stores ten named tuning slots and ten named pool slots on the miner, in
 
 All endpoints inherit the existing LAN/network restriction and CORS policy. POST requests require `Content-Type: application/json` and the miner's existing OTP authorization: `X-TOTP` or `X-OTP-Session` when OTP is enabled. Never disable that check for hub requests. A hub must verify the peer's complete `identity.deviceId`, firmware product/version and hardware model/count against its discovered inventory immediately before a write. A network address alone is not device identity.
 
+## Pool page in the new BETA layout
+
+The built QAxe Beta5 and OctAxe Beta3 pairs put **Primary** and **Secondary** editors above the ten slots. In Dual pool these are native A/B; in failover Secondary is standby. Save connection edits with **Save pool settings**, then choose a slot/name and **Save to slot** beside that route's save button. Storage reads the saved miner connection, including private credentials; dirty connection drafts must be saved first. Stored rows expose **Apply to Primary**, **Apply to Secondary**, **Rename** and **Clear**. Rename sends only `type`, `slot` and `name`, retaining the existing descriptor and password. Secondary maps to the unchanged `fallback` API value. These actions do not assign work to individual ASICs.
+
+The new pairs passed family CI and offline checks at source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`; scoped installed-pair checks have passed in [QAxe Beta5](validation-qa-beta5.md) and [OctAxe Beta3](validation-oct-beta3.md).
+
 ## GET /api/5tratum/profiles
 
 Readonly; no default slots or settings are written. Response:
@@ -11,7 +17,7 @@ Readonly; no default slots or settings are written. Response:
 ```json
 {
   "schemaVersion": 1,
-  "identity": {"deviceId": "5tfw:0102030405060708090a0b0c0d0e0f10"},
+  "identity": {"deviceId": "<opaque device ID>"},
   "firmware": {"product": "5tratumFW", "version": "5tratumFW-qa-web-a4"},
   "hardware": {"boardModel": "NerdQAxe++", "asicModel": "BM1370", "asicCount": 4},
   "tuning": [
@@ -20,7 +26,7 @@ Readonly; no default slots or settings are written. Response:
   ],
   "pools": [
     {"slot": 0, "configured": true, "name": "MUX", "host": "mux.example", "port": 7331,
-     "user": "miner.worker", "passwordConfigured": true, "protocol": 0, "tls": false,
+     "user": "<configured worker>", "passwordConfigured": true, "protocol": 0, "tls": false,
      "extranonceSubscribe": false, "authorityPubkey": "", "channelType": 0,
      "coinbaseVerifyMode": 0, "coinbaseMaxFee": 3.0, "coinbaseVerifyForce": false},
     {"slot": 1, "configured": false, "name": null}
@@ -32,7 +38,7 @@ Readonly; no default slots or settings are written. Response:
 }
 ```
 
-The abbreviated example shows two slots; actual arrays always contain exactly ten slots indexed 0–9. Limits come from the validated board's absolute limits, with conservative software bounds where older board code has no absolute limit. Current values are configured requests; the PLL/regulator quantize physical output. Existing settings outside profile limits are retained until an explicit valid Apply.
+The illustrative identity/worker strings are placeholders, and the example version/limits describe the earlier QAxe API shape rather than another model's operating limits. These operating values are not recommended presets. The abbreviated example shows two slots; actual arrays always contain exactly ten slots indexed 0–9. Limits come from the validated board's absolute limits, with conservative software bounds where older board code has no absolute limit. Current values are configured requests; the PLL/regulator quantize physical output. Existing settings outside profile limits are retained until an explicit valid Apply.
 
 Passwords never appear in GET responses. `protocol` is 0 for SV1, 1 for SV2; `channelType` is 0 for extended, 1 for standard. Nerd pool verification fields are additive and differ from Gamma's certificate/decode descriptors; clients must preserve family-specific fields rather than assuming the families share every option.
 

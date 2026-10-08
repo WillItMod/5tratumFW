@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnInit, OnDestroy, TemplateRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { switchMap, startWith, tap, catchError, of, Observable, timer, Subscription } from 'rxjs';
+import { switchMap, startWith, tap, catchError, of, Observable, timer, Subscription, throwError } from 'rxjs';
 import { FiveTratumProfiles, ProfileSlot, PoolSchedule, PowerReport, PowerSchedule, PowerWindow } from '../../models/IFiveTratumProfiles';
 import { LoadingService } from '../../services/loading.service';
 import { SystemService } from '../../services/system.service';
@@ -36,8 +36,9 @@ export class EditComponent implements OnInit, OnDestroy {
   public tuningSlot = 0;
   public tuningName = '';
   public poolSlot = 0;
-  public poolName = '';
-  public poolTarget: 'primary' | 'fallback' = 'primary';
+  public poolSaveSlots = [0, 0];
+  public poolSaveNames = ['', ''];
+  public poolRenameNames: Record<number, string> = {};
   public poolSchedule: PoolSchedule | null = null;
   public scheduleError = '';
   public powerReport: PowerReport | null = null;
@@ -151,7 +152,18 @@ export class EditComponent implements OnInit, OnDestroy {
   ) { }
 
   refreshProfiles(): void {
-    this.systemService.getProfiles(this.uri).subscribe({next: data => { this.profiles = data; this.profilesError = ''; this.selectTuningSlot(this.tuningSlot); this.selectPoolSlot(this.poolSlot); }, error: () => { this.profiles = null; this.profilesError = 'Profiles require a matching 5tratumFW application.'; }});
+    this.systemService.getProfiles(this.uri).subscribe({next: data => this.acceptProfiles(data), error: () => { this.profiles = null; this.profilesError = 'Profiles require a matching 5tratumFW application.'; }});
+  }
+  private acceptProfiles(data: FiveTratumProfiles): void {
+      for (const item of data.pools) {
+        const previous = this.profiles?.pools.find(p => p.slot === item.slot)?.name || '';
+        if (this.poolRenameNames[item.slot] === undefined || this.poolRenameNames[item.slot] === previous) this.poolRenameNames[item.slot] = item.name || '';
+      }
+      for (const index of [0, 1]) {
+        const previous = this.profiles?.pools.find(p => p.slot === this.poolSaveSlots[index])?.name || '';
+        if (this.poolSaveNames[index] === previous) this.poolSaveNames[index] = data.pools.find(p => p.slot === this.poolSaveSlots[index])?.name || '';
+      }
+      this.profiles = data; this.profilesError = ''; this.selectTuningSlot(this.tuningSlot);
   }
   get sectionDirty(): boolean {return !!this.form && changedFields(this.form.getRawValue(),this.baseline,this.section,this.fanCount).length>0;}
   get sectionInvalid(): boolean {return !!this.form && sectionFields(this.section,this.fanCount).some(k=>this.form.get(k)?.enabled && this.form.get(k)?.invalid);}
@@ -192,11 +204,71 @@ export class EditComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void { this.powerWatch?.unsubscribe(); }
   selectTuningSlot(slot: number): void { this.tuningSlot = Number(slot); this.tuningName = this.profiles?.tuning[this.tuningSlot]?.name || ''; }
-  selectPoolSlot(slot: number): void { this.poolSlot = Number(slot); this.poolName = this.profiles?.pools[this.poolSlot]?.name || ''; }
+  selectPoolSaveSlot(index: number, slot: number): void {
+    this.poolSaveSlots[index] = Number(slot);
+    this.poolSaveNames[index] = this.profiles?.pools.find(p => p.slot === Number(slot))?.name || '';
+  }
   selectedProfile(kind: 'tuning' | 'pool'): ProfileSlot | undefined { return kind === 'tuning' ? this.profiles?.tuning[this.tuningSlot] : this.profiles?.pools[this.poolSlot]; }
   setManualTuning(enabled: boolean): void { this.manualTuning = enabled; } // UI only: current values are never replaced.
   saveTuningProfile(): void { this.profileAction((totp) => this.systemService.saveProfile(this.uri, {type:'tuning',slot:this.tuningSlot,name:this.tuningName.trim(),frequencyMHz:this.form.get('frequency')?.value,coreVoltageMv:this.form.get('coreVoltage')?.value},totp), 'Profile saved on miner.'); }
-  savePoolProfile(): void { this.profileAction((totp) => this.systemService.saveProfile(this.uri,{type:'pool',slot:this.poolSlot,name:this.poolName.trim(),captureCurrent:this.poolTarget},totp),'Saved pool connection captured on miner.'); }
+  private poolRouteFields(index: number): string[] {
+    const {index: _index, lastVerify: _lastVerify, ...fields} = this.poolPanels[index];
+    return Object.values(fields);
+  }
+  poolRouteDirty(index: number): boolean {
+    return !!this.form && this.poolRouteFields(index).some(key => this.form.get(key)?.value !== this.baseline[key]);
+  }
+  private poolSaveFields(index: number): string[] {
+    return [...this.poolRouteFields(index), 'poolMode', 'poolBalance', 'stratumKeep', 'stratumDifficulty'];
+  }
+  poolSettingsDirty(index: number): boolean {
+    return !!this.form && this.poolSaveFields(index).some(key => this.form.get(key)?.value !== this.baseline[key]);
+  }
+  poolSettingsInvalid(index: number): boolean {
+    return !!this.form && this.poolSaveFields(index).some(key => this.form.get(key)?.enabled && this.form.get(key)?.invalid);
+  }
+  savePoolSettings(index: 0 | 1): void {
+    if (this.saving || this.profileBusy || !this.poolSettingsDirty(index) || this.poolSettingsInvalid(index)) return;
+    const snapshot = this.form.getRawValue();
+    const fields = this.poolSaveFields(index).filter(key => snapshot[key] !== this.baseline[key]);
+    const routeBaseline = {...snapshot};
+    for (const field of fields) routeBaseline[field] = this.baseline[field];
+    const payload = settingsPatch(snapshot, routeBaseline, 'pool', this.fanCount);
+    this.saving = true;
+    this.otpAuth.ensureOtp$(this.uri,this.translate.instant('SECURITY.OTP_TITLE'),this.translate.instant('SECURITY.OTP_HINT'))
+      .pipe(switchMap(({totp}: EnsureOtpResult) => this.systemService.updateSettingsV2(this.uri,payload,totp).pipe(this.loadingService.lockUIUntilComplete())))
+      .subscribe({next: () => {
+        for (const field of fields) {
+          this.baseline[field] = snapshot[field];
+          if (this.form.get(field)?.value === snapshot[field]) this.form.get(field)?.markAsPristine();
+        }
+        this.restartPending ||= fields.some(key => this.rebootRequiredFields.has(key));
+        this.saving = false;
+        this.toastrService.success('Pool settings saved on miner.','Saved');
+      }, error: () => {this.saving = false; this.toastrService.danger('Pool settings could not be saved.','Device settings');}});
+  }
+  saveConnectionToSlot(index: 0 | 1): void {
+    if (this.poolRouteDirty(index)) {this.profilesError = 'Save pool settings first.'; return;}
+    const slot = this.poolSaveSlots[index], name = this.poolSaveNames[index].trim();
+    if (this.saving || !name || !this.profiles?.pools.some(p => p.slot === slot)) return;
+    const payload = {type:'pool',slot,name,captureCurrent:index === 0 ? 'primary' : 'fallback'};
+    this.profileAction(totp => this.poolRouteDirty(index) ? throwError(() => ({error:{error:'unsaved-pool-settings'}})) : this.systemService.saveProfile(this.uri,payload,totp),'Pool saved to slot.');
+  }
+  renamePoolSlot(slot: number): void {
+    const item = this.profiles?.pools.find(p => p.slot === slot), name = this.poolRenameNames[slot]?.trim();
+    if (this.saving || !item?.configured || !name || name === item.name) return;
+    this.profileAction(totp => this.systemService.saveProfile(this.uri,{type:'pool',slot,name},totp),'Pool slot renamed.');
+  }
+  clearPoolSlot(slot: number): void {
+    if (this.saving || !this.profiles?.pools.find(p => p.slot === slot)?.configured) return;
+    this.profileAction(totp => this.systemService.saveProfile(this.uri,{type:'pool',slot,clear:true},totp),'Pool slot cleared.');
+  }
+  applyPoolSlot(slot: number, index: 0 | 1): void {
+    if (this.poolRouteDirty(index)) {this.profilesError = 'Save pool settings first.'; return;}
+    if (this.saving || !this.profiles?.pools.find(p => p.slot === slot)?.configured) return;
+    const poolTarget = index === 0 ? 'primary' : 'fallback';
+    this.profileAction(totp => this.poolRouteDirty(index) ? throwError(() => ({error:{error:'unsaved-pool-settings'}})) : this.systemService.applyProfile(this.uri,{type:'pool',slot,poolTarget},totp),`Pool applied to ${index === 0 ? 'Primary' : 'Secondary'}.`,'pool',index);
+  }
   clearProfile(kind: 'tuning' | 'pool'): void { this.profileAction(totp => this.systemService.saveProfile(this.uri,{type:kind,slot:kind==='tuning'?this.tuningSlot:this.poolSlot,clear:true},totp),'Profile cleared.'); }
   reviewTuning(saved=false):void {
     const p=saved ? this.selectedProfile('tuning') : null;
@@ -206,24 +278,50 @@ export class EditComponent implements OnInit, OnDestroy {
     this.tuningReview={frequencyMHz,coreVoltageMv,name:saved ? p?.name || 'Saved slot' : 'Manual operating point',source:saved?'slot':'manual'};
   }
   applyReviewedTuning():void {const point=this.tuningReview;if(!point)return;this.profileAction(totp=>this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:point.frequencyMHz,coreVoltageMv:point.coreVoltageMv},totp),'Clock and voltage applied.','tuning');this.tuningReview=null;}
-  get poolTargetLabel():string {return this.form?.get('poolMode')?.value===1 ? (this.poolTarget==='primary'?'connection A':'connection B') : this.poolTarget;}
   applyTuning(): void { this.profileAction(totp => this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:this.form.get('frequency')?.value,coreVoltageMv:this.form.get('coreVoltage')?.value},totp),'Clock and voltage applied.', 'tuning'); }
-  applySavedProfile(kind: 'tuning' | 'pool'): void { this.profileAction(totp => this.systemService.applyProfile(this.uri,kind==='tuning'?{type:kind,slot:this.tuningSlot}:{type:kind,slot:this.poolSlot,poolTarget:this.poolTarget},totp),'Profile applied.',kind); }
-  private profileAction(action: (totp?: string) => Observable<any>, message: string, applied?: 'tuning' | 'pool'): void {
-    if (this.profileBusy) return;
-    this.profileBusy=true;
-    this.otpAuth.ensureOtp$(this.uri,this.translate.instant('SECURITY.OTP_TITLE'),this.translate.instant('SECURITY.OTP_HINT')).pipe(switchMap(({totp}: EnsureOtpResult)=>action(totp))).subscribe({
-      next:()=>{this.profileBusy=false;this.toastrService.success(message,'Saved');this.refreshProfiles();if(applied==='pool')this.refreshPoolSchedule();if(applied)this.reloadAppliedSettings(applied);},
-      error:(err)=>{this.profileBusy=false;const reason=err?.error?.error || 'request-failed';this.toastrService.danger(reason==='profile-in-use'?'Remove this profile from the pool schedule before clearing it.':`Could not save: ${reason}.`,'Device settings');}
+  private profileAction(action: (totp?: string) => Observable<any>, message: string, applied?: 'tuning' | 'pool', poolIndex?: 0 | 1): void {
+    if (this.profileBusy || this.saving) return;
+    const previousRoute = poolIndex !== undefined ? this.form.getRawValue() : undefined;
+    let acknowledged = false;
+    this.profileBusy=true;this.profilesError='';
+    this.otpAuth.ensureOtp$(this.uri,this.translate.instant('SECURITY.OTP_TITLE'),this.translate.instant('SECURITY.OTP_HINT')).pipe(
+      switchMap(({totp}: EnsureOtpResult)=>action(totp)),
+      tap(result => {
+        if (result?.ok !== true || typeof result.restartRequired !== 'boolean') throw new Error('profile-change-not-confirmed');
+        acknowledged = true;
+        this.restartPending ||= result.restartRequired;
+      }),
+      switchMap(() => applied ? this.reloadAppliedSettings(applied,poolIndex,previousRoute) : of(null)),
+      switchMap(() => this.systemService.getProfiles(this.uri)),
+      tap(data => this.acceptProfiles(data)),
+    ).subscribe({
+      next:()=>{this.profileBusy=false;this.toastrService.success(message,'Saved');if(applied==='pool')this.refreshPoolSchedule();},
+      error:(err)=>{
+        this.profileBusy=false;
+        if (acknowledged) {
+          this.profilesError='The request was acknowledged, but settings or profiles could not be read back. Refresh before applying again.';
+          this.toastrService.danger(this.profilesError,'Device settings');
+          return;
+        }
+        const reason=err?.message === 'profile-change-not-confirmed' ? err.message : err?.error?.error || 'request-failed';
+        if(reason==='unsaved-pool-settings')this.profilesError='Save pool settings first.';
+        else if(reason==='profile-change-not-confirmed')this.profilesError='The miner did not confirm the request. Refresh settings before trying again.';
+        this.toastrService.danger(reason==='profile-in-use'?'Remove this profile from the pool schedule before clearing it.':this.profilesError || `Could not save: ${reason}.`,'Device settings');
+      }
     });
   }
-  private reloadAppliedSettings(kind:'tuning'|'pool'):void {
-    this.systemService.getSettingsV2(this.uri).subscribe(info=>{
+  private reloadAppliedSettings(kind:'tuning'|'pool', poolIndex?: 0 | 1, previousRoute?: Record<string,any>):Observable<ISettingsV2> {
+    return this.systemService.getSettingsV2(this.uri).pipe(tap(info=>{
       if(kind==='tuning'){this.form.patchValue({frequency:info.frequency,coreVoltage:info.coreVoltage});this.originalSettings.frequency=info.frequency;this.originalSettings.coreVoltage=info.coreVoltage;for(const k of ['frequency','coreVoltage']){this.baseline[k]=this.form.get(k)?.value;this.form.get(k)?.markAsPristine();}return;}
-      const i=this.poolTarget==='primary'?0:1;const pool=info.pools[i],panel=this.poolPanels[i];
+      if (poolIndex === undefined) return;
+      const i=poolIndex;const pool=info.pools[i],panel=this.poolPanels[i];
       const values:any={}; values[panel.url]=pool.url;values[panel.port]=pool.port;values[panel.user]=pool.user;values[panel.password]='*****';values[panel.protocol]=pool.protocol;values[panel.tls]=!!pool.tls;values[panel.enonce]=!!pool.enonceSubscribe;values[panel.authority]=pool.sv2AuthorityPubkey;values[panel.channel]=pool.sv2ChannelType;values[panel.verify]=pool.coinbaseVerifyMode;values[panel.maxFee]=pool.coinbaseMaxFee;values[panel.force]=pool.coinbaseVerifyForce;
-      this.form.patchValue(values);this.originalSettings.pools[i]=structuredClone(pool);this.originalSettings[panel.protocol]=pool.protocol;for(const k of Object.keys(values)){this.baseline[k]=values[k];this.form.get(k)?.markAsPristine();}
-    });
+      this.originalSettings.pools[i]=structuredClone(pool);this.originalSettings[panel.protocol]=pool.protocol;
+      for(const k of Object.keys(values)){
+        if (!previousRoute || this.form.get(k)?.value === previousRoute[k]) {this.form.get(k)?.setValue(values[k]);this.form.get(k)?.markAsPristine();}
+        this.baseline[k]=values[k];
+      }
+    }));
   }
   addScheduleEvent():void { if(this.poolSchedule && this.poolSchedule.events.length<16)this.poolSchedule.events.push({enabled:true,dayMask:127,timeMinutes:720,slot:this.poolSlot}); }
   hasScheduleDay(mask:number,bit:number):boolean {return (mask & bit)!==0;}
@@ -683,13 +781,9 @@ export class EditComponent implements OnInit, OnDestroy {
     const proto = this.form?.get(protoKey)?.value;
     const protoLabel = proto === 1 ? ' (SV2)' : ' (SV1)';
 
-    if (this.form?.get("poolMode")?.value == 0) {
-      if (i == 0) {
-        return this.translate.instant('SETTINGS.PRIMARY_STRATUM_POOL') + protoLabel;
-      }
-      return this.translate.instant('SETTINGS.FALLBACK_STRATUM_POOL') + protoLabel;
-    }
-    return `Connection ${i === 0 ? 'A' : 'B'}` + protoLabel;
+    const name = i === 0 ? 'Primary' : 'Secondary';
+    const context = this.form?.get('poolMode')?.value === 1 ? ` · ${i === 0 ? 'A' : 'B'}` : (i === 1 ? ' · standby' : '');
+    return name + context + protoLabel;
   }
 
   public swapPools(): void {

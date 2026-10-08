@@ -1,4 +1,5 @@
 #include "mining_control.h"
+#include "mining_board_policy.h"
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
 #include "bm1370_capture_runtime.h"
 #endif
@@ -21,6 +22,7 @@ namespace {
 OperationGate gate;
 MiningPowerState powerState(gate);
 Board *controlledBoard = nullptr;
+unsigned expectedAsicCount = 0;
 std::atomic_bool qualified{false}, runtimeReady{false}, runtimeObserved{false};
 std::atomic_bool jobWorkerReady{false}, jobWorkerObserved{false};
 pthread_mutex_t reportMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -84,8 +86,9 @@ public:
         const bool initialized = controlledBoard->initAsics();
         asic->setRecoveryGuard(nullptr, nullptr);
         if (!initialized || !guard(this)) return false;
-        if (controlledBoard->getDetectedAsicCount() != 4) {
-            m_startError = "ASIC chain did not report four chips; restart required";
+        if (expectedAsicCount == 0 || controlledBoard->getDetectedAsicCount() != static_cast<int>(expectedAsicCount)) {
+            m_startError = expectedAsicCount == 8 ? "ASIC chain did not report eight chips; restart required" :
+                                                  "ASIC chain did not report four chips; restart required";
             return false;
         }
         if (!asic->transportOkay()) {
@@ -123,11 +126,10 @@ Backend backend;
 
 bool initializeControl(Board *board, bool canSlave) {
     controlledBoard = board;
-    // Qualification is deliberately scoped to the two actual standalone
-    // four-chip QAxe drivers. CAN fleet/other board control remains unsupported.
-    const bool model = board && (!std::strcmp(board->getDeviceModel(), "NerdQAxe+") ||
-                                  !std::strcmp(board->getDeviceModel(), "NerdQAxe++"));
-    const bool supported = model && board->getAsicCount() == 4 && board->getAsicDriver() &&
+    // The driver profile owns regulator sequencing. Admit only its exact
+    // model/ASIC pair, then require that complete chain on every start/resume.
+    expectedAsicCount = board ? expectedStandaloneChain(board->getDeviceModel(), board->getAsicModel()) : 0;
+    const bool supported = expectedAsicCount != 0 && board->getAsicCount() == expectedAsicCount && board->getAsicDriver() &&
         board->supportsMiningPowerControl() && !canSlave && !Config::isCanEnabled();
     qualified.store(supported);
     if (supported) gate.block();

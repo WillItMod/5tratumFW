@@ -15,6 +15,34 @@ endif()
 
 message(STATUS "Selected board: $ENV{BOARD}")
 
+# Public helpers bind the application descriptor to a separate exact model family.
+# An inherited board definition alone is not a public build or hardware qualification.
+if(DEFINED FIVETRATUM_RELEASE_PROFILE)
+    if(NOT "$ENV{BOARD}" STREQUAL "${FIVETRATUM_RELEASE_PROFILE}")
+        message(FATAL_ERROR "Public release profile does not match BOARD")
+    endif()
+    if(FIVETRATUM_RELEASE_PROFILE STREQUAL "NERDQAXEPLUS2")
+        set(_fivetratum_version_file "version.txt")
+        set(_fivetratum_family "qa")
+    elseif(FIVETRATUM_RELEASE_PROFILE STREQUAL "NERDOCTAXEGAMMA")
+        set(_fivetratum_version_file "version-oct.txt")
+        set(_fivetratum_family "oct")
+    else()
+        message(FATAL_ERROR "Unknown public Nerd release profile")
+    endif()
+    file(READ "${CMAKE_CURRENT_LIST_DIR}/${_fivetratum_version_file}" _fivetratum_version)
+    string(STRIP "${_fivetratum_version}" _fivetratum_version)
+    string(LENGTH "${_fivetratum_version}" _fivetratum_version_length)
+    if(NOT _fivetratum_version MATCHES "^5tratumFW-${_fivetratum_family}-[0-9]+\\.[0-9]+\\.[0-9]+-beta\\.[0-9]+$"
+       OR _fivetratum_version_length GREATER 31)
+        message(FATAL_ERROR "Invalid model-specific public BETA version")
+    endif()
+    if(DEFINED PROJECT_VER AND NOT PROJECT_VER STREQUAL _fivetratum_version)
+        message(FATAL_ERROR "PROJECT_VER does not match the selected model version file")
+    endif()
+    set(PROJECT_VER "${_fivetratum_version}")
+endif()
+
 set(ENV{SOURCE_DATE_EPOCH} 0)
 
 
@@ -42,4 +70,3 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 
 project(esp-miner)
-

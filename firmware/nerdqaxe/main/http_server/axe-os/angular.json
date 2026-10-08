@@ -64,6 +64,18 @@
               ],
               "outputHashing": "all"
             },
+            "oct-production": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.prod.ts"
+                },
+                {
+                  "replace": "src/app/firmware-web-version.ts",
+                  "with": "src/app/firmware-web-version.oct.ts"
+                }
+              ]
+            },
             "development": {
               "buildOptimizer": false,
               "optimization": false,

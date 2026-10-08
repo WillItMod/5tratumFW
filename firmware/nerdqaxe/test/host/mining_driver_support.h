@@ -43,8 +43,13 @@ int gpio_get_level(int pin);
 
 struct Buck {
     bool initOkay = true, voltageOkay = true, disableOkay = true;
+    unsigned initializedPhases = 0, initializedCurrent = 0;
+    float initializedFaultCurrent = 0;
     std::vector<float> voltages;
-    bool init(int, int, float) { return initOkay; }
+    bool init(int phases, int current, float fault) {
+        initializedPhases = phases; initializedCurrent = current; initializedFaultCurrent = fault;
+        return initOkay;
+    }
     bool set_vout(float volts) { voltages.push_back(volts); return voltageOkay; }
     bool disable_vout() { return disableOkay; }
 };
@@ -58,6 +63,7 @@ public:
     virtual bool initAsics() = 0;
     virtual bool pauseMiningPower() = 0;
     virtual const char *getDeviceModel() const = 0;
+    virtual const char *getAsicModel() const = 0;
     virtual Asic *getAsicDriver() = 0;
     virtual int getDetectedAsicCount() const = 0;
     virtual unsigned getAsicCount() const = 0;
@@ -82,12 +88,14 @@ public:
     int m_chipsDetected = 0;
     bool m_isInitialized = false, m_isBuckInitialized = false, m_shutdown = false;
     float measuredVoutOverride = -1;
-    float chipTemps[4]{};
+    float chipTemps[8]{};
+    const char *model = "NerdQAxe+", *asicModel = "BM1368";
     virtual ~NerdQaxePlus() = default;
     bool initAsics() override;
     virtual bool setVoltage(float volts);
     bool pauseMiningPower() override;
-    const char *getDeviceModel() const override { return "NerdQAxe+"; }
+    const char *getDeviceModel() const override { return model; }
+    const char *getAsicModel() const override { return asicModel; }
     Asic *getAsicDriver() override { return m_asics; }
     int getDetectedAsicCount() const override { return m_chipsDetected; }
     unsigned getAsicCount() const override { return m_asicCount; }
@@ -105,14 +113,14 @@ public:
     void VREG_enable();
     void VREG_disable();
     bool validateVoltage(float volts) { return volts == 0 || (volts >= 1.005f && volts <= 1.4f); }
-    void setChipTemp(unsigned index, float temperature) { assert(index < 4); chipTemps[index] = temperature; }
+    void setChipTemp(unsigned index, float temperature) { assert(index < m_asicCount && index < 8); chipTemps[index] = temperature; }
 };
 class NerdQaxePlus2 final : public NerdQaxePlus {
 public:
+    NerdQaxePlus2() { model = "NerdQAxe++"; asicModel = "BM1370"; }
     bool m_hasRev7TPS546 = false;
     bool initAsics() override;
     bool setVoltage(float volts) override;
-    const char *getDeviceModel() const override { return "NerdQAxe++"; }
 };
 
 class PThreadGuard {
@@ -152,7 +160,8 @@ extern PowerManagementTask POWER_MANAGEMENT_MODULE;
 extern HostHashrate HASHRATE_MONITOR;
 extern AsicJobs asicJobs;
 void trigger_job_creation();
-namespace Config { inline bool isCanEnabled() { return false; } }
+extern bool hostCanEnabled;
+namespace Config { inline bool isCanEnabled() { return hostCanEnabled; } }
 using TimerHandle_t = void *;
 TimerHandle_t xTimerCreate(const char *, unsigned, bool, void *, void (*)(TimerHandle_t));
 int xTimerStart(TimerHandle_t, unsigned);

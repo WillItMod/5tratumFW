@@ -10,7 +10,9 @@ import {
   SystemAsic as ISystemASIC,
   SystemScoreboardEntry as ISystemScoreboardEntry,
   Settings,
-  GenericResponse
+  GenericResponse,
+  FiveTratumStatusSnapshot,
+  FiveTratumMuxPoolStatus
 } from '../generated/models';
 import { Api } from '../generated/api';
 import * as functions from '../generated/functions';
@@ -18,6 +20,7 @@ import * as functions from '../generated/functions';
 import { environment } from '../../environments/environment';
 
 const API_TIMEOUT = 15000;
+const DEVELOPMENT_FIRMWARE_VERSION = '5tratumFW-dev';
 
 @Injectable({
   providedIn: 'root'
@@ -28,6 +31,35 @@ export class SystemApiService {
     private httpClient: HttpClient,
     @Optional() private api: Api
   ) { }
+
+  public getFiveTratumStatus(uri: string = ''): Observable<FiveTratumStatusSnapshot> {
+    if (environment.production && this.api && !uri) {
+      return from(this.api.invoke(functions.getFiveTratumStatus, {})).pipe(timeout(API_TIMEOUT));
+    }
+    if (environment.production || uri) {
+      return this.httpClient.get<FiveTratumStatusSnapshot>(`${uri}/api/5tratum/status`).pipe(timeout(API_TIMEOUT));
+    }
+    // Development has no live peer advertisement or per-chip measurement.
+    // Each read returns a detached snapshot, with the same Gamma/version as info.
+    return of({
+      schemaVersion: 1,
+      identity: { deviceId: '5tfw:0102030405060708090a0b0c0d0e0f10' },
+      hardware: { boardModel: 'Gamma 602', asicModel: 'BM1370', asicCount: 1 },
+      firmware: { product: '5tratumFW', version: DEVELOPMENT_FIRMWARE_VERSION },
+      observedUptimeSeconds: 38,
+      work: { scope: 'chain-broadcast', independentAssignment: false, poolMode: 'failover', activePool: 0 },
+      asics: [],
+      coin: null,
+      workContext: null,
+      mux: {
+        independentWorkAssignment: false,
+        pools: ([0, 1] as const).map<FiveTratumMuxPoolStatus>(index => ({
+          index, connected: false, transportConnected: false, expired: false,
+          serverId: null, ttlSeconds: 90, statusAgeSeconds: null, coin: null, workContext: null,
+        })),
+      },
+    });
+  }
 
   public downloadLogs(uri: string = ''): Observable<Blob> {
     if (environment.production && this.api && !uri) {
@@ -121,8 +153,8 @@ export class SystemApiService {
         poolConnectionInfo: "IPv4 (TLS)",
         frequency: 485,
         actualFrequency: 485,
-        version: "v2.12.0",
-        axeOSVersion: "v2.12.0",
+        version: DEVELOPMENT_FIRMWARE_VERSION,
+        axeOSVersion: DEVELOPMENT_FIRMWARE_VERSION,
         idfVersion: "v5.5.1",
         resetReason: "Power-on reset",
         boardVersion: "602",

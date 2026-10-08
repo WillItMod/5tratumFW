@@ -2,15 +2,18 @@
 
 This source builds the QAxe-specific paired OTA images for **NerdQAxe++ / NERDQAXEPLUS2 with four BM1370 ASICs**. It is a GPLv3 derivative of [shufps ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus). Upstream authors and licenses are retained; the original documentation is in [upstream-readme](docs/upstream-readme.md).
 
-Firmware version: `5tratumFW-qa-0.1.0-beta.3`. This QAxe image is separate from the Gamma 601/602 image. Beta 3 enlarges the approved full-logo header and adds a QAxe-only public release check. It retains Beta 2's legacy update-page model detection and OTP lookup. The existing test unit ran Beta 1; its physical PCB revision remains unidentified. Consult Beta 3's own validation record for this pair; earlier Beta 1 physical observations do not qualify it.
+Current qualified QAxe BETA pair: `5tratumFW-qa-0.1.0-beta.5`. This QAxe image is separate from Gamma 601/602. The exact pair was installed on the owned test unit, whose physical PCB revision remains unidentified. Read [Beta5 validation](docs/validation-qa-beta5.md) for the dated scope. Earlier [Beta4](docs/validation-qa-beta4.md), Beta3 and Beta2 records retain their own connection-options, branding and updater history.
+
+The new matched QAxe `5tratumFW-qa-0.1.0-beta.5` and OctAxe `5tratumFW-oct-0.1.0-beta.3` pairs are built from `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`, with family CI and offline package checks passed. Both exact pairs completed supervised OTA, 94-asset and exported-settings checks on 8 October 2026. QAxe has four fresh hardware counters, OctAxe has eight, and both retained Dual pool 50/50 with fresh A/B context. The Oct scope remains the owned PCB 2.2 unit only. Connection editors now appear above the ten named pool slots, with separate save/storage and destination-specific Apply actions. Strict acknowledgment/readback checks leave uncertain operations unconfirmed and never retry writes automatically. Model compatibility is unchanged. Read [QAxe Beta5 validation](docs/validation-qa-beta5.md) and [OctAxe Beta3 validation](docs/validation-oct-beta3.md).
 
 ## Choose the correct firmware
 
 | Device | Image family | Evidence |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601/602 | Gamma images in the parent 5tratumFW repository; never these QAxe images | Gamma 601 paired Beta4 installed; Gamma602 compiled, unflashed |
-| NerdQAxe++ / NERDQAXEPLUS2 / BM1370 ×4 | This QAxe paired BETA | Prior a10 installed-device record; unknown PCB revision. Check this BETA's own validation before installing |
-| QAxe+, other QAxe/OctAxe revisions, NerdOctAxe, NerdQX, GT800 and other devices | No supported image in this QAxe release | Do not infer compatibility from shared upstream driver definitions |
+| Bitaxe Gamma PCB 601/602 | Gamma images in the parent 5tratumFW repository; never these QAxe images | Qualified Beta7 BETA pair. Separate short checks on both models; [Beta7 validation](../../docs/validation-beta7.md) |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370 ×4 | This QAxe paired BETA | Qualified Beta5 BETA pair. Exported settings and fresh A/B context checked; PCB revision remains unknown. [Beta5 validation](docs/validation-qa-beta5.md) |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370 ×8 | Separate OctAxe pair in this subtree | Qualified Beta3 BETA pair; limited to one owned PCB 2.2 unit. No other revision qualified; [Beta3 validation](docs/validation-oct-beta3.md). See the [OctAxe guide](../../docs/nerdoctaxe.md) |
+| QAxe+, other QAxe/OctAxe revisions, NerdQX, GT800 and other devices | No supported image in this QAxe release | Do not infer compatibility from shared upstream driver definitions |
 
 ## Included
 
@@ -33,7 +36,10 @@ Use both `esp-miner-NerdQAxe++.bin` and `www.bin` from the same QAxe package. Co
 - [Named slots and pool scheduler](docs/miner-profiles-and-pool-schedule.md)
 - [Power saving and weekly power scheduler](docs/mining-power.md)
 - [Pinned build and packaging](docs/build-5tratumfw-qa.md)
-- [Beta 3 validation](docs/validation-qa-beta3.md)
+- [Current QAxe Beta5 validation](docs/validation-qa-beta5.md)
+- [Current OctAxe Beta3 validation](docs/validation-oct-beta3.md)
+- [Earlier Beta 4 validation](docs/validation-qa-beta4.md)
+- [Earlier Beta 3 validation](docs/validation-qa-beta3.md)
 - [Earlier Beta 2 updater correction](docs/validation-qa-beta2.md)
 - [Earlier Beta 1 installed-device observations](docs/validation-qa-beta1.md)
 - [Earlier a10 test-unit observations](docs/validation-a10.md)

@@ -159,6 +159,31 @@ describe('5tratumFW settings navigation and OTA', () => {
     expect(component.availableRelease).toBeNull();
   });
 
+  it('uses the exact Oct reported model and prevents a QAxe application from passing its file guard', () => {
+    component.info$ = of({ deviceModel: 'NerdOCTAXE-γ', version: '5tratumFW-oct-0.1.0-beta.1' });
+    component.loadDeviceIdentity();
+    expect(component.expectedFileName).toBe('esp-miner-NerdOCTAXE-Gamma.bin');
+    expect(component.releaseModelLabel).toBe('OctAxe Gamma');
+    component.selectedFirmwareFile = new File(['fixture'], 'esp-miner-NerdQAxe++.bin');
+    component.uploadFirmwareFile();
+    expect(auth).not.toHaveBeenCalled();
+    expect(appUpload).not.toHaveBeenCalled();
+    component.selectedFirmwareFile = new File(['fixture'], 'esp-miner-NerdOCTAXE-Gamma.bin');
+    expect(component.firmwareFileValid).toBeTrue();
+    component.checkUpdates();
+    expect(checkRelease).toHaveBeenCalledOnceWith('NerdOCTAXE-γ', '5tratumFW-oct-0.1.0-beta.1');
+  });
+
+  it('does not derive an upload filename for an unsupported model', () => {
+    component.info$ = of({ deviceModel: 'NerdOCTAXE+', version: 'stock' });
+    component.loadDeviceIdentity();
+    expect(component.expectedFileName).toBe('');
+    component.selectedFirmwareFile = new File(['fixture'], 'esp-miner-NerdOCTAXE+.bin');
+    component.uploadFirmwareFile();
+    expect(auth).not.toHaveBeenCalled();
+    expect(appUpload).not.toHaveBeenCalled();
+  });
+
   it('uses the separate WWW OTA handler and rejects non-www filenames', () => {
     component.selectedWebsiteFile = new File(['fixture'], 'esp-miner-NerdQAxe++.bin');
     component.uploadWebsiteFile();

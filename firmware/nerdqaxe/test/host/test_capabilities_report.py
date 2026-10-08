@@ -96,6 +96,8 @@ class CapabilitiesTests(unittest.TestCase):
     def test_other_chip_counts_are_not_reported_as_four(self):
         report = self.report("octaxe")
         self.assert_children(report)
+        self.assertEqual(report["hardware"]["boardModel"], "NerdOCTAXE-γ")
+        self.assertEqual(report["hardware"]["boardProfile"], "NERDOCTAXEGAMMA")
         self.assertEqual(len(report["asics"]), 8)
         self.assertEqual([x["chainAddress"] for x in report["asics"]], list(range(0, 256, 32)))
         self.assertFalse(report["capabilities"]["independentWorkAssignment"])
@@ -103,6 +105,12 @@ class CapabilitiesTests(unittest.TestCase):
         self.assertEqual(len(one["asics"]), 1)
         self.assertFalse(one["capabilities"]["registerAddressing"]["available"])
         self.assertIsNone(one["asics"][0]["chainAddress"])
+
+    def test_only_exact_known_octaxe_model_admits_the_gamma_character(self):
+        for scenario in ("octaxe-suffix", "octaxe-truncated", "octaxe-other-unicode",
+                         "octaxe-control", "octaxe-version", "octaxe-profile"):
+            with self.subTest(scenario=scenario):
+                self.assertEqual(self.report(scenario), {"built": False})
 
     def test_identity_is_bounded_deterministic_and_contains_no_raw_mac_or_endpoints(self):
         report = self.report()

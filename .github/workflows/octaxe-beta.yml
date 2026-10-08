@@ -1,0 +1,81 @@
+name: OctAxe paired BETA candidate validation
+
+on:
+  push:
+    paths:
+      - 'firmware/nerdqaxe/**'
+      - 'docs/nerdoctaxe.md'
+      - 'docs/firmware-selection.md'
+      - '.github/workflows/octaxe-beta.yml'
+      - '.gitmodules'
+  pull_request:
+    paths:
+      - 'firmware/nerdqaxe/**'
+      - 'docs/nerdoctaxe.md'
+      - 'docs/firmware-selection.md'
+      - '.github/workflows/octaxe-beta.yml'
+      - '.gitmodules'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: octaxe-beta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  octaxe:
+    name: NERDOCTAXEGAMMA paired OTA candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BOARD: NERDOCTAXEGAMMA
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.14.0'
+          cache: npm
+          cache-dependency-path: firmware/nerdqaxe/main/http_server/axe-os/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare host rendering and browser
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          test -n "$(command -v google-chrome)"
+          echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+      - name: Build and verify only the OctAxe paired OTA candidate
+        working-directory: firmware/nerdqaxe
+        run: bash tools/build_5tratumfw_oct.sh
+      - name: Save verified OctAxe candidate package
+        uses: actions/upload-artifact@v4
+        with:
+          name: 5tratumFW-NerdOCTAXE-Gamma-BETA-candidate-${{ github.sha }}
+          path: firmware/nerdqaxe/release/NerdOCTAXE-Gamma/5tratumFW-oct-*-beta.*/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Save frontend test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: octaxe-frontend-tests-${{ github.sha }}
+          path: firmware/nerdqaxe/main/http_server/axe-os/report.xml
+          if-no-files-found: ignore
+      - name: Save simulated display fixture evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: octaxe-display-fixtures-${{ github.sha }}
+          path: |
+            firmware/nerdqaxe/.cache/display-native/output/*.png
+            firmware/nerdqaxe/.cache/display-native/output/display-native-report.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+# Artifacts are source/build evidence, not physical qualification or a release.
+# No factory/NVS images, device access, flashing or automatic publication.

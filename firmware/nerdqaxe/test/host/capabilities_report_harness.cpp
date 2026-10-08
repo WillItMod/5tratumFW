@@ -69,7 +69,13 @@ int main(int argc, char **argv) {
         s.chipTemperatures[2] = -1;
         s.chipTemperatures[3] = 52.5;
         if (strcmp(scenario, "uninitialized") == 0) s.initialized = false;
-    } else if (strcmp(scenario, "octaxe") == 0) { s.asicCount = 8; s.boardModel = "NerdOCTAxe-Gamma"; s.boardProfile = "NERDOCTAXEGAMMA"; }
+    } else if (strcmp(scenario, "octaxe") == 0) { s.asicCount = 8; s.boardModel = "NerdOCTAXE-\xCE\xB3"; s.boardProfile = "NERDOCTAXEGAMMA"; }
+    else if (strcmp(scenario, "octaxe-suffix") == 0) s.boardModel = "NerdOCTAXE-\xCE\xB3-extra";
+    else if (strcmp(scenario, "octaxe-truncated") == 0) s.boardModel = "NerdOCTAXE-\xCE";
+    else if (strcmp(scenario, "octaxe-other-unicode") == 0) s.boardModel = "NerdOCTAXE-\xCE\xB4";
+    else if (strcmp(scenario, "octaxe-control") == 0) s.boardModel = "NerdOCTAXE-\xCE\xB3\n";
+    else if (strcmp(scenario, "octaxe-version") == 0) s.firmwareVersion = "NerdOCTAXE-\xCE\xB3";
+    else if (strcmp(scenario, "octaxe-profile") == 0) s.boardProfile = "NerdOCTAXE-\xCE\xB3";
     else if (strcmp(scenario, "unknown-asic") == 0) { s.asicCount = 1; s.asicModel = "BM1397"; s.boardModel = "NerdAxe"; s.boardProfile = "NERDAXE"; }
     else if (strcmp(scenario, "zero-count") == 0) s.asicCount = 0;
     else if (strcmp(scenario, "excessive-count") == 0) s.asicCount = 65;

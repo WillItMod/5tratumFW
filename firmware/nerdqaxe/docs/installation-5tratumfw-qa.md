@@ -6,7 +6,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download the [QAxe Beta 3 release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.3) **QAxe-specific matched pair** and its `manifest.json`, `SHA256SUMS` and corresponding source. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
+Download one **QAxe-specific matched pair** from the [model-labelled prereleases](https://github.com/WillItMod/5tratumFW/releases), with its `manifest.json`, `SHA256SUMS` and corresponding source. The Beta5 pair passed its scoped installed qualification; read [Beta5 validation](validation-qa-beta5.md) before selecting that version. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
 
 ## Check for releases
 

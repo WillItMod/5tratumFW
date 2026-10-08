@@ -47,7 +47,9 @@ fi
 QA_SOURCE_COMMIT=$(python3 - <<'PY'
 import importlib.util
 from pathlib import Path
+import sys
 p=Path('tools/package_5tratumfw_qa.py')
+sys.path.insert(0,str(p.parent.resolve()))
 s=importlib.util.spec_from_file_location('qa_package',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
 print(m.source_receipt()[0])
 PY
@@ -87,6 +89,7 @@ docker run --rm -e BOARD=NERDQAXEPLUS2 \
   bash -c 'git config --global --add safe.directory /project
     idf.py -B "$1" -D IDF_TARGET=esp32s3 -D SDKCONFIG="$1/sdkconfig" \
       -D SDKCONFIG_DEFAULTS="$3" -D BUILD_WEB=OFF -D PROJECT_VER="$2" \
+      -D FIVETRATUM_RELEASE_PROFILE=NERDQAXEPLUS2 \
       -D FIVETRATUM_ASIC_CAPTURE_LOGS=OFF \
       -D FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER=OFF \
       -D FIVETRATUM_BM1370_CAPTURE=OFF build' \
