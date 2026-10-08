@@ -6,7 +6,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download the **QAxe-specific matched pair** and its `manifest.json`, `SHA256SUMS` and corresponding source. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
+Download the [QAxe Beta 2 release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.2) **QAxe-specific matched pair** and its `manifest.json`, `SHA256SUMS` and corresponding source. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
 
 ## Routine OTA upgrade
 
@@ -24,13 +24,13 @@ In the published QAxe Beta 1 web interface, a selected application can show **Fi
 
 Read `/api/system/info` on that miner and check `deviceModel`, `ASICModel`, `asicCount` and `version` locally; do not share the complete response, which also contains network/pool settings. A reported NerdQAxe++ uses the exact application name `esp-miner-NerdQAxe++.bin`. Do not rename another model's binary to satisfy a filename check. If the new WWW was installed first and the old application remains, Beta 1's web-interface uploader may also fail because its authentication check expects the v2 API. Keep the application running and use its original supported OTA mechanism with the exact matching image and any enabled OTP authentication; do not bypass authentication or assume the broken page can restore itself. Provide the reported model and application version for specific recovery steps. A model-loading failure alone does not require a factory flash or NVS erase.
 
-The source fix reads update identity through the shared v1 endpoint, separates identity errors from filename mismatches, and retains legacy OTP verification. That fix is not part of the immutable Beta 1 downloads; use a release's own validation record to identify which image contains it.
+Beta 2 reads update identity through the shared v1 endpoint, separates identity errors from filename mismatches, offers Retry, and retains legacy OTP verification. Beta 1 downloads remain unchanged and do not contain this correction. Other Beta 2 settings pages require its matching application; upload the application first even though the corrected update page can identify older applications.
 
 ## Dual MUX setup
 
 Use two SV1 connections to the same MUX Stratum host/port, with distinct worker names. Select **Dual pool**, retain the desired whole-chain job balance and save. Changing pool mode requires a restart; review the saved/runtime state rather than assuming the request acknowledgement proves Dual is running.
 
-MUX's **Miners → Dual MUX mining** control is shown only for the exact qualified 5tratumFW QAxe++ version/configuration. Review lists the change, Apply preserves operating/network/fan/password/profile/schedule settings, and runtime verification follows restart. OTP-enabled or CAN-master configurations are not admitted by this narrow MUX control.
+MUX 0.9.73's **Miners → Dual MUX mining** management control admits Beta 1 only and is unavailable for Beta 2. On Beta 2 use the miner's **Pool routing → Dual pool** control instead. This affects that remote management switch; native A/B sessions, parent grouping, routing and coin/job injection remain available. A future MUX release must explicitly qualify Beta 2 before admitting it through the remote switch. For admitted firmware/configurations, Review lists the change, Apply preserves operating/network/fan/password/profile/schedule settings, and runtime verification follows restart. OTP-enabled or CAN-master configurations are not admitted by this narrow MUX control.
 
 A and B are network sessions. Their independent targets and counters do not prove independent physical-chip assignment. The miner's Pool routing page retains direct-pool controls and ten named slots; profile Apply targets A or B in Dual mode.
 

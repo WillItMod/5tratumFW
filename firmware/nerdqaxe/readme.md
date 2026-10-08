@@ -2,7 +2,7 @@
 
 This source builds the QAxe-specific paired OTA images for **NerdQAxe++ / NERDQAXEPLUS2 with four BM1370 ASICs**. It is a GPLv3 derivative of [shufps ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus). Upstream authors and licenses are retained; the original documentation is in [upstream-readme](docs/upstream-readme.md).
 
-Firmware version: `5tratumFW-qa-0.1.0-beta.1`. This QAxe image is separate from the Gamma 601/602 image. One QAxe++ test unit has been exercised on preceding a10 firmware; its physical PCB revision remains unidentified. The public BETA's own installation evidence belongs in its validation record, not the earlier a10 record.
+Firmware version: `5tratumFW-qa-0.1.0-beta.2`. This QAxe image is separate from the Gamma 601/602 image. Beta 2 corrects legacy update-page model detection and OTP lookup. The existing test unit ran Beta 1; its physical PCB revision remains unidentified. Beta 2 has build/browser qualification and no new physical OTA qualification.
 
 ## Choose the correct firmware
 
@@ -33,7 +33,8 @@ Use both `esp-miner-NerdQAxe++.bin` and `www.bin` from the same QAxe package. Co
 - [Named slots and pool scheduler](docs/miner-profiles-and-pool-schedule.md)
 - [Power saving and weekly power scheduler](docs/mining-power.md)
 - [Pinned build and packaging](docs/build-5tratumfw-qa.md)
-- [This BETA's validation](docs/validation-qa-beta1.md)
+- [Beta 2 validation](docs/validation-qa-beta2.md)
+- [Earlier Beta 1 installed-device observations](docs/validation-qa-beta1.md)
 - [Earlier a10 test-unit observations](docs/validation-a10.md)
 
 [GPLv3](LICENSE). This firmware is separate from the licensing used by other WillItMod products.

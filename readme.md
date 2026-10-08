@@ -5,7 +5,7 @@
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
 | Bitaxe Gamma PCB601 or602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Gamma601 Beta4 installed;602 compiled, unflashed. [Gamma guides](docs/installation.md) · [compatibility](docs/compatibility.md) |
-| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [validation](firmware/nerdqaxe/docs/validation-qa-beta1.md) |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta 2 validation](firmware/nerdqaxe/docs/validation-qa-beta2.md) |
 | QAxe+, NerdOctAxe/OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
 
 Start with [firmware selection and repository layout](docs/firmware-selection.md). Downloads are [model-labelled GitHub prereleases](https://github.com/WillItMod/5tratumFW/releases); use a complete matching image pair, manifest, checksums and corresponding source. Recovery backups/NVS/factory images are never published.

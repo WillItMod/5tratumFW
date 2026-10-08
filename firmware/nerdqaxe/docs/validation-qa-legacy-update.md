@@ -1,4 +1,4 @@
-# QAxe legacy updater source fix — unreleased
+# QAxe legacy updater correction
 
 Checked on 8 October 2026. This record covers the browser/source correction after a report of **Filename does not match this device** with **Expected: Loading device model…**. The immutable `qaxe-v0.1.0-beta.1` release assets do not contain this fix.
 
@@ -18,4 +18,4 @@ When `/api/v2/identify` returns 404 or 501, authentication can read the explicit
 
 The QAxe++ driver has one `NERDQAXEPLUS2` target and no separate PCB 6.0/6.1 compile profile. This source review is not physical testing of either revision. The existing test unit's PCB revision remains unidentified; the inherited rev7 regulator path is also unqualified.
 
-No application/WWW OTA pair was flashed or published as a release for this source fix. No operating settings, hardware initialization, drivers, partition table, NVS or Gamma source were changed. Follow a future release's own image hashes and validation before treating the source correction as an installed-device result.
+The correction is packaged in the separate QAxe Beta 2 release; see [its validation record](validation-qa-beta2.md). No physical OTA installation was performed for this correction. No operating settings, hardware initialization, drivers, partition table, NVS or Gamma source were changed. The earlier Beta 1 installed-device record is historical evidence and does not establish Beta 2 hardware qualification.
