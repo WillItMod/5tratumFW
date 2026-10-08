@@ -99,10 +99,12 @@ class PackageFixture:
 
 
 class NerdPackageIdentityTests(unittest.TestCase):
-    def test_real_version_files_are_separate_and_qa_default_is_unchanged(self):
+    def test_real_version_files_are_separate_with_qa_as_default(self):
         self.assertTrue(packaging.version().startswith("5tratumFW-qa-"))
         self.assertEqual(packaging.version(), (ROOT / QA.version_file).read_text().strip())
-        self.assertEqual(packaging.version(OCT), "5tratumFW-oct-0.1.0-beta.1")
+        self.assertTrue(packaging.version(OCT).startswith("5tratumFW-oct-"))
+        self.assertEqual(packaging.version(OCT), (ROOT / OCT.version_file).read_text().strip())
+        self.assertNotEqual(packaging.version(), packaging.version(OCT))
         angular = json.loads((ROOT / "main/http_server/axe-os/angular.json").read_text())
         configs = angular["projects"]["axe-os"]["architect"]["build"]["configurations"]
         self.assertFalse(any(item["replace"].endswith("firmware-web-version.ts") for item in configs["production"]["fileReplacements"]))
