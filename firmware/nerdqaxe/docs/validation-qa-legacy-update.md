@@ -12,9 +12,10 @@ When `/api/v2/identify` returns 404 or 501, authentication can read the explicit
 - The production Angular build passed. Initial JavaScript/CSS payload: 3.41 MB raw, 469.66 kB estimated transfer size, within its existing 5 MB initial budget. Existing third-party CommonJS warnings remain.
 - Thirteen checks passed against the compiled production interface in headless Chromium with a simulated `v1.0.37.3-LTS` QAxe++ and all v2 endpoints returning 404. Matching files become available after identity arrives; another model's filename remains rejected. A failed v1 request displays the identity error, a successful retry clears it, and the interface fits a 390-pixel viewport. No OTA requests or physical-device writes were made during these browser checks.
 - An independent source review found no material correctness or authentication issue.
+- [Linux QAxe CI](https://github.com/WillItMod/5tratumFW/actions/runs/37754231560) passed for source commit `f65c4379aef383da3960043f8d300ce3570d907e`, including the pinned target build, host/browser checks and candidate OTA/source packaging. The duplicate PR build also passed. Both Gamma CI jobs passed with Gamma source unchanged. CI artifacts are unreleased candidates, not replacements for the published Beta 1 assets.
 
 ## Hardware and release boundary
 
 The QAxe++ driver has one `NERDQAXEPLUS2` target and no separate PCB 6.0/6.1 compile profile. This source review is not physical testing of either revision. The existing test unit's PCB revision remains unidentified; the inherited rev7 regulator path is also unqualified.
 
-No application/WWW OTA pair was packaged, uploaded or published for this source fix. No operating settings, hardware initialization, drivers, partition table, NVS or Gamma source were changed. Follow a future release's own image hashes and validation before treating the source correction as an installed-device result.
+No application/WWW OTA pair was flashed or published as a release for this source fix. No operating settings, hardware initialization, drivers, partition table, NVS or Gamma source were changed. Follow a future release's own image hashes and validation before treating the source correction as an installed-device result.
