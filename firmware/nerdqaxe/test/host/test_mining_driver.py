@@ -26,7 +26,7 @@ SOURCE_FILES = (
     "main/boards/nerdqaxeplus.cpp", "main/boards/nerdqaxeplus2.cpp",
     "main/tasks/asic_jobs.h", "main/tasks/create_jobs_task.cpp",
     "main/tasks/power_management_task.cpp", "main/tasks/mining_control.cpp",
-    "main/tasks/mining_control.h", "main/tasks/mining_control_state.h",
+    "main/tasks/mining_control.h", "main/tasks/mining_control_state.h", "main/tasks/mining_board_policy.h",
     "main/tasks/mining_schedule.h", "main/main.cpp",
     "test/host/mining_driver_support.h", "test/host/mining_driver_harness.cpp",
     "test/host/test_mining_driver.py",
@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
         method(power, "bool PowerManagementTask::refreshProtectionForMining("))
     control = (ROOT / "main/tasks/mining_control.cpp").read_text()
     control = re.sub(r'^#include "[^"\n]+"\n', '', control, flags=re.M)
-    (path / "control.cpp").write_text(platform_preamble + '#include "mining_control.h"\n#include "mining_schedule.h"\n' + control)
+    (path / "control.cpp").write_text(platform_preamble + '#include "mining_control.h"\n#include "mining_board_policy.h"\n#include "mining_schedule.h"\n' + control)
     job_source = (ROOT / "main/tasks/create_jobs_task.cpp").read_text()
     job_start = job_source.index("void create_jobs_task(")
     job_end = job_source.index("    uint32_t last_ntime", job_start)
@@ -126,6 +126,14 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
                  "thermal-latch", "baud-failed", "live-ramp", "live-ramp-pause", "live-ramp-uart-failure", "live-ramp-thermal")
     for case in power_cases:
         subprocess.run([str(binary), case], check=True)
+    # Execute the production backend and inherited ASIC/board bodies for both
+    # actual regulator profiles with eight UART enumeration responses.
+    oct_cases = tuple(c for c in power_cases if c != "cold-rev7") + (
+        "extra-chip-count", "zero-chip-count", "buck-init-failed", "buck-voltage-failed",
+        "wrong-declared-count", "wrong-asic", "wrong-model", "can-slave", "can-enabled", "paused-boot-resume")
+    for profile in ("oct47", "oct67"):
+        for case in oct_cases:
+            subprocess.run([str(binary), profile + "-" + case], check=True)
 
     # Keep default legacy RX unchanged; exercise the new decoder only in an
     # explicit diagnostic binary with the same flag in every translation unit.
@@ -155,7 +163,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     proof.mkdir(parents=True, exist_ok=True)
     (proof / "proof.json").write_text(json.dumps({
         "defaultDiagnosticDriver": False, "hardwareActions": False,
-        "chainWorkIndependent": False, "legacyPowerScenarios": 18,
+        "chainWorkIndependent": False, "legacyPowerScenarios": len(power_cases), "octPowerScenarios": 2 * len(oct_cases), "octExpectedChips": 8,
         "diagnosticPowerScenarios": 8, "capturedFrames": 5, "splitPoints": 50,
         "defaultCapture": False, "capturePowerScenarios": len(power_cases),
         "captureBoundary": "SERIAL_send_job and retirement externally mocked; actual runtime/API tested separately",

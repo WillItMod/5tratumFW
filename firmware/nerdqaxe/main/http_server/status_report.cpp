@@ -1,4 +1,5 @@
 #include "status_report.h"
+#include "boards/five_tratum_model_labels.h"
 
 #include <cmath>
 #include <cstring>
@@ -73,7 +74,8 @@ void workReport(JsonVariant object, const MuxWorkContext &work) {
 bool buildReport(JsonDocument &doc, const Snapshot &s) {
     doc.clear();
     if (!validVersion(s.firmwareVersion) || !validIdentity(s.deviceId) ||
-        !validHardwareLabel(s.boardModel) || !validHardwareLabel(s.asicModel) || s.nowUs < 0 ||
+        (!validHardwareLabel(s.boardModel) && !FiveTratumModels::isOctaxeGamma(s.boardModel)) ||
+        !validHardwareLabel(s.asicModel) || s.nowUs < 0 ||
         s.asicCount < 1 || s.asicCount > MAX_ASICS ||
         s.activePool < 0 || s.activePool > 1) return false;
 

@@ -1,5 +1,6 @@
 #include "stratum/stratum_api.h"
 #include "stratum/native_pool_stream.h"
+#include "boards/five_tratum_model_labels.h"
 #include "http_server/handler_capabilities.h"
 #include "esp_ota_ops.h"
 #include <algorithm>
@@ -59,6 +60,8 @@ int main(int argc, char **argv) {
     assert(argc == 2);
     std::strcpy(description.version, "5tratumFW-qa-web-a10");
     const std::string scenario = argv[1];
+    const bool octaxe = scenario.rfind("oct-", 0) == 0;
+    if (octaxe) std::strcpy(description.version, "5tratumFW-oct-0.1.0-beta.1");
     if (scenario == "bounds") {
         char guarded[FiveTratumNativePool::AgentBufferBytes + 2];
         std::memset(guarded, 'Z', sizeof(guarded));
@@ -96,11 +99,12 @@ int main(int argc, char **argv) {
         std::cout << "{\"bounded\":true,\"unsafeComponentsRejected\":true}";
         return 0;
     }
-    if (scenario == "two-streams") {
+    if (scenario == "two-streams" || scenario == "oct-two-streams") {
         StratumApi primary, secondary;
         MockTransport a, b;
-        assert(primary.subscribe(&a, "NerdQAxe++", "BM1370", 0));
-        assert(secondary.subscribe(&b, "NerdQAxe++", "BM1370", 1));
+        const char *device = octaxe ? FiveTratumModels::OctaxeGammaMiningAgent : "NerdQAxe++";
+        assert(primary.subscribe(&a, device, "BM1370", 0));
+        assert(secondary.subscribe(&b, device, "BM1370", 1));
         assert(identityReads == 2);
         std::cout << '[' << a.bytes.substr(0, a.bytes.size() - 1) << ','
                   << b.bytes.substr(0, b.bytes.size() - 1) << ']';
@@ -109,7 +113,7 @@ int main(int argc, char **argv) {
     StratumApi api;
     MockTransport transport;
     int index = 0;
-    const char *device = "NerdQAxe++";
+    const char *device = octaxe ? FiveTratumModels::OctaxeGammaMiningAgent : "NerdQAxe++";
     if (scenario == "legacy") index = -1;
     else if (scenario == "invalid-index") index = 2;
     else if (scenario == "unavailable-id") identityAvailable = false;
@@ -119,10 +123,17 @@ int main(int argc, char **argv) {
     else if (scenario == "unsafe") device = "QAxe\"\n";
     else if (scenario == "disconnected") transport.connected = false;
     else if (scenario == "send-failure") transport.fail = true;
+    else if (scenario == "oct-unavailable-id") identityAvailable = false;
+    else if (scenario == "oct-utf8-model") device = FiveTratumModels::OctaxeGamma;
     const bool sent = scenario == "legacy" ? api.subscribe(&transport, device, "BM1370")
                                            : api.subscribe(&transport, device, "BM1370", index);
     if (scenario == "legacy" || scenario == "invalid-index") assert(identityReads == 0);
-    if (scenario == "unsafe" || scenario == "disconnected" || scenario == "send-failure") {
+    if (scenario == "oct-utf8-model") {
+        assert(!sent && transport.bytes.empty());
+        // Rejection must not consume the request ID or leave a partial frame.
+        assert(api.subscribe(&transport, FiveTratumModels::OctaxeGammaMiningAgent, "BM1370", 0));
+        assert(transport.bytes.find("\"id\": 1") != std::string::npos);
+    } else if (scenario == "unsafe" || scenario == "disconnected" || scenario == "send-failure") {
         assert(!sent && transport.bytes.empty());
         if (scenario == "unsafe") {
             assert(api.subscribe(&transport, "NerdQAxe++", "BM1370", 0));

@@ -12,9 +12,13 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+from nerd_build_identity import BuildIdentity, QA, OCT, checked_identity
+
 WEB = ROOT / "main/http_server/axe-os/dist/axe-os"
 WEB_VERSION = ROOT / "main/http_server/axe-os/src/app/firmware-web-version.ts"
 IDF_IMAGE = "espressif/idf:v5.5.3@sha256:8ccd4d2ce413889c6c2bba57e986c670302094efb91c913c6091152e317a7805"
@@ -43,8 +47,9 @@ def safe_relative(name: str) -> Path:
     return path
 
 
-def source_receipt() -> tuple[str, dict[str, Path], dict[str, str], str]:
+def source_receipt(identity: BuildIdentity = QA) -> tuple[str, dict[str, Path], dict[str, str], str]:
     """Use reviewed tracked files only, or verify a corresponding source inventory."""
+    checked_identity(identity)
     probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=ROOT, capture_output=True, text=True)
     files: dict[str, Path] = {}
     submodules: dict[str, str] = {}
@@ -88,8 +93,11 @@ def source_receipt() -> tuple[str, dict[str, Path], dict[str, str], str]:
             if not path.is_file() or path.is_symlink() or sha256(path) != expected:
                 raise ValueError("Corresponding source inventory verification failed")
             files[name] = path
-    required = {"LICENSE", "version.txt", "tools/build_5tratumfw_qa.sh", "tools/package_5tratumfw_qa.py",
-                "main/http_server/axe-os/src/app/firmware-web-version.ts", "main/boards/nerdqaxeplus2.cpp"}
+    required = {"LICENSE", identity.version_file, identity.build_helper, identity.package_helper,
+                "tools/package_5tratumfw_qa.py", "tools/nerd_build_identity.py",
+                identity.web_version_file, identity.board_source}
+    if identity == OCT:
+        required.add("main/boards/five_tratum_model_labels.h")
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or not required.issubset(files):
         raise ValueError("A clean reviewed source commit, model build helpers and GPL license are required")
     if not isinstance(submodules, dict) or any(not re.fullmatch(r"[0-9a-f]{40}", str(v)) for v in submodules.values()):
@@ -97,17 +105,19 @@ def source_receipt() -> tuple[str, dict[str, Path], dict[str, str], str]:
     return commit, files, submodules, prefix
 
 
-def version() -> str:
-    match = re.search(r"export\s+const\s+FIRMWARE_WEB_VERSION\s*=\s*'([^']+)'\s*;", WEB_VERSION.read_text())
+def version(identity: BuildIdentity = QA) -> str:
+    checked_identity(identity)
+    match = re.search(r"export\s+const\s+FIRMWARE_WEB_VERSION\s*=\s*'([^']+)'\s*;", (ROOT / identity.web_version_file).read_text())
     value = match.group(1) if match else ""
-    if (ROOT / "version.txt").read_text().strip() != value:
-        raise ValueError("version.txt and FIRMWARE_WEB_VERSION must match")
-    if not re.fullmatch(r"5tratumFW-qa-\d+\.\d+\.\d+-beta\.\d+", value) or len(value.encode("ascii")) > 31:
-        raise ValueError("Expected a QAxe-specific BETA version fitting the ESP app descriptor")
+    if (ROOT / identity.version_file).read_text().strip() != value:
+        raise ValueError(f"{identity.version_file} and its FIRMWARE_WEB_VERSION must match")
+    if not re.fullmatch(rf"5tratumFW-{identity.family}-\d+\.\d+\.\d+-beta\.\d+", value) or len(value.encode("ascii")) > 31:
+        raise ValueError("Expected the exact model-family BETA version fitting the ESP app descriptor")
     return value
 
 
-def web_provenance(commit: str, release_version: str) -> dict:
+def web_provenance(commit: str, release_version: str, identity: BuildIdentity = QA) -> dict:
+    checked_identity(identity)
     entry = WEB / "index.html.gz"
     if not entry.is_file():
         raise ValueError("Build the compressed production web interface first")
@@ -117,7 +127,7 @@ def web_provenance(commit: str, release_version: str) -> dict:
     node_version = run("node", "--version")
     if node_version != "v24.14.0":
         raise ValueError("Use pinned Node v24.14.0")
-    return {"product": "5tratumFW", "version": release_version, "boardProfile": BOARD,
+    return {"product": "5tratumFW", "version": release_version, "boardProfile": identity.board,
             "nodeVersion": node_version[1:], "sourceCommit": commit}
 
 
@@ -130,32 +140,50 @@ def cache_values(path: Path) -> dict[str, str]:
     return values
 
 
-def package(build: Path, output: Path) -> dict:
-    commit, sources, submodules, prefix = source_receipt()
-    release_version = version()
+def package(build: Path, output: Path, identity: BuildIdentity = QA) -> dict:
+    checked_identity(identity)
+    commit, sources, submodules, prefix = source_receipt(identity)
+    release_version = version(identity)
     description = json.loads((build / "project_description.json").read_text())
     config = json.loads((build / "config/sdkconfig.json").read_text())
     receipt = json.loads((build / "build-source-receipt.json").read_text())
-    expected_receipt = {"sourceCommit": commit, "boardProfile": BOARD, "version": release_version, "idfImage": IDF_IMAGE}
+    expected_receipt = {"sourceCommit": commit, "boardProfile": identity.board, "version": release_version, "idfImage": IDF_IMAGE}
     if receipt != expected_receipt or description.get("project_version") != release_version:
         raise ValueError("Firmware build receipt/version differs from the reviewed source")
     if config.get("IDF_TARGET") != "esp32s3" or description.get("target") != "esp32s3":
         raise ValueError("Expected the ESP32-S3 target")
     cache = cache_values(build / "CMakeCache.txt")
+    if cache.get("FIVETRATUM_RELEASE_PROFILE") != identity.board:
+        raise ValueError("Target build lacks the exact public release profile")
     for flag in ("FIVETRATUM_ASIC_CAPTURE_LOGS", "FIVETRATUM_BM1370_CAPTURE", "FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER"):
         if cache.get(flag) != "OFF":
             raise ValueError("Public builds require diagnostic driver, passive capture and serial capture logs OFF")
     commands = json.loads((build / "compile_commands.json").read_text())
     main_command = next((c.get("command", "") for c in commands if c.get("file", "").endswith("/main/main.cpp")), "")
     board_flags = set(re.findall(r"(?:^|\s)-D((?:NERD|Q13)[A-Z0-9_]+)(?:\s|$)", main_command))
-    if board_flags != {BOARD}:
-        raise ValueError("Application compiler did not select only NERDQAXEPLUS2")
+    if board_flags != {identity.board}:
+        raise ValueError(f"Application compiler did not select only {identity.board}")
     if config.get("PARTITION_TABLE_CUSTOM_FILENAME") != "partitions.csv":
         raise ValueError("Unexpected partition layout")
     # Verify the board contract from the reviewed implementation, not a guessed name.
-    board_source = (ROOT / "main/boards/nerdqaxeplus2.cpp").read_text()
-    if 'm_asicModel = "BM1370"' not in board_source or not re.search(r"m_asicCount\s*=\s*4\s*;", board_source):
-        raise ValueError("NERDQAXEPLUS2 source no longer matches BM1370 x4")
+    board_source = (ROOT / identity.board_source).read_text()
+    model_matches = bool(re.search(rf'm_deviceModel\s*=\s*"{re.escape(identity.model)}"\s*;', board_source))
+    if identity == OCT:
+        labels = (ROOT / "main/boards/five_tratum_model_labels.h").read_text()
+        # The real API model is UTF-8; its subscribe agent is the separately
+        # reviewed ASCII constant. Do not relax the QA literal model contract.
+        model_matches = bool(
+            re.search(r'#include\s+"five_tratum_model_labels\.h"', board_source)
+            and re.search(r'm_deviceModel\s*=\s*FiveTratumModels::OctaxeGamma\s*;', board_source)
+            and re.search(r'm_miningAgent\s*=\s*FiveTratumModels::OctaxeGammaMiningAgent\s*;', board_source)
+            and re.search(r'namespace\s+FiveTratumModels\s*\{', labels)
+            and re.search(r'constexpr\s+char\s+OctaxeGamma\[\]\s*=\s*"NerdOCTAXE-\\xCE\\xB3"\s*;', labels)
+            and re.search(r'constexpr\s+char\s+OctaxeGammaMiningAgent\[\]\s*=\s*"NerdOCTAXE-Gamma"\s*;', labels)
+        )
+    if (not re.search(r'm_asicModel\s*=\s*"BM1370"\s*;', board_source)
+        or not re.search(rf"m_asicCount\s*=\s*{identity.asic_count}\s*;", board_source)
+        or not model_matches):
+        raise ValueError("Selected board source no longer matches its exact model/BM1370/count contract")
     partition_text = (ROOT / "partitions.csv").read_text()
     expected_partitions = {"www": ("0x410000", "3M"), "ota_0": ("0x710000", "4M"), "ota_1": ("0xb10000", "4M")}
     rows = [list(map(str.strip, line.split(","))) for line in partition_text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
@@ -176,7 +204,7 @@ def package(build: Path, output: Path) -> dict:
         raise ValueError("Application descriptor version/toolchain does not match")
     if website.stat().st_size != WWW_BYTES:
         raise ValueError("Expected a complete 3 MiB WWW partition image")
-    expected_web = web_provenance(commit, release_version)
+    expected_web = web_provenance(commit, release_version, identity)
     actual_web = json.loads(gzip.decompress((WEB / "build-info.json.gz").read_bytes()))
     if actual_web != expected_web:
         raise ValueError("Compressed web build provenance differs from the paired application")
@@ -215,10 +243,10 @@ def package(build: Path, output: Path) -> dict:
     if output.exists():
         raise ValueError("Output already exists; never overwrite a previously packaged release")
     output.mkdir(parents=True)
-    app_name = "esp-miner-NerdQAxe++.bin"
+    app_name = identity.app_name
     shutil.copy2(firmware, output / app_name)
     shutil.copy2(website, output / "www.bin")
-    archive_name = f"5tratumFW-NerdQAxe++-{release_version}-source.zip"
+    archive_name = f"5tratumFW-{identity.asset_model}-{release_version}-source.zip"
     with zipfile.ZipFile(output / archive_name, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, path in sorted(archive_files.items()):
             archive.write(path, arcname=name)
@@ -229,8 +257,12 @@ def package(build: Path, output: Path) -> dict:
     (output / "web-budget.json").write_text(json.dumps(web_report, indent=2) + "\n")
     manifest = {"schema": 1, "product": "5tratumFW", "version": release_version, "releaseChannel": "BETA", "githubPrerelease": True,
                 "repository": "https://github.com/WillItMod/5tratumFW", "sourceRootInRepository": prefix,
-                "firmwareBuildCommit": commit, "sourceArchiveCommit": commit, "boardProfile": BOARD, "deviceModel": "NerdQAxe++",
-                "asicModel": "BM1370", "asicCount": 4, "physicalPcbRevision": "unidentified", "target": "esp32s3",
+                "firmwareBuildCommit": commit, "sourceArchiveCommit": commit, "boardProfile": identity.board, "deviceModel": identity.model,
+                "asicModel": "BM1370", "asicCount": identity.asic_count, "physicalPcbRevision": "unidentified", "target": "esp32s3",
+                "releaseTag": identity.tag_prefix + release_version.removeprefix(f"5tratumFW-{identity.family}-"),
+                "partitionLayout": {"source": "partitions.csv", "flashBytesAssumed": 16 * 1024 * 1024,
+                    "wwwOffset": "0x410000", "wwwBytes": WWW_BYTES, "otaOffsets": ["0x710000", "0xb10000"],
+                    "otaSlotBytes": APP_BYTES, "physicalLayoutVerified": False},
                 "imageType": "Paired application and WWW OTA images; no factory or NVS image",
                 "idfVersion": idf_version[1:], "idfImage": IDF_IMAGE, "nodeVersion": "24.14.0", "pinnedSubmodules": submodules,
                 "upstream": {"repository": "https://github.com/shufps/ESP-Miner-NerdQAxePlus", "tag": "v1.1.0-rc1-test1",
@@ -239,36 +271,38 @@ def package(build: Path, output: Path) -> dict:
                 "diagnosticDriver": False, "passiveCapture": False, "captureLogs": False,
                 "automaticTrialRollback": bool(config.get("BOOTLOADER_APP_ROLLBACK_ENABLE", False)),
                 "hardwareTested": False, "qualification": "Build/package checks only; consult this version's separate physical validation record",
-                "unsupportedModels": ["Bitaxe Gamma", "NerdQAxe+", "NerdOctAxe", "other Nerd board profiles"],
+                "unsupportedModels": ["Bitaxe Gamma", "NerdQAxe+", "NerdOctAxe", "other Nerd board profiles",
+                    OCT.model if identity == QA else QA.model],
                 "images": {app_name: {"partitionBytes": APP_BYTES}, "www.bin": {"partitionBytes": WWW_BYTES}}}
     names = [app_name, "www.bin", archive_name, "web-budget.json"]
     manifest["files"] = {name: {"bytes": (output / name).stat().st_size, "sha256": sha256(output / name)} for name in names}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     names.append("manifest.json")
     (output / "SHA256SUMS").write_text("".join(f"{sha256(output / name)}  {name}\n" for name in names))
-    return {"package": str(output), "version": release_version, "boardProfile": BOARD, "webPayloadBytes": payload_bytes, "files": len(names)}
+    return {"package": str(output), "version": release_version, "boardProfile": identity.board, "webPayloadBytes": payload_bytes, "files": len(names)}
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(identity: BuildIdentity = QA) -> None:
+    checked_identity(identity)
+    parser = argparse.ArgumentParser(description=f"Verify {identity.model} paired OTA only; never contacts a miner.")
     parser.add_argument("--record-web-build", action="store_true", help="Stamp the actual compressed web build before target compilation")
-    parser.add_argument("--build-dir", default="build/qa-public")
+    parser.add_argument("--build-dir", default=identity.build_directory)
     parser.add_argument("--output", help="New model-specific output directory; defaults under ignored release/")
     args = parser.parse_args()
     try:
         if args.record_web_build:
-            commit, _, _, _ = source_receipt()
-            proof = web_provenance(commit, version())
+            commit, _, _, _ = source_receipt(identity)
+            proof = web_provenance(commit, version(identity), identity)
             (WEB / "build-info.json.gz").write_bytes(gzip.compress((json.dumps(proof, sort_keys=True) + "\n").encode(), mtime=0))
             print(json.dumps({"webVersion": proof["version"], "sourceCommit": commit, "nodeVersion": proof["nodeVersion"]}))
             return
         build = (ROOT / args.build_dir).resolve()
         build.relative_to(ROOT / "build")
-        output = (ROOT / (args.output or f"release/NerdQAxe++/{version()}")).resolve()
+        output = (ROOT / (args.output or f"release/{identity.asset_model}/{version(identity)}")).resolve()
         output.relative_to(ROOT / "release")
-        print(json.dumps(package(build, output), indent=2))
+        print(json.dumps(package(build, output, identity), indent=2))
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError, StopIteration) as error:
-        raise SystemExit(f"QAxe package verification failed: {error}") from error
+        raise SystemExit(f"{identity.model} package verification failed: {error}") from error
 
 
 if __name__ == "__main__":

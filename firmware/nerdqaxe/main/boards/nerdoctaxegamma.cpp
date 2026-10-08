@@ -6,7 +6,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nerdqaxeplus2.h"
-#include <math.h>
+#include "five_tratum_model_labels.h"
+#include <cmath>
 
 static const char *TAG = "nerdoctaxegamma";
 
@@ -16,8 +17,8 @@ NerdOctaxeGamma::NerdOctaxeGamma()
                                 // ASICs 4–7: same MUX select lines, addr 0x4e
                                 Tmp451Mux(GPIO_NUM_2, GPIO_NUM_12, 0x4e)}
 {
-    m_deviceModel = "NerdOCTAXE-γ";
-    m_miningAgent = m_deviceModel;
+    m_deviceModel = FiveTratumModels::OctaxeGamma;
+    m_miningAgent = FiveTratumModels::OctaxeGammaMiningAgent;
     m_asicModel = "BM1370";
     m_asicCount = 8;
 
@@ -39,7 +40,7 @@ NerdOctaxeGamma::NerdOctaxeGamma()
 
     m_swarmColorName = "#11d51e"; // green
 
-    // Hardware voltage regulator detection (available from rev 3.0+)
+    // Read the existing regulator strap; it does not identify the PCB revision.
     // GPIO3 is located next to GPIO10 (TPS_EN) on the board for easy routing
     // The pin has internal pull-down, so older boards without the strapping
     // resistor will default to TPS53647 (backward compatibility)
@@ -62,6 +63,7 @@ NerdOctaxeGamma::NerdOctaxeGamma()
         m_minPin = 30.0;
         m_minCurrentA = 0.0f;
         m_maxCurrentA = 25.0f;
+        delete m_tps;
         m_tps = new TPS53667();
 
         // Extended frequency range for TPS53667 (6 phases, higher power capacity)
@@ -82,8 +84,9 @@ NerdOctaxeGamma::NerdOctaxeGamma()
         m_numPhases = 4;
         m_imax = 180; // 33.2kΩ → 180A max (45A per phase with 4 phases)
         m_ifault = 160.0;
-        m_maxPin = 250.0;
-        m_minPin = 50.0;
+        // Retain the stock v1.0.36 limits for the observed TPS53647 profile.
+        m_maxPin = 200.0;
+        m_minPin = 100.0;
         m_minCurrentA = 0.0f;
         m_maxCurrentA = 20.0f;
         // m_asicFrequencies and m_absMaxAsicFrequency inherited from parent (500-600 MHz, max 800)
@@ -96,10 +99,13 @@ bool NerdOctaxeGamma::initBoard()
 {
     // Call parent initBoard() (VR init, ASIC power-on, etc.)
     bool ret = NerdQaxePlus::initBoard();
+    for (int i = 0; i < m_asicCount; ++i) setChipTemp(i, 0.0f);
+    m_hasTMux[0] = m_hasTMux[1] = false;
+    if (!ret) return false;
 
     // Probe both TMP451 mux chips – only present on newer hardware revisions.
-    // Note: init() will configure the MUX A0/A1 GPIOs as outputs (repurposing
-    // GPIO3 after VR detection, which is already done in the constructor).
+    // init() configures GPIO2/12 as MUX select outputs. GPIO3 remains the
+    // regulator strap; neither probe establishes a physical PCB revision.
     m_hasTMux[0] = (m_tmp451[0].init() == ESP_OK);
     m_hasTMux[1] = (m_tmp451[1].init() == ESP_OK);
 
@@ -126,20 +132,25 @@ void NerdOctaxeGamma::requestChipTemps()
         return;
     }
 
+    if (!m_hasTMux[0] && !m_hasTMux[1]) {
+        // Older boards retain the stock UART ASIC-temperature request path.
+        // Its cadence and response handling remain owned by the base driver.
+        NerdQaxePlus::requestChipTemps();
+        return;
+    }
+
     // Each TMP451 mux covers 4 ASICs on channels 0–3.
     // Both muxes share the same MUX select GPIOs, so select_channel() on either
     // instance controls the same physical lines.
     for (int mux = 0; mux < 2; mux++) {
-        if (!m_hasTMux[mux])
-            continue;
         for (int ch = 0; ch < 4; ch++) {
             int asic_idx = mux * 4 + ch;
             if (asic_idx >= m_asicCount)
                 break;
-            float temp = m_tmp451[mux].get_temperature(ch);
-            if (!isnan(temp)) {
-                setChipTemp(asic_idx, temp);
-            }
+            const float temp = m_hasTMux[mux] ? m_tmp451[mux].get_temperature(ch) : NAN;
+            // A failed/missing channel must not retain an earlier reading.
+            // Keep finite hot readings for the existing overheat protection.
+            setChipTemp(asic_idx, std::isfinite(temp) && temp > 0.0f ? temp : 0.0f);
         }
     }
 }

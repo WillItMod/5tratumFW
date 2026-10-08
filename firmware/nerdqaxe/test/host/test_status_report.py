@@ -48,6 +48,18 @@ class LiveStatusTests(unittest.TestCase):
         self.assertEqual(self.report("zero")["asics"][0]["hashRateGHs"], 0)
         self.assertTrue(self.report("boundary")["asics"][0]["fresh"])
 
+    def test_real_octaxe_model_retains_all_eight_measured_counters(self):
+        d = self.report("octaxe")
+        self.assertEqual(d["hardware"], {"boardModel": "NerdOCTAXE-γ", "asicModel": "BM1370", "asicCount": 8})
+        self.assertEqual([a["hashRateGHs"] for a in d["asics"]], list(range(1000, 1008)))
+        self.assertFalse(d["work"]["independentAssignment"])
+
+    def test_exact_octaxe_exception_does_not_admit_other_unicode_or_field_types(self):
+        for scenario in ("octaxe-suffix", "octaxe-truncated", "octaxe-other-unicode",
+                         "octaxe-control", "octaxe-version", "octaxe-asic"):
+            with self.subTest(scenario=scenario):
+                self.assertFalse(self.report(scenario)["built"])
+
     def test_missing_stale_future_and_invalid_values_are_not_measurements(self):
         d = self.report("unavailable")
         self.assertTrue(all(a["hashRateGHs"] is None and not a["fresh"] for a in d["asics"]))

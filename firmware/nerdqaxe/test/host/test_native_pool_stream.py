@@ -15,6 +15,7 @@ class NativePoolStreamTests(unittest.TestCase):
     sources = (
         "main/stratum/stratum_api.cpp", "main/stratum/stratum_api.h",
         "main/stratum/stratum_task.cpp", "main/stratum/native_pool_stream.h",
+        "main/boards/five_tratum_model_labels.h", "main/boards/nerdoctaxegamma.cpp",
         "test/host/native_pool_stream_harness.cpp", "test/host/test_native_pool_stream.py",
     )
 
@@ -83,6 +84,44 @@ class NativePoolStreamTests(unittest.TestCase):
             with self.subTest(scenario=scenario):
                 agent = self.run_scenario(scenario)["params"][0]
                 self.assertEqual(agent, "5tratumFW/NerdQAxe++/BM1370/5tratumFW-qa-web-a10/work-context-v2")
+
+    def test_actual_octaxe_subscriptions_use_ascii_alias_with_one_parent_and_two_streams(self):
+        frames = self.run_scenario("oct-two-streams")
+        self.assertEqual(len(frames), 2)
+        for index, frame in enumerate(frames):
+            self.assertEqual(frame["id"], 1)
+            self.assertEqual(frame["method"], "mining.subscribe")
+            self.assertEqual(frame["params"], [
+                "5tratumFW/NerdOCTAXE-Gamma/BM1370/5tratumFW-oct-0.1.0-beta.1/"
+                f"native-pool-v1:0102030405060708090a0b0c0d0e0f10:{index}/work-context-v2"])
+            self.assertLessEqual(len(frame["params"][0].encode("ascii")), 192)
+        source = (ROOT / "main/boards/nerdoctaxegamma.cpp").read_text()
+        self.assertIn("m_miningAgent = FiveTratumModels::OctaxeGammaMiningAgent;", source)
+        self.assertIn("m_deviceModel = FiveTratumModels::OctaxeGamma;", source)
+        self.assertEqual(self.source_hashes,
+            {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in self.sources})
+        proof = ROOT / ".cache/native-pool-stream"
+        proof.mkdir(parents=True, exist_ok=True)
+        (proof / "octaxe-subscribe-wire.jsonl").write_text(
+            "".join(json.dumps(frame) + "\n" for frame in frames))
+        (proof / "octaxe-proof.json").write_text(json.dumps({
+            "sourceManifest": self.source_hashes,
+            "integration": "Actual StratumApi.cpp subscribe/send with ASan/UBSan",
+            "model": "NerdOCTAXE-γ",
+            "miningAgent": "NerdOCTAXE-Gamma",
+            "streamIndices": [0, 1],
+            "agentLimitBytes": 192,
+            "transport": "Mock connected socket with seven-byte partial writes",
+            "limitations": "No device, MUX server, UART, identity attestation or ASIC isolation proof.",
+        }, indent=2) + "\n")
+
+    def test_octaxe_identity_failure_stays_legacy_and_utf8_model_cannot_bypass_agent_guard(self):
+        legacy = self.run_scenario("oct-unavailable-id")
+        self.assertEqual(legacy["params"], [
+            "5tratumFW/NerdOCTAXE-Gamma/BM1370/5tratumFW-oct-0.1.0-beta.1/work-context-v2"])
+        retried = self.run_scenario("oct-utf8-model")
+        self.assertEqual(retried["id"], 1)
+        self.assertEqual(retried, self.run_scenario("oct-two-streams")[0])
 
     def test_bounded_builder_never_writes_broken_json_or_overruns(self):
         self.assertTrue(self.run_scenario("bounds")["bounded"])

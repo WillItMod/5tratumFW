@@ -39,6 +39,69 @@ components:
           properties:
             product: {type: string, const: 5tratumFW}
             version: {type: string}
+    FiveTratumMuxPoolStatus:
+      type: object
+      additionalProperties: false
+      required: [index, connected, transportConnected, expired, serverId, ttlSeconds, statusAgeSeconds, coin, workContext]
+      description: Only the currently selected coherent SV1 session can advertise a peer. An acknowledgement is informational and does not authenticate a server or prove payout or independent ASIC work.
+      properties:
+        index: {type: integer, enum: [0, 1]}
+        connected:
+          type: boolean
+          description: A valid current-peer MUX advertisement is younger than 90 seconds. A TCP connection alone is insufficient.
+        transportConnected: {type: boolean}
+        expired: {type: boolean}
+        serverId: {type: 'null', description: No server identity is declared by Gamma's v1 advertisement.}
+        ttlSeconds: {type: integer, const: 90}
+        statusAgeSeconds:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 4294967295
+          description: Advertisement age, or null when no current advertisement exists. Expiry occurs at exactly 90 seconds; reading this endpoint does not renew it.
+        coin: {type: 'null', description: Gamma's v1 parser does not supply coin identity.}
+        workContext: {type: 'null', description: Gamma's v1 parser does not supply job or block context.}
+    FiveTratumStatusSnapshot:
+      allOf:
+        - $ref: '#/components/schemas/FirmwareBinding'
+        - type: object
+          required: [schemaVersion, observedUptimeSeconds, work, asics, coin, workContext, mux]
+          properties:
+            schemaVersion: {type: integer, const: 1}
+            observedUptimeSeconds: {type: integer, minimum: 0, maximum: 9007199254740991}
+            work:
+              type: object
+              additionalProperties: false
+              required: [scope, independentAssignment, poolMode, activePool]
+              properties:
+                scope: {type: string, const: chain-broadcast}
+                independentAssignment: {type: boolean, const: false}
+                poolMode: {type: string, const: failover}
+                activePool: {type: integer, enum: [0, 1], description: Current primary (0) or fallback (1) selection.}
+            asics:
+              type: array
+              maxItems: 0
+              items: {type: object}
+              description: Empty; Gamma reports aggregate hashrate and shared temperatures through system/info, without fabricated per-chip samples.
+            coin: {type: 'null'}
+            workContext: {type: 'null'}
+            mux:
+              type: object
+              additionalProperties: false
+              required: [independentWorkAssignment, pools]
+              properties:
+                independentWorkAssignment: {type: boolean, const: false}
+                pools:
+                  type: array
+                  minItems: 2
+                  maxItems: 2
+                  items: {$ref: '#/components/schemas/FiveTratumMuxPoolStatus'}
+    FiveTratumStatusUnavailable:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok: {type: boolean, const: false}
+        error: {type: string, const: status-unavailable}
     OperatingProfiles:
       allOf:
         - $ref: '#/components/schemas/FirmwareBinding'
@@ -1091,6 +1154,31 @@ components:
       description: Internal server error
 
 paths:
+  /api/5tratum/status:
+    get:
+      operationId: getFiveTratumStatus
+      tags: [system]
+      summary: Read identity-bound Gamma 601/602 work and current-peer MUX status.
+      description: Read-only and uncached. The binding matches operating profiles. Pool/protocol transitions, disconnects, malformed advertisements and expiry cannot retain an earlier MUX acknowledgement. Coin and work context remain null because Gamma supports only the v1 status advertisement.
+      responses:
+        '200':
+          description: Success; unknown or disconnected peers are reported without an acknowledgement.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FiveTratumStatusSnapshot'}
+        '401': {$ref: '#/components/responses/UnauthorizedError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503':
+          description: Device binding, qualified board status or allocation unavailable.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FiveTratumStatusUnavailable'}
   /api/5tratum/profiles:
     get:
       operationId: getOperatingProfiles

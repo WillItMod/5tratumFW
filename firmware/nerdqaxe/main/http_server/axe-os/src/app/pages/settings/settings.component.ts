@@ -10,7 +10,7 @@ import { OtpAuthService, EnsureOtpResult } from '../../services/otp-auth.service
 import { EditComponent } from '../edit/edit.component';
 import { combineLatest } from 'rxjs';
 import { getAppVersion } from '../../app.module';
-import { QaxeRelease, QaxeUpdateCheck, QaxeUpdateService } from '../../services/qaxe-update.service';
+import { QaxeRelease, QaxeUpdateCheck, QaxeUpdateService, releasePolicyForModel } from '../../services/qaxe-update.service';
 
 @Component({
   selector: 'app-settings',
@@ -79,7 +79,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       next: info => {
         this.deviceModel = info.deviceModel;
         this.currentVersion = info.version;
-        this.expectedFileName = `esp-miner-${info.deviceModel.replace(/γ/g, 'Gamma').replace(/\s+/g, '')}.bin`;
+        this.expectedFileName = releasePolicyForModel(info.deviceModel)?.appName || '';
         this.identityLoading = false;
       },
       error: () => {
@@ -91,16 +91,18 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void { this.subscriptions.unsubscribe(); }
 
+  get releaseModelLabel(): string { return releasePolicyForModel(this.deviceModel)?.label || 'supported miner'; }
+
   get releaseCheckMessage(): string {
     const version = this.availableRelease?.version || '';
     switch (this.releaseCheckState) {
-      case 'checking': return 'Checking public QAxe releases…';
+      case 'checking': return `Checking public ${this.releaseModelLabel} releases…`;
       case 'error': return 'Could not check GitHub releases. Check the connection and retry.';
       case 'available': return `${version} is available.`;
       case 'up-to-date': return 'Your application is up to date.';
       case 'newer-build': return 'Your application is newer than the published release.';
-      case 'no-release': return 'No complete QAxe firmware pair is published.';
-      case 'unsupported': return 'This release check supports NerdQAxe++ only.';
+      case 'no-release': return `No complete ${this.releaseModelLabel} firmware pair is published.`;
+      case 'unsupported': return 'This model has no supported release family.';
       default: return '';
     }
   }

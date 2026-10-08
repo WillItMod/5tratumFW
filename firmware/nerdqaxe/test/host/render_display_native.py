@@ -30,6 +30,7 @@ def run():
     result = subprocess.run([str(BUILD / "display-native"), str(OUTPUT)],
                             check=True, text=True, capture_output=True)
     report = json.loads(result.stdout)
+    report["productionDriver"] = json.loads((BUILD / "display-driver-source.json").read_text())
     report["images"] = [str(path) for path in sorted(OUTPUT.glob("*.ppm"))]
     try:
         from PIL import Image

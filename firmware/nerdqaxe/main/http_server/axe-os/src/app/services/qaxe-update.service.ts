@@ -4,9 +4,22 @@ import { Observable, of, throwError } from 'rxjs';
 import { map, switchMap, timeout } from 'rxjs/operators';
 
 const CATALOG = 'https://api.github.com/repos/WillItMod/5tratumFW/releases';
-const APP_NAME = 'esp-miner-NerdQAxe++.bin';
-const TAG = /^qaxe-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.(0|[1-9]\d*))?$/;
-const VERSION = /^5tratumFW-qa-(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.(0|[1-9]\d*))?$/;
+const SEMANTIC_SUFFIX = '(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(alpha|beta|rc)\\.(0|[1-9]\\d*))?';
+interface ReleasePolicy {
+  model: string;
+  label: string;
+  tagPrefix: string;
+  versionPrefix: string;
+  appName: string;
+}
+const POLICIES: readonly ReleasePolicy[] = [
+  { model: 'NerdQAxe++', label: 'QAxe++', tagPrefix: 'qaxe-v', versionPrefix: '5tratumFW-qa-', appName: 'esp-miner-NerdQAxe++.bin' },
+  { model: 'NerdOCTAXE-γ', label: 'OctAxe Gamma', tagPrefix: 'octaxe-v', versionPrefix: '5tratumFW-oct-', appName: 'esp-miner-NerdOCTAXE-Gamma.bin' },
+];
+
+export function releasePolicyForModel(model: string): Readonly<ReleasePolicy> | undefined {
+  return POLICIES.find(policy => policy.model === model);
+}
 
 export interface QaxeRelease {
   tag: string;
@@ -43,9 +56,10 @@ function canonicalUrl(value: unknown, path: string): value is string {
   return typeof value === 'string' && (value === expected || value === expected.replace(/\+/g, '%2B'));
 }
 
-function eligibleRelease(value: any): QaxeRelease | null {
+function eligibleRelease(value: any, policy: Readonly<ReleasePolicy>): QaxeRelease | null {
+  const tagPattern = new RegExp(`^${policy.tagPrefix}${SEMANTIC_SUFFIX}$`);
   if (!value || value.draft !== false || typeof value.prerelease !== 'boolean'
-    || typeof value.tag_name !== 'string' || !versionParts(value.tag_name, TAG)
+    || typeof value.tag_name !== 'string' || !versionParts(value.tag_name, tagPattern)
     || !canonicalUrl(value.html_url, `/WillItMod/5tratumFW/releases/tag/${value.tag_name}`)
     || !Array.isArray(value.assets)) return null;
   const asset = (name: string) => {
@@ -56,8 +70,8 @@ function eligibleRelease(value: any): QaxeRelease | null {
       && canonicalUrl(item.browser_download_url, `/WillItMod/5tratumFW/releases/download/${value.tag_name}/${name}`)
       ? item.browser_download_url as string : null;
   };
-  const appUrl = asset(APP_NAME), webUrl = asset('www.bin');
-  return appUrl && webUrl ? { tag: value.tag_name, version: `5tratumFW-qa-${value.tag_name.slice(6)}`,
+  const appUrl = asset(policy.appName), webUrl = asset('www.bin');
+  return appUrl && webUrl ? { tag: value.tag_name, version: policy.versionPrefix + value.tag_name.slice(policy.tagPrefix.length),
     prerelease: value.prerelease, releaseUrl: value.html_url, appUrl, webUrl } : null;
 }
 
@@ -82,14 +96,17 @@ export class QaxeUpdateService {
   }
 
   check(deviceModel: string, currentVersion: string): Observable<QaxeUpdateCheck> {
-    if (deviceModel !== 'NerdQAxe++') return of({ status: 'unsupported', release: null });
+    const policy = releasePolicyForModel(deviceModel);
+    if (!policy) return of({ status: 'unsupported', release: null });
+    const tagPattern = new RegExp(`^${policy.tagPrefix}${SEMANTIC_SUFFIX}$`);
+    const versionPattern = new RegExp(`^${policy.versionPrefix}${SEMANTIC_SUFFIX}$`);
     return this.releases().pipe(timeout(15000), map(rows => {
-      const releases = rows.map(eligibleRelease).filter((release): release is QaxeRelease => release !== null)
-        .sort((first, second) => compareVersions(versionParts(second.tag, TAG)!, versionParts(first.tag, TAG)!));
+      const releases = rows.map(row => eligibleRelease(row, policy)).filter((release): release is QaxeRelease => release !== null)
+        .sort((first, second) => compareVersions(versionParts(second.tag, tagPattern)!, versionParts(first.tag, tagPattern)!));
       const release = releases[0] || null;
       if (!release) return { status: 'no-release', release: null };
-      const current = versionParts(currentVersion, VERSION);
-      const comparison = current ? compareVersions(current, versionParts(release.tag, TAG)!) : -1;
+      const current = versionParts(currentVersion, versionPattern);
+      const comparison = current ? compareVersions(current, versionParts(release.tag, tagPattern)!) : -1;
       return { status: comparison === 0 ? 'up-to-date' : comparison > 0 ? 'newer-build' : 'available', release };
     }));
   }

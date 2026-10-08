@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <limits>
+#include "display_fixture_platform.h"
 
 static std::array<lv_color_t, 320 * 170> frame{};
 static std::array<lv_color_t, 320 * 170> drawBuffer{};
@@ -78,6 +79,245 @@ static void capture(lv_obj_t *page, const std::string &path) {
     // LVGL cannot load the next screen from a deleted active screen.
     lv_scr_load(parkingScreen);
     lv_obj_del(page);
+}
+
+static void bindAsicFixture(DisplayFixtureWidgets &ui, lv_obj_t *summaryPage,
+                            const FiveTratumDisplay::SummaryWidgets &overview,
+                            lv_obj_t *asicPage, const FiveTratumDisplay::AsicWidgets &details) {
+    ui.ui_MiningScreen = summaryPage;
+    ui.ui_AsicScreen = asicPage;
+    ui.ui_lbAsicPage = details.page;
+    ui.ui_lbSharedPoint = details.point;
+    ui.ui_lbAsicThermal = details.thermal;
+    ui.ui_lbChipTemperatureTitle = details.temperatureTitle;
+    ui.ui_lbTemp = overview.temperature;
+    ui.ui_lbVRExternalTemp = overview.vrExternal;
+    ui.ui_lbVRInternalTemp = overview.vrInternal;
+    ui.ui_lbTempFan = overview.tempFan;
+    for (int row = 0; row < 4; ++row) {
+        ui.ui_lbChipIds[row] = details.indices[row];
+        ui.ui_lbChipRates[row] = details.hashrates[row];
+        ui.ui_lbChipTemps[row] = details.temperatures[row];
+    }
+}
+
+static void bindJobsFixture(DisplayFixtureWidgets &ui, const FiveTratumDisplay::MiningJobWidgets &jobs) {
+    ui.ui_lblJobSource = jobs.source;
+    for (int index = 0; index < 2; ++index) {
+        ui.ui_lblJobCoin[index] = jobs.coin[index];
+        ui.ui_lblJobHeight[index] = jobs.height[index];
+        ui.ui_lblJobDifficulty[index] = jobs.difficulty[index];
+        ui.ui_lblJobNBits[index] = jobs.nBits[index];
+        ui.ui_lblJobAge[index] = jobs.age[index];
+    }
+}
+
+static bool hasLabel(lv_obj_t *parent, const char *value) {
+    if (lv_obj_check_type(parent, &lv_label_class) && !strcmp(lv_label_get_text(parent), value)) return true;
+    for (uint32_t index = 0; index < lv_obj_get_child_cnt(parent); ++index)
+        if (hasLabel(lv_obj_get_child(parent, index), value)) return true;
+    return false;
+}
+
+static void octaxeFixtures(const std::string &directory) {
+    using namespace FiveTratumDisplay;
+    // Eight distinct counter readings detect page offsets and accidental
+    // reuse of ASIC1-4 on the second page. These are cached synthetic samples.
+    for (int index = 0; index < 8; ++index)
+        HASHRATE_MONITOR.samples[index] = {1350.0f + index, fixtureNowUs, true};
+    auto *summaryPage = screen();
+    auto overview = summary(summaryPage);
+    DisplayFixtureWidgets ui{};
+    DisplayDriver driver;
+    driver.m_ui = &ui;
+    ui.ui_lblTempPrice = hiddenValue(summaryPage);
+    ui.ui_lbBrandPowerTemp = hiddenValue(summaryPage);
+    auto *page = screen();
+    auto details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    driver.updateAsicReadings();
+    assert(!strcmp(lv_label_get_text(details.page), "ASIC 1-4 / 8"));
+    assert(!strcmp(lv_label_get_text(details.point), "Configured 700 MHz  /  1180 mV"));
+    assert(!strcmp(lv_label_get_text(details.thermal), "Board 60.1 C | VR ext 54.5 C | int --"));
+    for (int row = 0; row < 4; ++row) {
+        const std::string id = "ASIC " + std::to_string(row + 1);
+        const std::string rate = std::to_string(1350 + row) + " GH/s";
+        assert(id == lv_label_get_text(details.indices[row]));
+        assert(rate == lv_label_get_text(details.hashrates[row]));
+        assert(lv_obj_has_flag(details.temperatures[row], LV_OBJ_FLAG_HIDDEN));
+        assert(!strcmp(lv_label_get_text(details.temperatures[row]), ""));
+    }
+    driver.fixtureAsicButton(fixtureNowUs, false, false);
+    assert(driver.m_asicPageStart == 0);
+    driver.displayOff = true;
+    driver.fixtureAsicButton(fixtureNowUs, true, false);
+    assert(driver.m_asicPageStart == 0);
+    driver.displayOff = false;
+    capture(page, directory + "/display-octaxe-asics-1-4-shared-thermal-simulated.ppm");
+
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    driver.fixtureAsicButton(fixtureNowUs, true, false); // Exact production button case.
+    assert(driver.m_asicPageStart == 4 && driver.m_state == DisplayDriver::UiState::AsicScreen);
+    assert(!strcmp(lv_label_get_text(details.page), "ASIC 5-8 / 8"));
+    for (int row = 0; row < 4; ++row) {
+        const std::string id = "ASIC " + std::to_string(row + 5);
+        const std::string rate = std::to_string(1354 + row) + " GH/s";
+        assert(id == lv_label_get_text(details.indices[row]));
+        assert(rate == lv_label_get_text(details.hashrates[row]));
+        assert(lv_obj_has_flag(details.temperatures[row], LV_OBJ_FLAG_HIDDEN));
+    }
+    driver.fixtureAsicButton(fixtureNowUs, true, false);
+    assert(driver.m_asicPageStart == 4 && driver.m_state == DisplayDriver::UiState::SettingsScreen);
+    capture(page, directory + "/display-octaxe-asics-5-8-shared-thermal-simulated.ppm");
+
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    HASHRATE_MONITOR.samples[5].ghPerSecond = 0; // Fresh zero is a real reading.
+    HASHRATE_MONITOR.samples[6].capturedAtUs = fixtureNowUs - 15000001;
+    HASHRATE_MONITOR.samples[7].available = false;
+    driver.updateAsicReadings();
+    assert(!strcmp(lv_label_get_text(details.hashrates[0]), "1354 GH/s"));
+    assert(!strcmp(lv_label_get_text(details.hashrates[1]), "0 GH/s"));
+    assert(!strcmp(lv_label_get_text(details.hashrates[2]), "--"));
+    assert(!strcmp(lv_label_get_text(details.hashrates[3]), "--"));
+    capture(page, directory + "/display-octaxe-asics-5-8-counter-expired-simulated.ppm");
+
+    for (int index = 0; index < 8; ++index) {
+        HASHRATE_MONITOR.samples[index] = {1350.0f + index, fixtureNowUs, true};
+        fixtureBoard.temperatures[index] = 50.0f + index;
+    }
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    driver.updateAsicReadings();
+    for (int row = 0; row < 4; ++row) {
+        const std::string temperature = std::to_string(54 + row) + ".0 C";
+        assert(temperature == lv_label_get_text(details.temperatures[row]));
+        assert(!lv_obj_has_flag(details.temperatures[row], LV_OBJ_FLAG_HIDDEN));
+    }
+    assert(!lv_obj_has_flag(details.temperatureTitle, LV_OBJ_FLAG_HIDDEN));
+    capture(page, directory + "/display-octaxe-asics-5-8-measured-chip-thermal-simulated.ppm");
+
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    POWER_MANAGEMENT_MODULE.sample.capturedAtUs = fixtureNowUs - 15000001;
+    driver.updateAsicReadings();
+    assert(!strcmp(lv_label_get_text(details.thermal), "Thermal readings unavailable / stale"));
+    assert(lv_obj_has_flag(details.temperatureTitle, LV_OBJ_FLAG_HIDDEN));
+    for (auto *label : details.temperatures) assert(lv_obj_has_flag(label, LV_OBJ_FLAG_HIDDEN));
+    assert(driver.m_temperatureValidUntilUs == -1);
+    capture(page, directory + "/display-octaxe-asics-5-8-thermal-expired-simulated.ppm");
+
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    POWER_MANAGEMENT_MODULE.sample.capturedAtUs = fixtureNowUs;
+    fixtureBoard.shutdown = true;
+    driver.updateAsicReadings();
+    assert(!strcmp(lv_label_get_text(details.thermal), "Thermal readings unavailable / stale"));
+    for (int row = 0; row < 4; ++row) {
+        assert(!strcmp(lv_label_get_text(details.hashrates[row]), "--"));
+        assert(lv_obj_has_flag(details.temperatures[row], LV_OBJ_FLAG_HIDDEN));
+    }
+    capture(page, directory + "/display-octaxe-asics-shutdown-simulated.ppm");
+
+    // Restore fresh board/regulator measurements, keeping missing per-chip
+    // measurements absent. This summary has no fabricated VR internal value.
+    fixtureBoard.shutdown = false;
+    fixtureBoard.temperatures.fill(0);
+    page = screen(); details = asics(page);
+    bindAsicFixture(ui, summaryPage, overview, page, details);
+    driver.updateAsicReadings();
+    assert(!strcmp(lv_label_get_text(overview.temperature), "ASIC board 60.1 C"));
+    assert(!strcmp(lv_label_get_text(overview.vrExternal), "VR external 54.5 C"));
+    assert(!strcmp(lv_label_get_text(overview.vrInternal), "VR internal --"));
+    updateSummaryRate(overview.hashrate, overview.rateUnit, 10828);
+    updatePowerLabels(overview.power, overview.efficiency, 181.25f, 10828);
+    lv_label_set_text(overview.fan, "2522 RPM");
+    lv_label_set_text(overview.route, "Links 2/2");
+    lv_obj_del(page);
+    capture(summaryPage, directory + "/display-octaxe-summary-shared-thermal-simulated.ppm");
+
+    summaryPage = screen(); overview = summary(summaryPage);
+    ui.ui_lbCoinTitle = overview.coinTitle;
+    auto *coinPage = screen(); const auto coinFields = coin(coinPage);
+    auto *brandPage = screen(); const auto brandFields = brandSummary(brandPage, "NerdOCTAXE-γ");
+    auto *jobPage = screen(); auto jobFields = miningJobs(jobPage);
+    bindJobsFixture(ui, jobFields);
+    ui.ui_lbBrandCoin = brandFields.coin;
+    ui.ui_lblCoinIdentity = coinFields.identity;
+    ui.ui_lblCoinName = coinFields.name;
+    ui.ui_lblCoinSource = coinFields.source;
+    ui.ui_lblBTCPrice = coinFields.price;
+    ui.ui_lblHashPrice = coinFields.hashrate;
+    ui.ui_lblTempPrice = coinFields.temperature;
+    const MuxCoinContext dgb{true, "digibyte", "DGB", "DigiByte"};
+    const MuxCoinContext btc{true, "bitcoin", "BTC", "Bitcoin"};
+    StratumManager::MuxDisplayState view{};
+    view.dual = true;
+    view.pools[0].connected = view.pools[0].acknowledged = true;
+    view.pools[1].connected = view.pools[1].acknowledged = true;
+    view.pools[0].coin = dgb; view.pools[1].coin = btc;
+    view.pools[0].workContext = {true, "oct-dgb-A", "1b0404cb", true, 24343478, true, 579000000, 2};
+    view.pools[1].workContext = {true, "oct-btc-B", "1d00ffff", true, 900000, true, 1, 4};
+    driver.m_state = DisplayDriver::UiState::BTCScreen;
+    driver.m_bitcoinFetchingEnabled = true;
+    driver.updateCoinContext(view); // Real current-peer selection and display bodies.
+    lv_obj_update_layout(coinPage);
+    lv_obj_update_layout(brandPage);
+    lv_obj_update_layout(jobPage);
+    lv_obj_update_layout(summaryPage);
+    assert(!driver.m_coinContext.available && !driver.m_bitcoinFetchingEnabled && APIs_FETCHER.disables == 1);
+    assert(!strcmp(lv_label_get_text(overview.coinTitle), "TOTAL HASHRATE"));
+    assert(!strcmp(lv_label_get_text(coinFields.name), "P1 route: DGB"));
+    assert(!strcmp(lv_label_get_text(coinFields.source), "P2 route: BTC"));
+    assert(!strcmp(lv_label_get_text(coinFields.price), "Price unavailable"));
+    assert(!strcmp(lv_label_get_text(jobFields.coin[0]), "P1 / DGB"));
+    assert(!strcmp(lv_label_get_text(jobFields.coin[1]), "P2 / BTC"));
+    assert(!strcmp(lv_label_get_text(jobFields.height[0]), "Block 24343478"));
+    assert(!strcmp(lv_label_get_text(jobFields.height[1]), "Block 900000"));
+    assert(!strcmp(lv_label_get_text(jobFields.source), "Candidate block / bdiff / Shared work"));
+    lv_label_set_text(coinFields.hashrate, "10.83 TH/s");
+    lv_label_set_text(coinFields.temperature, "60.1 C");
+    lv_label_set_text(brandFields.hashrate, "10.83 TH/s");
+    char buffer[80];
+    formatMuxStatus(buffer, sizeof(buffer), MuxState::Connected, MuxState::Connected, true, 0);
+    lv_label_set_text(brandFields.mux, buffer);
+    capture(coinPage, directory + "/display-octaxe-coin-dual-mixed-simulated.ppm");
+    capture(brandPage, directory + "/display-octaxe-brand-dual-mixed-simulated.ppm");
+    capture(jobPage, directory + "/display-octaxe-jobs-dual-mixed-simulated.ppm");
+    lv_obj_del(summaryPage);
+
+    jobPage = screen(); jobFields = miningJobs(jobPage); bindJobsFixture(ui, jobFields);
+    view.pools[1].acknowledged = false;
+    view.pools[1].expired = true;
+    driver.updateGlobalMiningStats(view);
+    lv_obj_update_layout(jobPage);
+    assert(!strcmp(lv_label_get_text(jobFields.height[0]), "Block 24343478"));
+    assert(!strcmp(lv_label_get_text(jobFields.coin[1]), "P2 / unknown"));
+    assert(!strcmp(lv_label_get_text(jobFields.height[1]), "Block --"));
+    assert(!strcmp(lv_label_get_text(jobFields.age[1]), "Job unavailable"));
+    capture(jobPage, directory + "/display-octaxe-jobs-secondary-expired-simulated.ppm");
+
+    BootStatusHistory history;
+    for (const char *stage : {"Settings loaded", "Display ready", "ASIC chain ready (8)", "Waiting for Stratum work"})
+        history.push(stage);
+    page = screen(); const auto boot = bootStatus(page, "NerdOCTAXE-γ", "5tratumFW-oct-0.1.0-beta.1");
+    updateBootStatus(boot, history);
+    assert(!strcmp(lv_label_get_text(boot.lines[2]), "ASIC chain ready (8)"));
+    lv_obj_update_layout(page);
+    assert(hasLabel(page, "NerdOctAxe Gamma")); // Real model input, not a renamed fixture.
+    assert(!hasLabel(page, "NerdOCTAXE-γ"));
+    assert(!strcmp(displayModelLabel("NerdQAxe++"), "NerdQAxe++"));
+    capture(page, directory + "/display-octaxe-boot-simulated.ppm");
+    page = screen(); splash(page, "NerdOCTAXE-γ", true);
+    lv_obj_update_layout(page);
+    assert(hasLabel(page, "NerdOctAxe Gamma"));
+    capture(page, directory + "/display-octaxe-connecting-simulated.ppm");
+    page = screen(); brandSummary(page, "NerdOCTAXE-γ");
+    auto *fault = warning(lv_layer_top(), "MINER OVERHEATED", "Fault code #00000001");
+    assert(lv_obj_get_parent(fault) == lv_layer_top());
+    capture(page, directory + "/display-octaxe-brand-safety-priority-simulated.ppm");
+    lv_obj_del(fault);
 }
 
 int main(int argc, char **argv) {
@@ -371,6 +611,9 @@ int main(int argc, char **argv) {
     assert(lv_obj_get_parent(fault) == lv_layer_top());
     capture(page, directory + "/display-shared-thermal-safety-priority-simulated.ppm");
     lv_obj_del(fault);
+    const unsigned baselinePages = capturedPages;
+    octaxeFixtures(directory);
     std::cout << "{\"passed\":true,\"nativeLvgl\":\"8.3.11\",\"resolution\":[320,170],\"pages\":"
-              << capturedPages << ",\"fixtureOnly\":true}\n";
+              << capturedPages << ",\"octaxePages\":" << capturedPages - baselinePages
+              << ",\"fixtureOnly\":true}\n";
 }

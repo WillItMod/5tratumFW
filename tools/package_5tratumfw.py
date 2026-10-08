@@ -127,6 +127,7 @@ def main():
         'implemented': ['5tratumFW device interface', '601/602 boot identity guard', 'NVS-preserving startup',
                         'Gamma OLED graphics with sample freshness',
                         'Strict informational MUX peer status with 90-second TTL',
+                        'Bound read-only /api/5tratum/status advertisement reporting for OS inventory',
                         'Coinbase decoding off by default; explicit saved settings preserved',
                         'Miner-side 5tratMux connection setup and explicit restart', 'Operating-settings JSON export',
                         'ASIC power-saving pause/resume with requested and applied state',

@@ -1,12 +1,13 @@
 # 5tratumFW — choose your device
 
-5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** Both families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
+5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** The firmware families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
 
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
-| Bitaxe Gamma PCB601 or602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Gamma601 Beta4 installed;602 compiled, unflashed. [Gamma guides](docs/installation.md) · [compatibility](docs/compatibility.md) |
+| Bitaxe Gamma PCB601 or602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Gamma601 Beta5 paired OTA verified; owner-updated602 Beta5 application observed. Beta6 qualification is separate. [Gamma guides](docs/installation.md) · [compatibility](docs/compatibility.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta 3 validation](firmware/nerdqaxe/docs/validation-qa-beta3.md) |
-| QAxe+, NerdOctAxe/OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | Isolated OctAxe candidate; not yet a qualified download | [OctAxe guide](docs/nerdoctaxe.md): verify regulator, PCB and flash layout before migration |
+| QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
 
 Start with [firmware selection and repository layout](docs/firmware-selection.md). Downloads are [model-labelled GitHub prereleases](https://github.com/WillItMod/5tratumFW/releases); use a complete matching image pair, manifest, checksums and corresponding source. Recovery backups/NVS/factory images are never published.
 
@@ -16,7 +17,7 @@ QAxe's native A/B MUX connections have independently configured routes and fresh
 
 ## Gamma family
 
-**Gamma BETA — these root-source images accept Gamma601/602 only. The current source is `5tratumFW-0.1.0-beta.5`.**
+**Gamma BETA — these root-source images accept Gamma601/602 only. The current source is `5tratumFW-0.1.0-beta.6` (candidate).**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
@@ -25,8 +26,8 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ES
 
 | Hardware | This image | Validation |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta 4 paired app/WWW installed; both versions match, saved settings/slots/schedules retained, mining and accepted shares observed. Inline Review placement verified on the device web interface. See the validation record below. |
-| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Compiled support. Device still runs stock v2.14.2; this firmware has not been installed/tested there. |
+| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta5 paired app/WWW installed; saved settings, slots and schedules retained, mining and accepted shares observed. Beta6 adds read-only MUX advertisement reporting and needs its own qualification. |
+| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Compiled support; Beta5 application observed after the owner updated it. That observation does not qualify the Beta6 pair. |
 | Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners (use their separately qualified family, where available) | Incompatible | Do not flash these Gamma images. |
 
 The guard validates an existing NVS board identity; it does not physically identify a PCB. Confirm the physical board revision and existing identity before installing. A missing, unreadable or unsupported identity stops startup before hardware initialization.
@@ -38,7 +39,7 @@ The guard validates an existing NVS board identity; it does not physically ident
 - Existing clock, voltage, fan, network and pool settings retained during compatible OTA updates.
 - Coinbase decoding off by default; explicitly saved choices preserved.
 - Direct SV1/SV2 pool configuration and miner-side 5tratMUX setup in **Pool routing**.
-- Gamma OLED mining/health views and optional fresh peer-advertised MUX status.
+- Gamma OLED mining/health views and fresh peer-advertised MUX status, exposed read-only to OS inventory at `/api/5tratum/status`.
 - Ten named pool slots with direct Apply, ten named tuning slots, and fine manual clock/voltage requests.
 - Weekly pool-switch time points saved on the miner alongside the independent power scheduler.
 
@@ -60,7 +61,7 @@ Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` 
 
 The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The test MUX candidate advertises live status to the Gamma 601. This Gamma receiver currently supports the legacy status acknowledgment; the QAxe's richer coin/block metadata protocol is a separate firmware capability.
 
-See [Beta 5 validation](docs/validation-beta5.md) for this build, [Beta 4 validation](docs/validation-beta4.md) for the preceding installed-device evidence and [Beta 3 validation](docs/validation-beta3.md) for earlier physical control checks. Gamma 602 remains unflashed; source/build compatibility is not hardware qualification.
+See [Beta6 validation](docs/validation-beta6.md) for this candidate, [Beta5 validation](docs/validation-beta5.md) for the released pair, [Beta 4 validation](docs/validation-beta4.md) for the preceding installed-device evidence and [Beta 3 validation](docs/validation-beta3.md) for earlier physical control checks. Source/build compatibility and earlier hardware observations do not qualify a new build.
 
 ## Build
 

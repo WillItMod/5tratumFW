@@ -1,4 +1,5 @@
 #include "capabilities_report.h"
+#include "boards/five_tratum_model_labels.h"
 
 #include <cmath>
 #include <cstdio>
@@ -78,7 +79,8 @@ bool formatDeviceId(const uint8_t digest[32], char output[DEVICE_ID_SIZE]) {
 bool buildReport(JsonDocument &doc, const Snapshot &s) {
     doc.clear();
     if (!validDeviceId(s.deviceId) || !validLabel(s.firmwareVersion) ||
-        !validLabel(s.boardModel) || !validLabel(s.boardProfile) || !validAsicModel(s.asicModel) ||
+        (!validLabel(s.boardModel) && !FiveTratumModels::isOctaxeGamma(s.boardModel)) ||
+        !validLabel(s.boardProfile) || !validAsicModel(s.asicModel) ||
         s.asicCount < 1 || s.asicCount > MAX_ASICS ||
         !validSetting(s.defaultFrequencyMHz) || !validSetting(s.defaultVoltageMv) ||
         !validSetting(s.sourceMaxFrequencyMHz) || !validSetting(s.sourceMaxVoltageMv)) return false;

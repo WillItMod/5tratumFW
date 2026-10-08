@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { QaxeUpdateCheck, QaxeUpdateService } from './qaxe-update.service';
+import { QaxeUpdateCheck, QaxeUpdateService, releasePolicyForModel } from './qaxe-update.service';
 
 const REPOSITORY = 'https://github.com/WillItMod/5tratumFW';
 const CATALOG = 'https://api.github.com/repos/WillItMod/5tratumFW/releases?per_page=100&page=';
 
-function release(tag = 'qaxe-v0.1.0-beta.2'): any {
+function release(tag = 'qaxe-v0.1.0-beta.2', appName = 'esp-miner-NerdQAxe++.bin'): any {
   return { tag_name: tag, draft: false, prerelease: tag.includes('-beta'), html_url: `${REPOSITORY}/releases/tag/${tag}`,
-    assets: ['esp-miner-NerdQAxe++.bin', 'www.bin'].map(name => ({ name, size: 3000000,
+    assets: [appName, 'www.bin'].map(name => ({ name, size: 3000000,
       browser_download_url: `${REPOSITORY}/releases/download/${tag}/${encodeURIComponent(name)}` })) };
 }
 
@@ -127,5 +127,39 @@ describe('QAxe public release checks', () => {
     service.check('NerdQAxe++', '5tratumFW-qa-0.1.0-beta.1').subscribe({ error: value => error = value });
     http.expectOne(CATALOG + '1').flush({ message: 'not a release list' });
     expect(error.message).toBe('Invalid release catalog.');
+  });
+
+  it('keeps QAxe and OctAxe release families isolated even when the other family has a newer version', () => {
+    const oct = release('octaxe-v0.1.0-beta.1', 'esp-miner-NerdOCTAXE-Gamma.bin');
+    expect(check([release(), oct]).release?.tag).toBe('qaxe-v0.1.0-beta.2');
+    let result!: QaxeUpdateCheck;
+    service.check('NerdOCTAXE-γ', 'v1.0.36').subscribe(value => result = value);
+    http.expectOne(CATALOG + '1').flush([release('qaxe-v9.0.0-beta.1'), oct]);
+    expect(result.status).toBe('available');
+    expect(result.release?.version).toBe('5tratumFW-oct-0.1.0-beta.1');
+    expect(result.release?.appUrl).toContain('/octaxe-v0.1.0-beta.1/esp-miner-NerdOCTAXE-Gamma.bin');
+    expect(result.release?.webUrl).toContain('/octaxe-v0.1.0-beta.1/www.bin');
+    expect(check([oct]).status).toBe('no-release');
+  });
+
+  it('rejects QAxe files under Oct tags and recognizes Oct version ordering independently', () => {
+    let result!: QaxeUpdateCheck;
+    service.check('NerdOCTAXE-γ', '5tratumFW-oct-0.1.0-beta.1').subscribe(value => result = value);
+    http.expectOne(CATALOG + '1').flush([release('octaxe-v0.1.0-beta.1')]);
+    expect(result.status).toBe('no-release');
+    const oct = release('octaxe-v0.1.0-beta.1', 'esp-miner-NerdOCTAXE-Gamma.bin');
+    for (const [version, status] of [['5tratumFW-oct-0.1.0-beta.1', 'up-to-date'], ['5tratumFW-oct-0.1.0-beta.2', 'newer-build']]) {
+      service.check('NerdOCTAXE-γ', version).subscribe(value => result = value);
+      http.expectOne(CATALOG + '1').flush([oct]);
+      expect(result.status).toBe(status);
+    }
+  });
+
+  it('maps only the exact reported model to the Oct application filename', () => {
+    expect(releasePolicyForModel('NerdOCTAXE-γ')?.appName).toBe('esp-miner-NerdOCTAXE-Gamma.bin');
+    expect(releasePolicyForModel('NerdQAxe++')?.appName).toBe('esp-miner-NerdQAxe++.bin');
+    for (const model of ['NerdOCTAXE-Gamma', 'NerdOctAxe', 'NerdOCTAXE+', 'Gamma']) {
+      expect(releasePolicyForModel(model)).toBeUndefined();
+    }
   });
 });

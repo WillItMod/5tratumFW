@@ -412,9 +412,15 @@ inline SettingsWidgets settings(lv_obj_t *parent) {
     return fields;
 }
 
+inline const char *displayModelLabel(const char *model) {
+    // The retained small LCD font has no Greek gamma glyph. Keep the real
+    // board/API identity unchanged and spell this exact display label out.
+    return model && !strcmp(model, "NerdOCTAXE-γ") ? "NerdOctAxe Gamma" : (model ? model : "");
+}
+
 inline lv_obj_t *splash(lv_obj_t *parent, const char *model, bool connecting) {
     logo(parent, 40, 0, 240);
-    text(parent, model, 8, 151, 150, &lv_font_montserrat_10, Muted);
+    text(parent, displayModelLabel(model), 8, 151, 150, &lv_font_montserrat_10, Muted);
     lv_obj_t *status = text(parent, connecting ? "Connecting..." : "Starting...", 165, 149, 147,
                             &ui_font_OpenSansBold13, Muted);
     lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_RIGHT, 0);
@@ -425,8 +431,8 @@ struct BootWidgets { lv_obj_t *lines[BootStatusHistory::LINE_COUNT]; };
 
 inline BootWidgets bootStatus(lv_obj_t *parent, const char *model, const char *version) {
     logo(parent, 80, 0, 160);
-    auto *device = text(parent, model, 8, 5, 100, &lv_font_montserrat_10, Muted);
-    setBoundedCoinName(device, model);
+    auto *device = text(parent, displayModelLabel(model), 8, 5, 120, &lv_font_montserrat_10, Muted);
+    setBoundedCoinName(device, displayModelLabel(model));
     text(parent, "STARTUP", 235, 5, 77, &lv_font_montserrat_10, Muted);
     BootWidgets fields{};
     for (size_t i = 0; i < BootStatusHistory::LINE_COUNT; ++i)

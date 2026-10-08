@@ -40,6 +40,20 @@ int main(int argc, char **argv) {
         s.temperaturesC[i] = 50.0f + i;
     }
     if (!strcmp(scenario, "zero")) s.rates[0].ghPerSecond = 0;
+    if (!strcmp(scenario, "octaxe")) {
+        s.boardModel = "NerdOCTAXE-\xCE\xB3";
+        s.asicCount = 8;
+        for (int i = 0; i < s.asicCount; ++i) {
+            s.rates[i] = {1000.0f + i, 25000000, true};
+            s.temperaturesC[i] = 50.0f + i;
+        }
+    }
+    if (!strcmp(scenario, "octaxe-suffix")) s.boardModel = "NerdOCTAXE-\xCE\xB3-extra";
+    if (!strcmp(scenario, "octaxe-truncated")) s.boardModel = "NerdOCTAXE-\xCE";
+    if (!strcmp(scenario, "octaxe-other-unicode")) s.boardModel = "NerdOCTAXE-\xCE\xB4";
+    if (!strcmp(scenario, "octaxe-control")) s.boardModel = "NerdOCTAXE-\xCE\xB3\n";
+    if (!strcmp(scenario, "octaxe-version")) s.firmwareVersion = "NerdOCTAXE-\xCE\xB3";
+    if (!strcmp(scenario, "octaxe-asic")) s.asicModel = "BM1370\xCE\xB3";
     if (!strcmp(scenario, "unavailable")) {
         s.rates[0].available = false;
         s.rates[1].capturedAtUs = 14000000;
