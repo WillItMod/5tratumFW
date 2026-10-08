@@ -1,5 +1,7 @@
 # 5tratumFW — choose your device
 
+**[Download firmware — Gamma, QAxe or OctAxe](DOWNLOADS.md)**
+
 5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** The firmware families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
 
 | Your device | Firmware pair | Qualification and guide |
@@ -9,7 +11,7 @@
 | NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | OctAxe `esp-miner-NerdOCTAXE-Gamma.bin` + matching OctAxe `www.bin` | Qualified Beta3 BETA pair; limited to one owned PCB 2.2 unit. [OctAxe guide](docs/nerdoctaxe.md) · [Beta3 validation](firmware/nerdqaxe/docs/validation-oct-beta3.md) |
 | QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
 
-Start with [firmware selection and repository layout](docs/firmware-selection.md). Downloads are [model-labelled GitHub prereleases](https://github.com/WillItMod/5tratumFW/releases); use a complete matching image pair, manifest, checksums and corresponding source. Recovery backups/NVS/factory images are never published.
+Start with the [three-model download page](DOWNLOADS.md) or [firmware selection and repository layout](docs/firmware-selection.md). Use a complete matching image pair, manifest, checksums and corresponding source. [All GitHub releases](https://github.com/WillItMod/5tratumFW/releases) remain available for history. Recovery backups/NVS/factory images are never published.
 
 The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](firmware/nerdqaxe/readme.md), with its own build/package helpers. The unified interface has Overview, Miner controls, Scheduler, Pool routing, Network and Updates; QAxe retains its extra hardware, protocol/security and integration settings.
 

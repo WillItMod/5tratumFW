@@ -1,5 +1,7 @@
 # Firmware selection and repository structure
 
+For downloads, start with **[Gamma, QAxe or OctAxe](../DOWNLOADS.md)**. This page documents the detailed model and build requirements.
+
 ## Choose before downloading
 
 | Model | Source/build | OTA application filename | Matching website | Current support |
