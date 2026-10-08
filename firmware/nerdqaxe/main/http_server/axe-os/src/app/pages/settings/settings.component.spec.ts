@@ -1,6 +1,6 @@
 import { HttpEventType } from '@angular/common/http';
 import { convertToParamMap } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { SettingsComponent } from './settings.component';
 
 describe('5tratumFW settings navigation and OTA', () => {
@@ -11,6 +11,7 @@ describe('5tratumFW settings navigation and OTA', () => {
   let appUpload: jasmine.Spy;
   let webUpload: jasmine.Spy;
   let auth: jasmine.Spy;
+  let identity: jasmine.Spy;
 
   beforeEach(() => {
     params = new BehaviorSubject(convertToParamMap({}));
@@ -19,8 +20,9 @@ describe('5tratumFW settings navigation and OTA', () => {
     appUpload = jasmine.createSpy('performOTAUpdate').and.returnValue(of({ type: HttpEventType.Response }));
     webUpload = jasmine.createSpy('performWWWOTAUpdate').and.returnValue(of({ type: HttpEventType.UploadProgress, loaded: 1, total: 2 }));
     auth = jasmine.createSpy('ensureOtp$').and.returnValue(of({ totp: '123456' }));
+    identity = jasmine.createSpy('getUpdateInfo').and.returnValue(of({ deviceModel: 'NerdQAxe++', version: '5tratumFW-test' }));
     component = new SettingsComponent({
-      getSettingsV2: () => of({ deviceModel: 'NerdQAxe++', version: '5tratumFW-test' }),
+      getUpdateInfo: identity,
       performOTAUpdate: appUpload, performWWWOTAUpdate: webUpload,
     } as any, { success: () => {}, danger: () => {} } as any,
     { lockUIUntilComplete: () => (stream: any) => stream } as any,
@@ -67,6 +69,40 @@ describe('5tratumFW settings navigation and OTA', () => {
     expect(component.firmwareFileValid).toBeFalse();
     expect(auth).not.toHaveBeenCalled();
     expect(appUpload).not.toHaveBeenCalled();
+  });
+
+  it('holds a selected image until the device identity has arrived', () => {
+    const delayed = new Subject<any>();
+    component.info$ = delayed;
+    component.loadDeviceIdentity();
+    component.selectedFirmwareFile = new File(['fixture'], 'esp-miner-NerdQAxe++.bin');
+    expect(component.identityLoading).toBeTrue();
+    expect(component.expectedFileName).toBe('');
+    expect(component.identityError).toBe('');
+    component.uploadFirmwareFile();
+    expect(auth).not.toHaveBeenCalled();
+    expect(appUpload).not.toHaveBeenCalled();
+    delayed.next({ deviceModel: 'NerdQAxe++', version: 'v1.0.37.3-LTS' });
+    delayed.complete();
+    expect(component.identityLoading).toBeFalse();
+    expect(component.expectedFileName).toBe('esp-miner-NerdQAxe++.bin');
+    expect(component.firmwareFileValid).toBeTrue();
+  });
+
+  it('reports an identity failure separately and accepts a successful retry', () => {
+    component.info$ = throwError(() => new Error('HTTP request failed'));
+    component.loadDeviceIdentity();
+    component.selectedFirmwareFile = new File(['fixture'], 'esp-miner-NerdQAxe++.bin');
+    expect(component.identityLoading).toBeFalse();
+    expect(component.identityError).toContain('Could not read the device model');
+    expect(component.expectedFileName).toBe('');
+    component.uploadFirmwareFile();
+    expect(auth).not.toHaveBeenCalled();
+    expect(appUpload).not.toHaveBeenCalled();
+    component.info$ = of({ deviceModel: 'NerdQAxe++', version: 'v1.0.37.3-LTS' });
+    component.loadDeviceIdentity();
+    expect(component.identityError).toBe('');
+    expect(component.firmwareFileValid).toBeTrue();
   });
 
   it('uses the existing app OTA handler and OTP for a matching Nerd model filename', () => {
