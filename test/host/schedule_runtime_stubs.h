@@ -15,6 +15,7 @@ typedef struct {
     const char *body;
     int code;
     char reply[4096];
+    char content_type[32], response_type[32];
 } httpd_req_t;
 typedef enum { HTTP_GET, HTTP_PUT, HTTP_POST } httpd_method_t;
 typedef struct {

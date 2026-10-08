@@ -4,7 +4,7 @@
 
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Qualified Beta7 BETA pair. Separate short checks on both models. [Gamma guides](docs/installation.md) · [Beta7 validation](docs/validation-beta7.md) |
+| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Qualified Beta8 BETA pair; separate short checks on both models. [Gamma guide](docs/installation.md) · [Beta8 validation](docs/validation-beta8.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Qualified Beta5 BETA pair; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta5 validation](firmware/nerdqaxe/docs/validation-qa-beta5.md) |
 | NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | OctAxe `esp-miner-NerdOCTAXE-Gamma.bin` + matching OctAxe `www.bin` | Qualified Beta3 BETA pair; limited to one owned PCB 2.2 unit. [OctAxe guide](docs/nerdoctaxe.md) · [Beta3 validation](firmware/nerdqaxe/docs/validation-oct-beta3.md) |
 | QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
@@ -13,7 +13,7 @@ Start with [firmware selection and repository layout](docs/firmware-selection.md
 
 The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](firmware/nerdqaxe/readme.md), with its own build/package helpers. The unified interface has Overview, Miner controls, Scheduler, Pool routing, Network and Updates; QAxe retains its extra hardware, protocol/security and integration settings.
 
-The new matched pairs are Gamma `5tratumFW-0.1.0-beta.7`, QAxe `5tratumFW-qa-0.1.0-beta.5` and OctAxe `5tratumFW-oct-0.1.0-beta.3`, built from source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`. Family CI and offline image/source checks passed. All three pairs completed scoped installed-pair checks on 8 October 2026, including separate Gamma 601 and 602 observations. The table distinguishes each pair's current evidence. See [Gamma Beta7](docs/validation-beta7.md), [QAxe Beta5](firmware/nerdqaxe/docs/validation-qa-beta5.md) and [OctAxe Beta3](firmware/nerdqaxe/docs/validation-oct-beta3.md).
+The qualified Gamma pair is `5tratumFW-0.1.0-beta.8`, compiled from source `eff5e633f372bb46a86803580c453645600f5fcd`. Its full pinned build, offline package checks and exact-source CI passed. Separate supervised paired checks on 601 and 602 completed on 8 October 2026; installed strict OS31 inspections completed on both models, with later owner tuning changes recorded separately. It corrects the successful Content-Type of both schedule APIs so strict central clients can inspect the existing JSON. QAxe `5tratumFW-qa-0.1.0-beta.5` and OctAxe `5tratumFW-oct-0.1.0-beta.3` retain their qualified published pairs and source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`; their code and packages are unchanged. See [Gamma Beta8](docs/validation-beta8.md), [QAxe Beta5](firmware/nerdqaxe/docs/validation-qa-beta5.md), [OctAxe Beta3](firmware/nerdqaxe/docs/validation-oct-beta3.md) and the [release index](docs/releases/README.md).
 
 Pool routing now places Primary and Secondary connection editors above the ten named slots. **Save pool settings** saves that connection; **Save to slot** captures its saved configuration into the selected named slot. Each configured slot has explicit **Apply to Primary** and **Apply to Secondary** actions. Opening the page or selecting a slot does not apply it. Invalid, missing or ambiguous acknowledgments leave the operation unconfirmed, with no automatic write retry. Clocks, voltage, cooling, network, credentials and schedules are not changed by this layout update.
 
@@ -21,7 +21,7 @@ QAxe's native A/B MUX connections have independently configured routes and fresh
 
 ## Gamma family
 
-**Gamma BETA — these root-source images accept Gamma 601/602 only. The current qualified pair is `5tratumFW-0.1.0-beta.7`.**
+**Gamma BETA — root-source images accept Gamma 601/602 only. The current qualified pair is `5tratumFW-0.1.0-beta.8`. Beta7 retains its own validation record.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
@@ -30,8 +30,8 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ES
 
 | Hardware | This image | Validation |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta7 paired OTA verified; all 11 web records, exported settings, 20 slots and both schedules matched, with one new accepted share. |
-| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Separate Beta7 paired OTA verified; all 11 web records, exported settings, 20 slots and both schedules matched, with one new accepted share. |
+| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta8 matching app/web and all 11 served records verified; exported settings, 20 slots and both schedules retained; both schedule responses declare JSON; accepted shares increased by one. |
+| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Separate Beta8 pair and all 11 served records verified; exported settings, 20 slots and both schedules retained; both schedule responses declare JSON; accepted shares increased by one. |
 | Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners (use their separately qualified family, where available) | Incompatible | Do not flash these Gamma images. |
 
 The guard validates an existing NVS board identity; it does not physically identify a PCB. Confirm the physical board revision and existing identity before installing. A missing, unreadable or unsupported identity stops startup before hardware initialization.
@@ -65,7 +65,7 @@ Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` 
 
 The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The test MUX candidate advertises live status to the Gamma 601. This Gamma receiver currently supports the legacy status acknowledgment; the QAxe's richer coin/block metadata protocol is a separate firmware capability.
 
-See [Beta7 validation](docs/validation-beta7.md) for the current qualified BETA pair and separate 601/602 installed-device observations. [Beta6 validation](docs/validation-beta6.md), [Beta5 validation](docs/validation-beta5.md), [Beta 4 validation](docs/validation-beta4.md) and [Beta 3 validation](docs/validation-beta3.md) remain historical records for their own images. Physical OLED readability, sustained operation and complete fault recovery remain unqualified by the short Beta7 checks.
+See [Beta8 validation](docs/validation-beta8.md) for the qualified schedule-header pair and separate completed 601/602 checks. [Beta7](docs/validation-beta7.md), [Beta6](docs/validation-beta6.md), [Beta5](docs/validation-beta5.md), [Beta4](docs/validation-beta4.md) and [Beta3](docs/validation-beta3.md) remain historical records for their own images. Physical OLED readability, sustained operation and complete fault recovery remain unqualified by these short checks.
 
 ## Build
 

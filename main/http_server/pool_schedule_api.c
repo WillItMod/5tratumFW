@@ -27,6 +27,7 @@ static esp_err_t get_schedule(httpd_req_t *req)
     if (!allowed(req)) return ESP_OK;
     cJSON *json = pool_schedule_get_json();
     if (!json) return error_response(req, "500 Internal Server Error", "storage-unavailable");
+    httpd_resp_set_type(req, "application/json");
     esp_err_t error = HTTP_send_json(req, json, &prebuffer);
     cJSON_Delete(json); return error;
 }
