@@ -1,6 +1,7 @@
 import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { eASICModel } from '../models/enum/eASICModel';
 import { ISystemInfo } from '../models/ISystemInfo';
 import { IDashboardV2 } from '../models/IDashboardV2';
@@ -15,6 +16,8 @@ import { IInfluxDB } from '../models/IInfluxDB';
 import { IUpdateStatus } from '../models/IUpdateStatus';
 import { HttpHeaders } from '@angular/common/http';
 import { FiveTratumProfiles, PoolSchedule, FiveTratumMiningStatus, PowerReport, PowerSchedule } from '../models/IFiveTratumProfiles';
+
+export type UpdateDeviceIdentity = Pick<ISystemInfo, 'deviceModel' | 'version'>;
 
 const defaultInfo: ISystemInfo = {
   flipscreen: 0,
@@ -221,6 +224,18 @@ export class SystemService {
     return this.httpClient.get<ISettingsV2>(`${uri}/api/v2/settings`);
   }
 
+  // The update page must also work before an older application gains the v2 API.
+  // Read identity only; legacy settings must never be passed to a v2 editor.
+  public getUpdateInfo(uri: string = ''): Observable<UpdateDeviceIdentity> {
+    return this.getInfo(0, 0, uri).pipe(map(info => {
+      if (typeof info?.deviceModel !== 'string' || !info.deviceModel.trim()
+        || typeof info.version !== 'string' || !info.version.trim()) {
+        throw new Error('Device identity is unavailable.');
+      }
+      return { deviceModel: info.deviceModel.trim(), version: info.version };
+    }));
+  }
+
   public updateSettingsV2(uri: string = '', update: any, totp?: string) {
     let headers = new HttpHeaders();
     if (totp) headers = headers.set('X-TOTP', totp);
@@ -253,7 +268,20 @@ export class SystemService {
   }
 
   public getIdentifyV2(uri: string = ''): Observable<IIdentifyV2> {
-    return this.httpClient.get<IIdentifyV2>(`${uri}/api/v2/identify`);
+    return this.httpClient.get<IIdentifyV2>(`${uri}/api/v2/identify`).pipe(
+      catchError(error => {
+        // Older Nerd firmware exposes OTP in v1 system info. Do not turn a
+        // network/authentication failure or missing OTP flag into OTP-off.
+        if (![404, 501].includes(error.status)) return throwError(() => error);
+        return this.getInfo(0, 0, uri).pipe(map(info => {
+          if (typeof info?.otp !== 'boolean' || typeof info.deviceModel !== 'string'
+            || !info.deviceModel.trim()) throw new Error('Device authentication status is unavailable.');
+          return { deviceModel: info.deviceModel, otp: info.otp,
+            defaultTheme: info.defaultTheme || '', apActive: false,
+            can: { enabled: info.can?.enabled === true } };
+        }));
+      }),
+    );
   }
 
   public getSystemV2(): Observable<ISystemV2> {

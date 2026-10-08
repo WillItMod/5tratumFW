@@ -4,9 +4,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Observable, Subscription } from 'rxjs';
 import { shareReplay, switchMap } from 'rxjs/operators';
 import { NbToastrService } from '@nebular/theme';
-import { ISettingsV2 } from '../../models/ISettingsV2';
 import { LoadingService } from '../../services/loading.service';
-import { SystemService } from '../../services/system.service';
+import { SystemService, UpdateDeviceIdentity } from '../../services/system.service';
 import { OtpAuthService, EnsureOtpResult } from '../../services/otp-auth.service';
 import { EditComponent } from '../edit/edit.component';
 import { combineLatest } from 'rxjs';
@@ -28,6 +27,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public currentVersion = '';
   public currentWebVersion = getAppVersion();
   public expectedFileName = '';
+  public identityLoading = true;
+  public identityError = '';
   public selectedFirmwareFile: File | null = null;
   public selectedWebsiteFile: File | null = null;
   public firmwareUpdateProgress = 0;
@@ -35,7 +36,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public isFirmwareUploading = false;
   public isWebsiteUploading = false;
   public firmwareRestartPending = false;
-  public info$: Observable<ISettingsV2>;
+  public info$: Observable<UpdateDeviceIdentity>;
   private subscriptions = new Subscription();
 
   constructor(
@@ -46,7 +47,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
   ) {
-    this.info$ = this.systemService.getSettingsV2().pipe(shareReplay({ refCount: true, bufferSize: 1 }));
+    this.info$ = this.systemService.getUpdateInfo().pipe(shareReplay({ refCount: true, bufferSize: 1 }));
   }
 
   ngOnInit(): void {
@@ -58,10 +59,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.page=data['section'] || 'controls';
       this.section=this.page==='controls' ? (this.sections.some(item=>item.id===legacy)?legacy!:'performance') : this.page;
     }));
-    this.subscriptions.add(this.info$.pipe(this.loadingService.lockUIUntilComplete()).subscribe(info => {
-      this.deviceModel = info.deviceModel;
-      this.currentVersion = info.version;
-      this.expectedFileName = `esp-miner-${info.deviceModel.replace(/γ/g, 'Gamma').replace(/\s+/g, '')}.bin`;
+    this.loadDeviceIdentity();
+  }
+
+  loadDeviceIdentity(): void {
+    if (this.isFirmwareUploading || this.isWebsiteUploading || this.firmwareRestartPending) return;
+    this.identityLoading = true;
+    this.identityError = '';
+    this.deviceModel = this.currentVersion = this.expectedFileName = '';
+    this.subscriptions.add(this.info$.pipe(this.loadingService.lockUIUntilComplete()).subscribe({
+      next: info => {
+        this.deviceModel = info.deviceModel;
+        this.currentVersion = info.version;
+        this.expectedFileName = `esp-miner-${info.deviceModel.replace(/γ/g, 'Gamma').replace(/\s+/g, '')}.bin`;
+        this.identityLoading = false;
+      },
+      error: () => {
+        this.identityLoading = false;
+        this.identityError = 'Could not read the device model. Check the connection and retry.';
+      },
     }));
   }
 
@@ -72,7 +88,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   get firmwareFileValid(): boolean {
-    return !!this.selectedFirmwareFile && this.selectedFirmwareFile.name === this.expectedFileName;
+    return !this.identityLoading && !this.identityError && !!this.expectedFileName
+      && !!this.selectedFirmwareFile && this.selectedFirmwareFile.name === this.expectedFileName;
   }
 
   get websiteFileValid(): boolean {
