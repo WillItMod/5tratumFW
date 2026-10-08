@@ -13,6 +13,8 @@ Start with [firmware selection and repository layout](docs/firmware-selection.md
 
 The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](firmware/nerdqaxe/readme.md), with its own build/package helpers. The unified interface has Overview, Miner controls, Scheduler, Pool routing, Network and Updates; QAxe retains its extra hardware, protocol/security and integration settings.
 
+The next source versions are Gamma `5tratumFW-0.1.0-beta.7`, QAxe `5tratumFW-qa-0.1.0-beta.5` and OctAxe `5tratumFW-oct-0.1.0-beta.3`. They reorganize Pool routing so connection editors appear above the ten named slots, with separate save, slot-storage and destination-specific Apply actions. These source candidates are not yet built, installed or released; the published and installed pairs listed above retain their own validation.
+
 QAxe's native A/B MUX connections have independently configured routes and fresh per-session coin/job information. They use the shared-chain job selector; this does not establish independent physical-chip ownership.
 
 ## Gamma family

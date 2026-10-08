@@ -2,6 +2,8 @@
 
 Use the QAxe-specific `qaxe-v0.1.0-beta.4` prerelease pair, not Gamma assets. Board target: **NERDQAXEPLUS2**, model **NerdQAxe++**, ASIC **BM1370×4**. The tested unit's PCB revision is unidentified; support is not extended to QAxe+, OctAxe or other revisions by a shared name.
 
+The next source version, `5tratumFW-qa-0.1.0-beta.5`, reorganizes the pool editors and named slots. It is not yet built, installed or released. Its model scope is unchanged, and Beta4's installed-pair validation does not qualify the new pair.
+
 There is one QAxe++ application target and filename, not separate 6.0 and 6.1 builds. The existing driver does not distinguish those revisions by power-connector type. The BETA is therefore not described as “6.1 only”, and neither revision has a separately recorded physical qualification. Install the application before the matching web interface when migrating from older upstream firmware; see the [model-detection troubleshooting](../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md#if-the-update-page-cannot-identify-the-model).
 
 - [Installation, matching image pair and USB bootloader recovery](../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md)

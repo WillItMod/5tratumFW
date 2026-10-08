@@ -11,7 +11,9 @@
 
 Check the board label/revision and reported model/ASICs. A common `www.bin` filename does not mean a common web image: download both files from **one model-specific release asset package**. Gamma tags use `v0.1.0-beta.N`; QAxe tags use `qaxe-v0.1.0-beta.N`, with on-device version `5tratumFW-qa-0.1.0-beta.N`. Versions are intentionally family-specific.
 
-The OctAxe source candidate has its own version **`5tratumFW-oct-0.1.0-beta.2`** and tag contract **`octaxe-v0.1.0-beta.2`**. These identify the candidate; they do not assert that a release is published or ready for installation. Its only admitted build identity is **BOARD `NERDOCTAXEGAMMA`, reported model `NerdOCTAXE-γ`, BM1370×8**. That identity does not identify a PCB revision or verify regulator population, wiring or flash layout. The dated bench record applies only to the owned revision 2.2 assembly; no other OctAxe model or assembly is qualified.
+The next source candidates are Gamma **`5tratumFW-0.1.0-beta.7`**, QAxe **`5tratumFW-qa-0.1.0-beta.5`** and OctAxe **`5tratumFW-oct-0.1.0-beta.3`**, with corresponding family tag contracts `v0.1.0-beta.7`, `qaxe-v0.1.0-beta.5` and `octaxe-v0.1.0-beta.3`. They contain the pool-routing layout update and are not yet built, installed or released. The table above describes the earlier published or installed pairs.
+
+The OctAxe candidate's only admitted build identity remains **BOARD `NERDOCTAXEGAMMA`, reported model `NerdOCTAXE-γ`, BM1370×8**. That identity does not identify a PCB revision or verify regulator population, wiring or flash layout. The dated Beta2 bench record applies only to the owned revision 2.2 assembly; no other OctAxe model or assembly is qualified.
 
 The release contains application, WWW, manifest, SHA256SUMS and corresponding source. Read the manifest board/target and image hashes before upload. Both are OTA partition images, not full factory images. Keep the existing settings and a private unit-specific recovery backup; no automatic presets are applied at boot.
 

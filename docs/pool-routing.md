@@ -10,6 +10,12 @@ A saved password remains unchanged until you enter a replacement. Advanced setti
 
 Choose **Save pool settings**, then **Restart device** to apply the saved connection. Unsaved draft edits do not take effect. After restart, check fresh telemetry and the pool's own worker view.
 
+## Named pool slots in the next source layout
+
+Gamma Beta7, QAxe Beta5 and OctAxe Beta3 source candidates place the **Primary** and **Secondary** connection editors above the ten saved slots. They are not yet released. On Nerd Dual pool, Primary and Secondary correspond to native A and B; in failover, Secondary is standby. Gamma's Secondary is its fallback route.
+
+Use **Save pool settings** to persist connection edits. Then select a slot, enter its name and choose **Save to slot** beside that route's save button. This stores the miner's saved connection and credentials; unsaved connection edits are refused with **Save pool settings first**. Each stored row has **Apply to Primary** and **Apply to Secondary**, followed by **Rename** and **Clear**. Rename changes only the slot name and retains its saved connection and password. An Apply to a destination with unsaved edits is refused. Secondary continues to use the existing `poolTarget: "fallback"` API; this naming change does not add a third connection or per-ASIC routing.
+
 ## Connect a Gamma to 5tratMUX
 
 1. Run and configure a compatible 5tratMUX service separately. Configure payout identities and upstream routes there. This firmware repository does not install or deploy the service.

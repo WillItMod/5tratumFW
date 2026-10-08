@@ -17,7 +17,7 @@
       </details>
       <div class="connection-note"><nb-icon icon="shuffle-2-outline"></nb-icon><div><strong>5tratMUX</strong><p>Use its Stratum host, port and miner user in either connection below. Connection status appears on Overview. Independent per ASIC routing is unavailable in this build.</p></div></div>
       <div class="pool-grid">
-        <section class="config-panel pool-panel" *ngFor="let pool of poolPanels">
+        <section class="config-panel pool-panel" *ngFor="let pool of poolPanels" [attr.data-pool-editor]="pool.index">
           <header class="panel-heading"><span class="panel-index">0{{ pool.index + 1 }}</span><h3>{{ poolTabHeader(pool.index) }}</h3></header>
           <div class="field-grid endpoint-grid">
             <label class="field"><span>Host</span><input nbInput [id]="pool.url" [formControlName]="pool.url" type="text" spellcheck="false" autocomplete="off" /><small>Hostname or IP address; omit the protocol and port.</small></label>
@@ -39,19 +39,32 @@
               <div class="field"><nb-checkbox [formControlName]="pool.force">Require verification</nb-checkbox></div>
             </div>
           </details>
+          <footer class="pool-save">
+            <button nbButton size="small" status="primary" type="button" data-save-pool-settings (click)="savePoolSettings(pool.index)" [disabled]="saving || profileBusy || !poolSettingsDirty(pool.index) || poolSettingsInvalid(pool.index)">{{ saving ? 'Saving…' : 'Save pool settings' }}</button>
+            <ng-container *ngIf="profiles">
+              <div class="pool-slot-fields">
+                <label class="field"><span>Save to slot</span><select [ngModel]="poolSaveSlots[pool.index]" [ngModelOptions]="{standalone:true}" (ngModelChange)="selectPoolSaveSlot(pool.index,$event)" [disabled]="saving || profileBusy"><option *ngFor="let item of profiles.pools" [ngValue]="item.slot">{{ item.slot+1 }} · {{ item.name || 'Empty' }}</option></select></label>
+                <label class="field"><span>Slot name</span><input nbInput [(ngModel)]="poolSaveNames[pool.index]" [ngModelOptions]="{standalone:true}" maxlength="48" [disabled]="saving || profileBusy" /></label>
+              </div>
+              <button nbButton size="small" type="button" data-save-pool-slot (click)="saveConnectionToSlot(pool.index)" [disabled]="saving || profileBusy || poolRouteDirty(pool.index) || !poolSaveNames[pool.index].trim()">Save to slot</button>
+              <p *ngIf="poolRouteDirty(pool.index)" class="section-note">Save pool settings first.</p>
+            </ng-container>
+          </footer>
         </section>
       </div>
-      <details class="profile-panel config-panel"><summary>Pool profiles · 10 slots</summary>
-        <p class="section-note">Stored on this miner. Capture copies the saved connection and its credentials. Save connection edits above first.</p><p *ngIf="profilesError" class="profile-error">{{ profilesError }}</p>
-        <ng-container *ngIf="profiles"><div class="profile-fields">
-          <label class="field"><span>Profile slot</span><select [ngModel]="poolSlot" [ngModelOptions]="{standalone:true}" (ngModelChange)="selectPoolSlot($event)"><option *ngFor="let item of profiles.pools" [ngValue]="item.slot">{{ item.slot+1 }} · {{ item.name || 'Empty' }}</option></select></label>
-          <label class="field"><span>Profile name</span><input nbInput [(ngModel)]="poolName" [ngModelOptions]="{standalone:true}" maxlength="48" /></label>
-          <label class="field"><span>Connection</span><select [(ngModel)]="poolTarget" [ngModelOptions]="{standalone:true}"><option value="primary">{{ form.controls['poolMode'].value === 1 ? 'Connection A' : 'Primary' }}</option><option value="fallback">{{ form.controls['poolMode'].value === 1 ? 'Connection B' : 'Fallback' }}</option></select></label></div>
-          <p *ngIf="selectedProfile('pool')?.configured" class="section-note">{{ selectedProfile('pool')?.host }}:{{ selectedProfile('pool')?.port }} · {{ selectedProfile('pool')?.user }} · {{ selectedProfile('pool')?.passwordConfigured ? 'Password stored' : 'No password' }}</p>
-          <div class="profile-actions"><button nbButton size="small" type="button" (click)="savePoolProfile()" [disabled]="profileBusy || !poolName.trim()">Save {{ poolTargetLabel }} to slot</button><button nbButton size="small" status="primary" type="button" (click)="applySavedProfile('pool')" [disabled]="profileBusy || !selectedProfile('pool')?.configured">Apply to {{ poolTargetLabel }}</button><button nbButton size="small" ghost type="button" (click)="clearProfile('pool')" [disabled]="profileBusy || !selectedProfile('pool')?.configured">Clear slot</button></div>
-          <p class="section-note">Per-ASIC Apply is unavailable: this firmware sends shared jobs to the ASIC chain.</p>
-        </ng-container>
-      </details>
+      <div class="pool-restart" *ngIf="requiresReboot || restartPending"><p class="section-note">{{ restartPending ? 'Saved changes require a restart.' : 'These changes require a restart after saving.' }}</p><button *ngIf="restartPending" nbButton size="small" status="basic" type="button" (click)="restart()" [disabled]="saving || profileBusy">Restart miner</button></div>
+      <section class="config-panel saved-pools" data-saved-pools>
+        <h3>Saved pools · 10 slots</h3>
+        <p class="section-note">Stored on this miner, including connection credentials. Apply a slot to Primary or Secondary.</p>
+        <p *ngIf="profilesError" class="profile-error" role="status">{{ profilesError }}</p>
+        <div class="saved-pool-row" *ngFor="let item of profiles?.pools" [attr.data-pool-slot-row]="item.slot">
+          <div class="saved-pool-info"><strong>{{ item.slot+1 }} · {{ item.name || 'Empty' }}</strong><p *ngIf="item.configured">{{ item.host }}:{{ item.port }} · {{ item.user }} · {{ item.passwordConfigured ? 'Password stored' : 'No password' }}</p></div>
+          <div class="saved-pool-actions">
+            <div class="pool-apply-actions"><button nbButton size="small" type="button" (click)="applyPoolSlot(item.slot,0)" [disabled]="saving || profileBusy || !item.configured || poolRouteDirty(0)">Apply to Primary</button><button nbButton size="small" type="button" (click)="applyPoolSlot(item.slot,1)" [disabled]="saving || profileBusy || !item.configured || poolRouteDirty(1)">Apply to Secondary</button></div>
+            <div class="pool-rename-actions"><label class="field"><span>Slot name</span><input nbInput [(ngModel)]="poolRenameNames[item.slot]" [ngModelOptions]="{standalone:true}" [attr.aria-label]="'Name for pool slot '+(item.slot+1)" maxlength="48" [disabled]="saving || profileBusy || !item.configured" /></label><button nbButton size="small" ghost type="button" (click)="renamePoolSlot(item.slot)" [disabled]="saving || profileBusy || !item.configured || !poolRenameNames[item.slot]?.trim() || poolRenameNames[item.slot]?.trim()===item.name">Rename</button><button nbButton size="small" ghost type="button" (click)="clearPoolSlot(item.slot)" [disabled]="saving || profileBusy || !item.configured">Clear slot</button></div>
+          </div>
+        </div>
+      </section>
 
     </section>
 
@@ -168,7 +181,7 @@
       <p *ngIf="!hasCanExtension" class="section-note">No CAN extension reported by this device.</p>
     </section>
 
-    <div class="save-bar" [hidden]="section === 'update' || section === 'security' || section === 'scheduler'">
+    <div class="save-bar" [hidden]="section === 'update' || section === 'security' || section === 'scheduler' || section === 'pool'">
       <div><span *ngIf="sectionDirty">Unsaved changes</span><span *ngIf="!sectionDirty">Settings loaded</span><small *ngIf="requiresReboot || restartPending">Restart required after saving.</small></div>
       <div class="save-actions"><button nbButton status="basic" size="small" type="button" (click)="restart()">Restart</button><button nbButton status="primary" size="small" type="button" [disabled]="sectionInvalid || !sectionDirty || saving" (click)="confirmSave(warningDialog)">{{ saving ? 'Saving…' : 'Save this section' }}</button></div>
     </div>

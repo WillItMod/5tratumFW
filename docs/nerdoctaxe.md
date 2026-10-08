@@ -1,6 +1,6 @@
 # NerdOCTAXE-Gamma candidate
 
-The first OctAxe port is a **source and build candidate**, with current paired version `5tratumFW-oct-0.1.0-beta.2`. One owned revision 2.2 unit has completed a supervised, scoped installation and bench. This guide does not announce a published or generally qualified release.
+The OctAxe port remains a **source and build candidate**. Its next source version is `5tratumFW-oct-0.1.0-beta.3`, containing the pool-routing layout update; this pair is not yet built or installed. The earlier `5tratumFW-oct-0.1.0-beta.2` pair completed a supervised, scoped installation and bench on one owned revision 2.2 unit. This guide does not announce a published or generally qualified release.
 
 Its exact target is **NERDOCTAXEGAMMA**, reported model **NerdOCTAXE-γ**, **eight BM1370 ASICs**, and an ESP32-S3 controller. The application asset is `esp-miner-NerdOCTAXE-Gamma.bin`; its `www.bin` belongs to the same OctAxe package. The ASCII asset/mining-agent name and the existing UTF-8 API model name describe the same selected software target.
 

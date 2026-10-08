@@ -2,7 +2,7 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The QAxe release uses a separate version, such as `5tratumFW-qa-0.1.0-beta.3`. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version.
+The current QAxe source version is `5tratumFW-qa-0.1.0-beta.5`, an unbuilt pool-routing layout candidate. The published Beta4 pair retains its own validation; that record does not qualify this new source. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version.
 
 ## Requirements
 
@@ -61,7 +61,7 @@ These files contain no NVS partition and are not merged factory flash images. Us
 Check package hashes before installation:
 
 ```sh
-cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.3'
+cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.5'
 shasum -a 256 -c SHA256SUMS
 ```
 

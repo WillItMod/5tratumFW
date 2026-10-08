@@ -3,10 +3,8 @@
         <h1>Pool routing</h1>
     </header>
 
-    <app-operating-profiles type="pool" [uri]="uri"></app-operating-profiles>
-
     <form [formGroup]="form" *ngIf="form" [attr.aria-busy]="busy">
-        <fieldset class="connection-fields" [disabled]="busy">
+        <fieldset class="connection-fields" [disabled]="busy || profileBusy || !!poolProfiles?.busy">
         <div class="connection-mode" role="group" aria-label="Connection type">
             <button type="button" [class.is-selected]="connectionMode === 'direct'" [attr.aria-pressed]="connectionMode === 'direct'" (click)="selectConnectionMode('direct')">Direct pool</button>
             <button type="button" [class.is-selected]="connectionMode === 'mux'" [attr.aria-pressed]="connectionMode === 'mux'" (click)="selectConnectionMode('mux')">5tratMux</button>
@@ -16,7 +14,7 @@
             <strong>{{deviceState}}</strong>
             <small *ngIf="connectionMode === 'mux' && muxObservation">{{muxObservation.detail}}</small>
             <span>Device primary: <span sensitive-data>{{savedPrimaryEndpoint}}</span></span>
-            <span *ngIf="telemetryFresh && info">Reported route: {{info.isUsingFallbackStratum ? 'Fallback' : 'Primary'}} · Accepted shares: {{info.sharesAccepted | number:'1.0-0'}}</span>
+            <span *ngIf="telemetryFresh && info">Reported route: {{info.isUsingFallbackStratum ? 'Secondary (fallback)' : 'Primary'}} · Accepted shares: {{info.sharesAccepted | number:'1.0-0'}}</span>
         </div>
         <div *ngIf="connectionMode === 'direct' && isAnyPoolUsingDefaultAddress()" class="routing-warning" role="alert">
             <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
@@ -27,7 +25,7 @@
             <button type="button" *ngFor="let pool of pools" [class.is-selected]="selectedPool === pool"
                 [attr.aria-pressed]="selectedPool === pool" (click)="selectedPool = pool">
                 <span class="routing-path-copy">
-                    <strong>{{ pool === 'stratum' ? 'Primary route' : 'Fallback route' }}</strong>
+                    <strong>{{ pool === 'stratum' ? 'Primary route' : 'Secondary route' }}</strong>
                     <span>{{ form.get(pool + 'URL')?.value || 'No target configured' }}<small *ngIf="form.get(pool + 'URL')?.value">:{{ form.get(pool + 'Port')?.value }}</small></span>
                 </span>
             </button>
@@ -36,7 +34,7 @@
         <section class="routing-editor" *ngFor="let pool of editablePools" [hidden]="selectedPool !== pool"
             [attr.aria-labelledby]="pool + 'RouteHeading'">
             <div class="routing-editor-intro">
-                <h2 [id]="pool + 'RouteHeading'">{{connectionMode === 'mux' ? '5tratMux connection' : pool === 'stratum' ? 'Primary connection' : 'Fallback connection'}}</h2>
+                <h2 [id]="pool + 'RouteHeading'">{{connectionMode === 'mux' ? 'Primary · 5tratMux connection' : pool === 'stratum' ? 'Primary connection' : 'Secondary connection'}}</h2>
                 <p>{{connectionMode === 'mux' ? 'Worker identity and LAN endpoint.' : pool === 'stratum' ? 'The pool this device uses first.' : 'Used when the primary cannot be reached.'}}</p>
                 <span *ngIf="connectionMode === 'direct'" class="routing-protocol">{{ form.get(pool + 'Protocol')?.value }} <span>/</span> {{ isPoolV2Enabled(pool) ? 'Noise encryption' : (form.get(pool + 'TLS')?.value ? 'TLS' : 'TCP') }}</span>
             </div>
@@ -168,27 +166,37 @@
 
         <section *ngIf="connectionMode === 'mux'" class="connection-mux-options" aria-label="MUX connection options">
             <p>Stratum V1 / TCP · extranonce on · difficulty 0 · coinbase decoding off · primary selected.</p>
-            <p>Saved fallback retained: <span sensitive-data>{{savedFallbackEndpoint}}</span>.</p>
-            <p *ngIf="fallbackDraftDirty" class="routing-caution">Fallback has unsaved edits. They are not included in a MUX save.</p>
-            <p *ngIf="fallbackUsesFactoryAddress" class="routing-caution">The retained fallback uses the factory Bitcoin address. Edit it under Direct pool before use.</p>
+            <p>Saved Secondary (fallback) retained: <span sensitive-data>{{savedFallbackEndpoint}}</span>.</p>
+            <p *ngIf="fallbackDraftDirty" class="routing-caution">Secondary has unsaved edits. They are not included in a MUX save.</p>
+            <p *ngIf="fallbackUsesFactoryAddress" class="routing-caution">The retained Secondary uses the factory Bitcoin address. Edit it under Direct pool before use.</p>
             <a *ngIf="muxConsoleUrl" [href]="muxConsoleUrl" target="_blank" rel="noopener noreferrer">Open MUX console <i class="pi pi-external-link" aria-hidden="true"></i></a>
             <small>Confirm the worker and upstream route in MUX. Device settings and share counts do not verify that route or payouts.</small>
         </section>
         <section *ngIf="connectionMode === 'mux' && reviewedPatch" class="connection-review" aria-label="Review MUX connection">
             <h3>Review MUX connection</h3>
             <dl><div><dt>Primary endpoint</dt><dd sensitive-data>{{reviewedPatch.stratumURL}}:{{reviewedPatch.stratumPort}}</dd></div><div><dt>Worker</dt><dd sensitive-data>{{reviewedPatch.stratumUser}}</dd></div><div><dt>Password</dt><dd>{{reviewedPatch.stratumPassword === undefined ? 'Keep saved password' : reviewedPatch.stratumPassword === '' ? 'Use an empty password' : 'Replace password'}}</dd></div></dl>
-            <p>The MUX options above replace the primary protocol settings. Fallback settings stay unchanged.</p>
+            <p>The MUX options above replace the Primary protocol settings. Secondary settings stay unchanged.</p>
         </section>
         <p *ngIf="error" class="connection-error" role="alert">{{error}}</p>
         <footer class="routing-save-bar">
-            <div><strong>{{restartPending ? (restartRequested ? 'Restart requested' : 'Saved · restart required') : form.dirty ? 'Unsaved connection edits' : restartObserved ? 'Restart observed' : 'Device configuration'}}</strong><p>{{restartPending ? 'Restart applies the saved connection. Unsaved edits are not applied.' : connectionMode === 'mux' ? 'Review the primary connection, save, then restart separately.' : 'Save primary and fallback settings together. Restart required.'}}</p></div>
+            <div><strong>{{restartPending ? (restartRequested ? 'Restart requested' : 'Saved · restart required') : selectedRouteDirty ? 'Unsaved '+slotSourceLabel+' edits' : restartObserved ? 'Restart observed' : slotSourceLabel+' connection'}}</strong><p>{{restartPending ? 'Restart applies the saved connection. Unsaved edits are not applied.' : connectionMode === 'mux' ? 'Review the Primary connection, save, then restart separately.' : 'Save this connection. Edits to the other route stay unsaved. Secondary is used as fallback. Restart required.'}}</p></div>
             <div class="routing-save-actions">
-                <button *ngIf="connectionMode === 'direct'" type="button" class="routing-button routing-button-primary" [disabled]="busy || !form.dirty || form.invalid" (click)="updateSystem()">Save pool settings</button>
+                <button *ngIf="connectionMode === 'direct'" type="button" class="routing-button routing-button-primary" [disabled]="busy || !selectedRouteDirty || selectedRouteInvalid" (click)="updateSystem()">Save pool settings</button>
                 <button *ngIf="connectionMode === 'mux' && !reviewedPatch" type="button" class="routing-button routing-button-primary" [disabled]="busy" (click)="reviewMuxConnection()">Review MUX connection</button>
                 <button *ngIf="connectionMode === 'mux' && reviewedPatch" type="button" class="routing-button routing-button-primary" [disabled]="busy" (click)="updateSystem()">Save MUX connection</button>
                 <button type="button" class="routing-button" [disabled]="!restartPending || busy || restartRequested || !telemetryFresh" (click)="restart()">{{restartRequested ? 'Restart requested' : 'Restart device'}}</button>
+            <div class="routing-slot-save" aria-label="Save connection to a pool slot">
+                <span>{{slotSourceLabel}} saved connection</span>
+                <label>Slot<select [value]="selectedPoolSlot" (change)="selectPoolSlot(+$any($event.target).value)" [disabled]="profileBusy || poolSlots.length !== 10"><option *ngFor="let slot of poolSlots" [value]="slot.slot">{{slot.slot + 1}}{{slot.name ? ' · ' + slot.name : ' · Empty'}}</option></select></label>
+                <label>Name<input type="text" [value]="poolSlotName" (input)="editPoolSlotName($any($event.target).value)" maxlength="32" placeholder="Name this slot" [disabled]="profileBusy || poolSlots.length !== 10" /></label>
+                <button type="button" class="routing-button" (click)="saveConnectionToSlot()" [disabled]="busy || profileBusy || !!poolProfiles?.busy || poolSlots.length !== 10 || !poolSlotName.trim()">Save to slot</button>
+                <small>Save connection edits first. The miner stores the saved route and its private password.</small>
+                <p *ngIf="poolSlotError" class="connection-error" role="alert">{{poolSlotError}} <button type="button" class="routing-button" (click)="loadPoolSlots()" [disabled]="profileBusy">Refresh slots</button></p>
+                <p *ngIf="poolSlotMessage" role="status">{{poolSlotMessage}}</p>
+            </div>
             </div>
         </footer>
         </fieldset>
     </form>
+    <app-operating-profiles type="pool" [uri]="uri" [connectionDirty]="connectionDirty" [parentBusy]="busy || profileBusy" (applied)="poolSlotApplied($event)" (slotsChanged)="poolSlotsUpdated($event)"></app-operating-profiles>
 </div>

@@ -4,6 +4,10 @@ This API stores ten named tuning slots and ten named pool slots on the miner, in
 
 All endpoints inherit the existing LAN/network restriction and CORS policy. POST requests require `Content-Type: application/json` and the miner's existing OTP authorization: `X-TOTP` or `X-OTP-Session` when OTP is enabled. Never disable that check for hub requests. A hub must verify the peer's complete `identity.deviceId`, firmware product/version and hardware model/count against its discovered inventory immediately before a write. A network address alone is not device identity.
 
+## Pool page in the next source layout
+
+The unbuilt QAxe Beta5 and OctAxe Beta3 source candidates put **Primary** and **Secondary** editors above the ten slots. In Dual pool these are native A/B; in failover Secondary is standby. Save connection edits with **Save pool settings**, then choose a slot/name and **Save to slot** beside that route's save button. Storage reads the saved miner connection, including private credentials; dirty connection drafts must be saved first. Stored rows expose **Apply to Primary**, **Apply to Secondary**, **Rename** and **Clear**. Rename sends only `type`, `slot` and `name`, retaining the existing descriptor and password. Secondary maps to the unchanged `fallback` API value. These actions do not assign work to individual ASICs.
+
 ## GET /api/5tratum/profiles
 
 Readonly; no default slots or settings are written. Response:

@@ -1,12 +1,14 @@
-import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, ValidatorFn, ValidationErrors, AbstractControl, FormControl } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { LoadingService } from 'src/app/services/loading.service';
 import { SystemApiService } from 'src/app/services/system.service';
 import { LiveDataService } from 'src/app/services/live-data.service';
-import { Subject, takeUntil, finalize, timer, exhaustMap, catchError, EMPTY } from 'rxjs';
+import { Subject, takeUntil, finalize, timer, exhaustMap, catchError, EMPTY, concatMap, tap } from 'rxjs';
 import { SystemInfo } from 'src/app/generated/models';
 import { MuxConnectionInput, MuxConnectionMonitor, MuxConnectionPatch, MuxObservation, buildMuxConnectionPatch, validMuxHost } from 'src/app/services/mux-connection.service';
+import { OperatingProfilesService, PoolSlot, Profiles } from 'src/app/services/operating-profiles.service';
+import { OperatingProfilesComponent, ProfileApplied } from 'src/app/components/operating-profiles/operating-profiles.component';
 
 type PoolType = 'stratum' | 'fallbackStratum';
 type ConnectionMode = 'direct' | 'mux';
@@ -50,6 +52,15 @@ export class PoolComponent implements OnInit, OnDestroy {
   private restartBaselineUptime = 0;
   private restartRequestedAt = 0;
   private confirmedMuxConnection?: MuxConnectionInput;
+  private connectionBaseline: Record<string, unknown> = {};
+  @ViewChild(OperatingProfilesComponent) poolProfiles?: OperatingProfilesComponent;
+  public poolSlots: PoolSlot[] = [];
+  public selectedPoolSlot = 0;
+  public poolSlotName = '';
+  private poolSlotNameEdited = false;
+  public profileBusy = false;
+  public poolSlotError = '';
+  public poolSlotMessage = '';
 
   public readonly DEFAULT_BITCOIN_ADDRESS = 'bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq';
 
@@ -83,7 +94,8 @@ export class PoolComponent implements OnInit, OnDestroy {
     private systemService: SystemApiService,
     private liveDataService: LiveDataService,
     private toastr: ToastrService,
-    private loadingService: LoadingService
+    private loadingService: LoadingService,
+    private profilesService: OperatingProfilesService
   ) { }
 
   ngOnInit(): void {
@@ -137,6 +149,7 @@ export class PoolComponent implements OnInit, OnDestroy {
           fallbackStratumV2ChannelType: [info.fallbackStratumV2ChannelType || 'standard']
         });
 
+        this.connectionBaseline = { ...this.form.getRawValue() };
         for (const pool of this.pools) {
           this.form.get(pool + 'TLS')!.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => this.updateAdvancedValidation(pool));
           this.form.get(pool + 'Protocol')!.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => this.updateAdvancedValidation(pool));
@@ -148,6 +161,7 @@ export class PoolComponent implements OnInit, OnDestroy {
         });
       });
     this.freshnessTimer = setInterval(() => this.now = Date.now(), 1000);
+    this.loadPoolSlots();
   }
 
   ngOnDestroy(): void {
@@ -191,6 +205,100 @@ export class PoolComponent implements OnInit, OnDestroy {
   get savedPrimaryEndpoint(): string { return this.info?.stratumURL ? `${this.info.stratumURL}:${this.info.stratumPort}` : 'Unavailable'; }
   get savedFallbackEndpoint(): string { return this.info?.fallbackStratumURL ? `${this.info.fallbackStratumURL}:${this.info.fallbackStratumPort}` : 'Not configured'; }
   get fallbackDraftDirty(): boolean { return !!this.form && Object.entries(this.form.controls).some(([key, control]) => key.startsWith('fallbackStratum') && control.dirty); }
+  get slotSource(): 'primary' | 'fallback' { return this.connectionMode === 'mux' || this.selectedPool === 'stratum' ? 'primary' : 'fallback'; }
+  get slotSourceLabel(): string { return this.slotSource === 'primary' ? 'Primary' : 'Secondary'; }
+  get selectedRouteDirty(): boolean { return this.routeHasUnsavedChanges(this.selectedPool); }
+  get selectedRouteInvalid(): boolean { return !!this.form && Object.entries(this.form.controls).some(([key, control]) => key.startsWith(this.selectedPool) && control.enabled && control.invalid); }
+  get connectionDirty(): { primary: boolean; fallback: boolean } {
+    return { primary: this.routeHasUnsavedChanges('stratum'), fallback: this.routeHasUnsavedChanges('fallbackStratum') };
+  }
+  routeHasUnsavedChanges(pool: PoolType): boolean {
+    if (!this.form) return false;
+    if (Object.entries(this.form.controls).some(([key, control]) => key.startsWith(pool)
+      && (control.dirty || !Object.is(control.value, this.connectionBaseline[key])))) return true;
+    if (pool === 'stratum' && this.connectionMode === 'mux') {
+      try {
+        const preset = buildMuxConnectionPatch(this.muxConnection);
+        return Object.entries(preset).some(([key, value]) => !!this.form.get(key) && !Object.is(this.form.get(key)!.value, value));
+      } catch { return true; }
+    }
+    return false;
+  }
+  loadPoolSlots(): void {
+    if (this.profileBusy) return;
+    this.profileBusy = true;
+    this.profilesService.get(this.uri).pipe(takeUntil(this.destroy$), finalize(() => this.profileBusy = false)).subscribe({
+      next: data => { this.receivePoolSlots(data); this.poolSlotError = ''; },
+      error: () => this.poolSlotError = 'Saved pool slots could not be loaded. Retry before saving to a slot.'
+    });
+  }
+  private receivePoolSlots(data: Profiles): void {
+    this.poolSlots = data.pools;
+    this.poolSlotName = this.poolSlots[this.selectedPoolSlot]?.name || '';
+    this.poolSlotNameEdited = false;
+  }
+  poolSlotsUpdated(slots: PoolSlot[]): void {
+    this.poolSlots = slots;
+    if (!this.poolSlotNameEdited) this.poolSlotName = slots[this.selectedPoolSlot]?.name || '';
+  }
+  editPoolSlotName(value: string): void {
+    this.poolSlotName = value; this.poolSlotNameEdited = true;
+  }
+  selectPoolSlot(slot: number): void {
+    if (!Number.isInteger(slot) || slot < 0 || slot > 9 || this.profileBusy) return;
+    this.selectedPoolSlot = slot;
+    this.poolSlotName = this.poolSlots[slot]?.name || '';
+    this.poolSlotNameEdited = false;
+    this.poolSlotError = ''; this.poolSlotMessage = '';
+  }
+  saveConnectionToSlot(): void {
+    if (this.busy || this.profileBusy || this.poolProfiles?.busy || !this.form || this.poolSlots.length !== 10) return;
+    const target = this.slotSource;
+    if (this.connectionDirty[target]) {
+      this.poolSlotError = `Save ${this.slotSourceLabel} pool settings first, then save the connection to a slot.`; return;
+    }
+    const slot = this.selectedPoolSlot, name = this.poolSlotName.trim();
+    if (!Number.isInteger(slot) || slot < 0 || slot > 9 || !name || name.length > 32) return;
+    this.profileBusy = true; this.poolSlotError = ''; this.poolSlotMessage = '';
+    let acknowledged = false;
+    // The miner copies its persisted route and private password. No draft or
+    // placeholder password is sent to the profile API.
+    this.profilesService.save({type: 'pool', slot, name, captureCurrent: target}, this.uri).pipe(
+      tap(result => { if (result.ok !== true || result.restartRequired !== false) throw new Error('slot-save-not-confirmed'); acknowledged = true; }), concatMap(() => this.profilesService.get(this.uri)),
+      takeUntil(this.destroy$), finalize(() => this.profileBusy = false)
+    ).subscribe({ next: data => {
+      this.receivePoolSlots(data); this.poolSlotMessage = `${target === 'primary' ? 'Primary' : 'Secondary'} saved to slot ${slot + 1}.`;
+      this.poolProfiles?.load();
+    }, error: err => {
+      this.poolSlotError = acknowledged ? 'Slot save acknowledged, but the slots could not be refreshed. Retry the slot list before saving again.'
+        : err.error?.error === 'profile-in-use' ? 'This slot is used by the pool schedule. Remove its events before replacing the saved pool.'
+        : 'The miner did not confirm saving this slot. Check the saved slots before retrying.';
+    } });
+  }
+  poolSlotApplied(result: ProfileApplied): void {
+    if (!result.poolTarget || !this.form) return;
+    this.restartPending ||= result.restartRequired;
+    const pool: PoolType = result.poolTarget === 'primary' ? 'stratum' : 'fallbackStratum';
+    const previous = {...this.connectionBaseline};
+    this.busy = true;
+    this.systemService.getInfo(this.uri).pipe(takeUntil(this.destroy$), finalize(() => this.busy = false)).subscribe({ next: info => {
+      this.receiveInfo(info, Date.now());
+      this.connectionMode = 'direct'; this.selectedPool = pool; this.reviewedPatch = undefined;
+      this.confirmedMuxConnection = undefined;
+      let retainedEdits = false;
+      for (const [key, control] of Object.entries(this.form.controls)) {
+        if (!key.startsWith(pool)) continue;
+        const value = key.endsWith('Password') ? '*****' : (info as unknown as Record<string, unknown>)[key];
+        if (value === undefined) continue;
+        if (!control.dirty && Object.is(control.value, previous[key])) {
+          control.setValue(value, {emitEvent: false}); control.markAsPristine();
+        } else retainedEdits = true;
+        this.connectionBaseline[key] = value;
+      }
+      this.updateAdvancedValidation(pool);
+      if (retainedEdits) this.error = 'Slot applied. New connection edits were retained; save or discard them before another application.';
+    }, error: () => this.error = 'Slot applied, but connection settings could not be refreshed. Refresh the page to check the saved route.' });
+  }
   get fallbackUsesFactoryAddress(): boolean { return !!this.info?.fallbackStratumUser?.includes(this.DEFAULT_BITCOIN_ADDRESS); }
   get muxConsoleUrl(): string | null { const host = this.muxConnection.host.trim(); return validMuxHost(host) ? `http://${host}:13050` : null; }
 
@@ -222,14 +330,14 @@ export class PoolComponent implements OnInit, OnDestroy {
   }
 
   public updateSystem(): void {
-    if (this.busy || !this.form) return;
+    if (this.busy || this.profileBusy || this.poolProfiles?.busy || !this.form) return;
     const isMux = this.connectionMode === 'mux';
     if (isMux && !this.reviewedPatch) return;
-    if (!isMux && (!this.form.dirty || this.form.invalid)) return;
+    if (!isMux && (!this.selectedRouteDirty || this.selectedRouteInvalid)) return;
     const submittedValues = this.form.getRawValue();
-    const patch = isMux ? { ...this.reviewedPatch! } : { ...submittedValues };
-    if (patch.stratumPassword === '*****') delete patch.stratumPassword;
-    if ('fallbackStratumPassword' in patch && patch.fallbackStratumPassword === '*****') delete patch.fallbackStratumPassword;
+    const patch = isMux ? { ...this.reviewedPatch! } : Object.fromEntries(Object.entries(submittedValues).filter(([key]) => key.startsWith(this.selectedPool)));
+    if (patch['stratumPassword'] === '*****') delete patch['stratumPassword'];
+    if (patch['fallbackStratumPassword'] === '*****') delete patch['fallbackStratumPassword'];
     const savedMuxTarget = isMux ? { ...this.muxConnection } : undefined;
     this.busy = true;
     this.error = '';
@@ -247,6 +355,7 @@ export class PoolComponent implements OnInit, OnDestroy {
           if (control && control.value === submittedValues[key]) {
             control.setValue(key.endsWith('Password') ? '*****' : value, { emitEvent: false });
             control.markAsPristine();
+            this.connectionBaseline[key] = control.value;
           }
         }
         this.updateAdvancedValidation('stratum');
@@ -262,7 +371,7 @@ export class PoolComponent implements OnInit, OnDestroy {
   }
 
   public restart(): void {
-    if (!this.restartPending || this.busy || this.restartRequested || !this.telemetryFresh) return;
+    if (!this.restartPending || this.busy || this.profileBusy || this.poolProfiles?.busy || this.restartRequested || !this.telemetryFresh) return;
     this.busy = true;
     this.error = '';
     const baseline = this.info!.uptimeSeconds;

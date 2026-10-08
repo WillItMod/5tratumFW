@@ -6,7 +6,7 @@ This path selects only `BOARD=NERDOCTAXEGAMMA`: **NerdOCTAXE-γ / BM1370 ×8 / E
 
 The combined repository keeps the Nerd derivative in `firmware/nerdqaxe/`. Its upstream baseline is [ESP-Miner-NerdQAxePlus v1.1.0-rc1-test1, commit 8b45522a6695c6bbccc3d032370fe08a29856d80](https://github.com/shufps/ESP-Miner-NerdQAxePlus/tree/8b45522a6695c6bbccc3d032370fe08a29856d80). The exact modified source commit and dependency inventory belong in each candidate's manifest and source archive. `SOURCE_ORIGIN.json` records the earlier QAxe import; its QAxe count/model fields are not OctAxe qualification evidence.
 
-OctAxe uses `version-oct.txt` and `main/http_server/axe-os/src/app/firmware-web-version.oct.ts`, both `5tratumFW-oct-0.1.0-beta.2`. Angular's Oct production configuration selects the Oct web version. The existing QAxe `version.txt` and default web-version file remain QAxe Beta 4. Do not rename a QAxe binary or globally replace its version to make an Oct image.
+OctAxe uses `version-oct.txt` and `main/http_server/axe-os/src/app/firmware-web-version.oct.ts`, both `5tratumFW-oct-0.1.0-beta.3`. This is the next unbuilt pool-routing layout candidate; the earlier Beta2 installation record does not qualify it. Angular's Oct production configuration selects the Oct web version. The existing QAxe `version.txt` and default web-version file remain QAxe Beta5. Do not rename a QAxe binary or globally replace its version to make an Oct image.
 
 ## Requirements and build
 
@@ -36,13 +36,13 @@ The corresponding-source ZIP includes `SOURCE_FILES.json`, pinned dependency sou
 
 ## Package contract
 
-The output directory is `release/NerdOCTAXE-Gamma/5tratumFW-oct-0.1.0-beta.2/`:
+When the build and verification complete, the output directory is `release/NerdOCTAXE-Gamma/5tratumFW-oct-0.1.0-beta.3/`:
 
 | File | Purpose |
 | --- | --- |
 | `esp-miner-NerdOCTAXE-Gamma.bin` | OctAxe application-only OTA image |
 | `www.bin` | Same build's complete WWW/SPIFFS image |
-| `5tratumFW-NerdOCTAXE-Gamma-5tratumFW-oct-0.1.0-beta.2-source.zip` | Corresponding source, GPL notices, dependencies and SDK configuration |
+| `5tratumFW-NerdOCTAXE-Gamma-5tratumFW-oct-0.1.0-beta.3-source.zip` | Corresponding source, GPL notices, dependencies and SDK configuration |
 | `manifest.json` | Exact model/count/version/source, image hashes and qualification limits |
 | `SHA256SUMS` | Image/source/manifest/web-report checksums |
 | `web-budget.json` | Actual compressed payload and WWW reconstruction result |
@@ -54,7 +54,7 @@ The source assumes **16 MiB flash**, a **3 MiB WWW** partition at `0x410000`, an
 Check the package without contacting a miner:
 
 ```sh
-cd release/NerdOCTAXE-Gamma/5tratumFW-oct-0.1.0-beta.2
+cd release/NerdOCTAXE-Gamma/5tratumFW-oct-0.1.0-beta.3
 shasum -a 256 -c SHA256SUMS
 ```
 

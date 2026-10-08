@@ -17,6 +17,26 @@ describe('Miner operating profiles', () => {
  it('uses the reviewed pool target and keeps passwords out of browser Apply', () => { component.type = 'pool'; component.ngOnInit(); component.poolTarget = 'fallback'; component.reviewSlot(component.slots[2]); component.poolTarget = 'primary'; component.apply(); expect(service.apply).toHaveBeenCalledOnceWith({ type: 'pool', slot: 2, poolTarget: 'fallback' }, ''); });
  it('applies a stored pool directly once and blocks empty slots without sending credentials or tuning', () => { component.type = 'pool'; component.ngOnInit(); component.applyPoolSlot(component.slots[0]); expect(service.apply).not.toHaveBeenCalled(); component.poolTarget='primary'; component.applyPoolSlot(component.slots[2]); expect(service.apply).toHaveBeenCalledOnceWith({type:'pool',slot:2,poolTarget:'primary'},''); expect(service.save).not.toHaveBeenCalled(); });
  it('keeps controls busy until the committed snapshot is refreshed', () => { component.ngOnInit(); const next = new Subject<Profiles>(); service.get.and.returnValue(next); component.names[0] = 'Point'; component.save(0); expect(component.busy).toBeTrue(); component.clear(0); expect(service.save).toHaveBeenCalledTimes(1); next.next(structuredClone(data)); next.complete(); expect(component.busy).toBeFalse(); });
+ it('renames a configured pool with metadata only and cannot turn an empty row into a connection', () => {
+   component.type='pool';component.ngOnInit();component.names[2]='Renamed';component.save(2);
+   expect(service.save).toHaveBeenCalledOnceWith({type:'pool',slot:2,name:'Renamed'},'');
+   expect(service.apply).not.toHaveBeenCalled();component.names[0]='Empty name';component.save(0);
+   expect(service.save).toHaveBeenCalledTimes(1);
+ });
+ it('binds explicit Primary and Secondary apply destinations and refuses dirty or busy destinations', () => {
+   component.type='pool';component.ngOnInit();component.connectionDirty.fallback=true;
+   component.applyPoolSlot(component.slots[2],'fallback');expect(service.apply).not.toHaveBeenCalled();
+   expect(component.error).toContain('unsaved Secondary');component.connectionDirty.fallback=false;
+   component.parentBusy=true;component.applyPoolSlot(component.slots[2],'fallback');expect(service.apply).not.toHaveBeenCalled();
+   component.parentBusy=false;component.applyPoolSlot(component.slots[2],'fallback');
+   expect(service.apply).toHaveBeenCalledOnceWith({type:'pool',slot:2,poolTarget:'fallback'},'');
+ });
+ it('reports an acknowledged save followed by a readback failure without claiming old settings were retained', () => {
+   component.ngOnInit();const refresh=new Subject<Profiles>();service.get.and.returnValue(refresh);
+   component.names[0]='Point';component.save(0);refresh.error(new Error('readback failed'));
+   expect(service.save).toHaveBeenCalledTimes(1);expect(component.error).toContain('Change saved');
+   expect(component.error).not.toContain('Previous settings retained');expect(component.busy).toBeFalse();
+ });
 });
 
 describe('Operating profile review placement', () => {

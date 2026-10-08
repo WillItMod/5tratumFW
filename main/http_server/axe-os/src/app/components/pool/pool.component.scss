@@ -9,5 +9,14 @@
 .connection-mux-options { border-top: 1px solid var(--routing-line); padding: 16px 0 20px; font-size: 12px; p { color: var(--routing-muted); margin: 0 0 10px; line-height: 1.6; overflow-wrap: anywhere; } .routing-caution { color: #eeb66e; } a { display: inline-flex; align-items: center; gap: 8px; color: var(--routing-accent); min-height: 36px; } small { display: block; color: var(--routing-muted); font-size: 10px; line-height: 1.6; } }
 .connection-review { border-top: 1px solid var(--routing-line); padding: 18px 0; h3 { font-size: 14px; margin: 0 0 12px; } dl { margin: 0; > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--routing-line); font-size: 12px; } dt { color: var(--routing-muted); flex: 0 0 35%; } dd { margin: 0; min-width: 0; text-align: right; overflow-wrap: anywhere; } } p { color: var(--routing-muted); font-size: 11px; line-height: 1.6; margin: 12px 0 0; } }
 .connection-error { color: #f69892; font-size: 12px; line-height: 1.6; }
+.routing-save-bar { flex-wrap: wrap; > div:first-child { flex-basis: 100%; } }
+.routing-save-actions { width: 100%; align-items: end; flex-wrap: wrap; }
+.routing-slot-save { flex: 1 1 440px; display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding-left: 16px; border-left: 1px solid var(--routing-line);
+  > span { align-self: center; font-size: 12px; }
+  label { display: grid; gap: 5px; font-size: 11px; color: var(--routing-muted); }
+  input,select { min-width: 140px; max-width: 230px; padding: 9px 10px; color: var(--routing-ink); background: var(--surface-card); border: 1px solid var(--routing-line); border-radius: 4px; }
+  small,>p { flex-basis: 100%; margin: 0; font-size: 11px; line-height: 1.6; }
+}
 @media(max-width: 640px) { .connection-mode small { flex-basis: 100%; margin: 3px 0 0; } .connection-observation { gap: 8px; > span { flex-basis: 100%; } } }
+@media(max-width: 900px) { .routing-slot-save { padding-left: 0; border-left: 0; flex-basis: 100%; } }
 @media(max-width: 370px) { .connection-review dl > div { flex-direction: column; gap: 5px; dd { text-align: left; } } }
