@@ -4,7 +4,7 @@
 
 | Model | Source/build | OTA application filename | Matching website | Current support |
 | --- | --- | --- | --- | --- |
-| Gamma601/602 | Root; `bash tools/build_5tratumfw.sh` | `esp-miner.bin` | Gamma `www.bin`, same version/package | Published Beta5 family; stored-identity guard allows601/602. Beta4 installed on601;602 unflashed. Read [Beta5 validation](validation-beta5.md) |
+| Gamma 601/602 | Root; `bash tools/build_5tratumfw.sh` | `esp-miner.bin` | Gamma `www.bin`, same version/package | Published Beta6 pair, separately installed and checked on both models. Read [Beta6 validation](validation-beta6.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | `firmware/nerdqaxe/`; `bash tools/build_5tratumfw_qa.sh` from that directory | `esp-miner-NerdQAxe++.bin` | QAxe `www.bin`, same version/package | Separate BETA, unidentified test PCB revision. Read that release's validation |
 | NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | `firmware/nerdqaxe/`; `bash tools/build_5tratumfw_oct.sh` from that directory | Candidate `esp-miner-NerdOCTAXE-Gamma.bin` | OctAxe `www.bin`, same version/package | **Source-only candidate, not physically qualified.** Exact PCB, regulator and flash geometry remain unverified. Read [OctAxe guide](nerdoctaxe.md) |
 | Other variants/revisions | None qualified | None | None | No compatibility promise from inherited board definitions |
@@ -26,4 +26,4 @@ The release contains application, WWW, manifest, SHA256SUMS and corresponding so
 
 Full QAxe source provenance is pinned in its `SOURCE_ORIGIN.json`. Upstream licenses/authorship remain inside both trees. Adding another model requires an explicit compatibility record, model-specific build/partition contract and separate hardware validation.
 
-Gamma Beta5 and QAxe Beta3 retain their existing family versions and image pairs. The OctAxe candidate produces OTA partition images only, with no factory or NVS image. QAxe and OctAxe native A/B connections share one ASIC chain; separate sessions and multiple ASICs do not establish independent physical-chip job ownership or per-chip coin routing. See [next model qualification](next-models.md) for the OctAxe, GT800 and Gamma Duo650 sequence.
+Gamma Beta6 and QAxe Beta3 are separate published image pairs. The OctAxe candidate produces OTA partition images only, with no factory or NVS image. QAxe and OctAxe native A/B connections share one ASIC chain; separate sessions and multiple ASICs do not establish independent physical-chip job ownership or per-chip coin routing. See [next model qualification](next-models.md) for the OctAxe, GT800 and Gamma Duo650 sequence.

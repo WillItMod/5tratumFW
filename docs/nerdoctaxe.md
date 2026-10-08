@@ -4,7 +4,7 @@ The first OctAxe port is a **source and build candidate**, with paired version `
 
 Its exact target is **NERDOCTAXEGAMMA**, reported model **NerdOCTAXE-γ**, **eight BM1370 ASICs**, and an ESP32-S3 controller. The application asset is `esp-miner-NerdOCTAXE-Gamma.bin`; its `www.bin` belongs to the same OctAxe package. The ASCII asset/mining-agent name and the existing UTF-8 API model name describe the same selected software target.
 
-The test unit's physical PCB revision, regulator population and installed flash/partition geometry remain unqualified. Neither the model name nor the compiled eight-chip profile identifies a physical revision. Other OctAxe models/revisions, NERDOCTAXEPLUS/BM1368, QAxe and Gamma have no compatibility claim from this port. Existing Gamma Beta 5 and QAxe Beta 3 packages remain separate, unchanged releases.
+The test unit's physical PCB revision, regulator population and installed flash/partition geometry remain unqualified. Neither the model name nor the compiled eight-chip profile identifies a physical revision. Other OctAxe models/revisions, NERDOCTAXEPLUS/BM1368, QAxe and Gamma have no compatibility claim from this port. The published Gamma Beta6 and QAxe Beta3 pairs are separate releases.
 
 - [Choose the correct firmware family](firmware-selection.md)
 - [OctAxe source, pinned build and package](../firmware/nerdqaxe/docs/build-5tratumfw-oct.md)

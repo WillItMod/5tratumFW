@@ -12,7 +12,7 @@ Research recorded on 8 October 2026. **This document adds no physically qualifie
 
 The candidate is limited to **BOARD `NERDOCTAXEGAMMA`, reported model `NerdOCTAXE-γ`, ASIC BM1370×8**. Its source version is `5tratumFW-oct-0.1.0-beta.1`, with tag contract `octaxe-v0.1.0-beta.1` and application filename `esp-miner-NerdOCTAXE-Gamma.bin`. It uses its own matching OctAxe `www.bin`; the shared website filename does not make other families' web images compatible.
 
-From `firmware/nerdqaxe/`, the separate helpers are `tools/build_5tratumfw_oct.sh` and `tools/package_5tratumfw_oct.py`, using `version-oct.txt`. The build/package contract is OTA-only; it does not publish factory/NVS images or flash a device. Gamma Beta5 and QAxe Beta3 remain separate, unchanged release pairs.
+From `firmware/nerdqaxe/`, the separate helpers are `tools/build_5tratumfw_oct.sh` and `tools/package_5tratumfw_oct.py`, using `version-oct.txt`. The build/package contract is OTA-only; it does not publish factory/NVS images or flash a device. The published Gamma Beta6 and QAxe Beta3 pairs are separate from the OctAxe candidate.
 
 The reported model, ASIC type and count are source admission criteria, not physical board identification. The actual PCB revision, regulator population and flash/partition geometry remain unverified and unqualified. Inherited board definitions, source defaults and host tests do not qualify other OctAxe models or revisions, or authorize overwriting saved clocks, voltage, cooling or settings. Native A/B sessions use a shared chain; independent physical ASIC job ownership and per-chip coin routing are not established.
 
