@@ -4,19 +4,19 @@ Research recorded on 8 October 2026. **This document adds no physically qualifie
 
 | Candidate | Priority and available evidence | Next step |
 | --- | --- | --- |
-| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | First: separate source candidate; exact PCB revision, regulator population and physical flash geometry remain unverified | Complete candidate source/build validation, then qualify the matching physical unit before any supported installation claim |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | First: separate candidate installed on one owned PCB 2.2 unit; actual flash geometry and private backup verified; regulator package marking unobserved | Complete central A/B control and its fresh MUX feed checks, then further physical-screen/schedule/protection qualification |
 | Bitaxe Gamma Turbo, marketed as GT800 | Next: the owned GT requires the older 800 profile; its exact 800x/800xxx PCB and regulator revision remains unconfirmed | Confirm the physical revision and baseline, then map its power, cooling and temperature paths before preparing an exact model build |
 | Gamma Duo PCB650 | After GT800: inherited source has a 650 profile and official v2.15.3 is pinned as a reference, but no 650 test unit is available | Prepare and test source/build support separately; physical qualification remains pending a matching unit |
 
 ## OctAxe source candidate
 
-The candidate is limited to **BOARD `NERDOCTAXEGAMMA`, reported model `NerdOCTAXE-γ`, ASIC BM1370×8**. Its source version is `5tratumFW-oct-0.1.0-beta.1`, with tag contract `octaxe-v0.1.0-beta.1` and application filename `esp-miner-NerdOCTAXE-Gamma.bin`. It uses its own matching OctAxe `www.bin`; the shared website filename does not make other families' web images compatible.
+The candidate is limited to **BOARD `NERDOCTAXEGAMMA`, reported model `NerdOCTAXE-γ`, ASIC BM1370×8**. Its source version is `5tratumFW-oct-0.1.0-beta.2`, with tag contract `octaxe-v0.1.0-beta.2` and application filename `esp-miner-NerdOCTAXE-Gamma.bin`. It uses its own matching OctAxe `www.bin`; the shared website filename does not make other families' web images compatible.
 
-From `firmware/nerdqaxe/`, the separate helpers are `tools/build_5tratumfw_oct.sh` and `tools/package_5tratumfw_oct.py`, using `version-oct.txt`. The build/package contract is OTA-only; it does not publish factory/NVS images or flash a device. The published Gamma Beta6 and QAxe Beta3 pairs are separate from the OctAxe candidate.
+From `firmware/nerdqaxe/`, the separate helpers are `tools/build_5tratumfw_oct.sh` and `tools/package_5tratumfw_oct.py`, using `version-oct.txt`. The build/package contract is OTA-only; it does not publish factory/NVS images or flash a device. The published Gamma Beta6 and QAxe Beta4 pairs are separate from the OctAxe candidate.
 
-The reported model, ASIC type and count are source admission criteria, not physical board identification. The actual PCB revision, regulator population and flash/partition geometry remain unverified and unqualified. Inherited board definitions, source defaults and host tests do not qualify other OctAxe models or revisions, or authorize overwriting saved clocks, voltage, cooling or settings. Native A/B sessions use a shared chain; independent physical ASIC job ownership and per-chip coin routing are not established.
+The reported model, ASIC type and count are source admission criteria, not physical board identification. The owned PCB revision is 2.2 according to its owner. Its actual flash geometry and original settings were verified, and the regulator strap/stock profile were reviewed against pinned hardware source. The regulator package marking was not physically read. These observations do not qualify another assembly. Inherited board definitions, source defaults and host tests do not qualify other OctAxe models or revisions, or authorize overwriting saved clocks, voltage, cooling or settings. Native A/B sessions use a shared chain; independent physical ASIC job ownership and per-chip coin routing are not established.
 
-Read the [OctAxe guide](nerdoctaxe.md), [build guide](../firmware/nerdqaxe/docs/build-5tratumfw-oct.md), [installation limits](../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) and [Beta1 validation](../firmware/nerdqaxe/docs/validation-oct-beta1.md) for the candidate's exact evidence and remaining bench work.
+Read the [OctAxe guide](nerdoctaxe.md), [build guide](../firmware/nerdqaxe/docs/build-5tratumfw-oct.md), [installation limits](../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) and [Beta2 validation](../firmware/nerdqaxe/docs/validation-oct-beta2.md) for the candidate's exact evidence and remaining bench work.
 
 ## GT: distinguish 800 revisions from 801
 

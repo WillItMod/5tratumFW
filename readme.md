@@ -5,8 +5,8 @@
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
 | Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Published Beta6 pair installed and checked on both models. [Gamma guides](docs/installation.md) · [Beta6 validation](docs/validation-beta6.md) |
-| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta 3 validation](firmware/nerdqaxe/docs/validation-qa-beta3.md) |
-| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | Isolated OctAxe candidate; not yet a qualified download | [OctAxe guide](docs/nerdoctaxe.md): verify regulator, PCB and flash layout before migration |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Separate QAxe BETA; test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta 4 installed-pair validation](firmware/nerdqaxe/docs/validation-qa-beta4.md) |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | Isolated OctAxe candidate; scoped bench on one owned PCB 2.2 unit, not a published download | [OctAxe guide](docs/nerdoctaxe.md) · [Beta 2 validation](firmware/nerdqaxe/docs/validation-oct-beta2.md) |
 | QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
 
 Start with [firmware selection and repository layout](docs/firmware-selection.md). Downloads are [model-labelled GitHub prereleases](https://github.com/WillItMod/5tratumFW/releases); use a complete matching image pair, manifest, checksums and corresponding source. Recovery backups/NVS/factory images are never published.

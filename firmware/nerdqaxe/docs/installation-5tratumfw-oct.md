@@ -1,6 +1,6 @@
 # OctAxe candidate migration and recovery
 
-This is a qualification procedure for **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. Beta 1 is a source/build candidate. No physical PCB revision, regulator population or installed flash layout has been qualified for this pair, and these instructions do not authorize compatibility with another OctAxe revision.
+This is a qualification procedure for **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. Beta2 is a development candidate installed on one owned PCB revision 2.2 unit after a verified recovery backup and actual layout inspection. Regulator strap/stock profile were reviewed against pinned hardware source; the package marking was not physically read. The dated [validation record](validation-oct-beta2.md) does not authorize compatibility with another assembly.
 
 ## Establish the unit and recovery record
 
@@ -8,11 +8,11 @@ Confirm the physical board/revision, installed model/ASIC count, regulator popul
 
 Retain a private full backup for that exact unit and the exact original firmware/recovery package. Record configured frequency, core voltage, version rolling, both fan/PID settings, thermal limits, network and both pool connections. Record slots/schedules when present; an older API lacking a feature does not prove its NVS data is absent. Exported or masked passwords are not a credential backup. Preserve this unit's settings rather than copying values from another miner.
 
-The candidate's **16 MiB / 3 MiB WWW / 4 MiB OTA-slot** source layout remains an assumption. Confirm the current device layout can accept the images without replacing its partition table or NVS. Filename checks cannot detect a wrongly selected physical board. Gamma, QAxe, NERDOCTAXEPLUS/BM1368 and other Oct images are different targets.
+The candidate's **16 MiB / 3 MiB WWW / 4 MiB OTA-slot** source layout was verified on that owned unit and must be checked separately on another unit. Confirm the current device layout can accept the images without replacing its partition table or NVS. Filename checks cannot detect a wrongly selected physical board. Gamma, QAxe, NERDOCTAXEPLUS/BM1368 and other Oct images are different targets.
 
 ## Matched pair and routine OTA
 
-Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from one verified OctAxe candidate package. Its descriptor/web version must both be `5tratumFW-oct-0.1.0-beta.1`. Read the manifest, qualification notes and checksums. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
+Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from one verified OctAxe candidate package. Its descriptor/web version must both be `5tratumFW-oct-0.1.0-beta.2`. Read the manifest, qualification notes and checksums. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
 
 Once the exact unit/layout and recovery path are established for a supervised bench test:
 
