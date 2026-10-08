@@ -2,15 +2,16 @@
 
 This source builds the QAxe-specific paired OTA images for **NerdQAxe++ / NERDQAXEPLUS2 with four BM1370 ASICs**. It is a GPLv3 derivative of [shufps ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus). Upstream authors and licenses are retained; the original documentation is in [upstream-readme](docs/upstream-readme.md).
 
-Firmware version: `5tratumFW-qa-0.1.0-beta.3`. This QAxe image is separate from the Gamma 601/602 image. Beta 3 enlarges the approved full-logo header and adds a QAxe-only public release check. It retains Beta 2's legacy update-page model detection and OTP lookup. The existing test unit ran Beta 1; its physical PCB revision remains unidentified. Consult Beta 3's own validation record for this pair; earlier Beta 1 physical observations do not qualify it.
+Published QAxe version: `5tratumFW-qa-0.1.0-beta.3`. This QAxe image is separate from the Gamma 601/602 image. Beta 3 enlarges the approved full-logo header and adds a QAxe-only public release check. It retains Beta 2's legacy update-page model detection and OTP lookup. Its exact pair was installed on the test unit, whose physical PCB revision remains unidentified. Read the [Beta3 release validation asset](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.3/validation-qa-beta3.md) for the recorded scope; earlier Beta1 observations remain historical.
 
 ## Choose the correct firmware
 
 | Device | Image family | Evidence |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601/602 | Gamma images in the parent 5tratumFW repository; never these QAxe images | Gamma 601 paired Beta4 installed; Gamma602 compiled, unflashed |
-| NerdQAxe++ / NERDQAXEPLUS2 / BM1370 ×4 | This QAxe paired BETA | Prior a10 installed-device record; unknown PCB revision. Check this BETA's own validation before installing |
-| QAxe+, other QAxe/OctAxe revisions, NerdOctAxe, NerdQX, GT800 and other devices | No supported image in this QAxe release | Do not infer compatibility from shared upstream driver definitions |
+| Bitaxe Gamma PCB 601/602 | Gamma images in the parent 5tratumFW repository; never these QAxe images | Published Beta6 pair installed and checked separately on both models |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370 ×4 | This QAxe paired BETA | Published Beta3 pair installed; exported settings and both native A/B accepted-share progress checked. PCB revision remains unknown |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370 ×8 | Separate OctAxe source/build candidate in this subtree | Not installed or physically qualified. See the [OctAxe guide](../../docs/nerdoctaxe.md) |
+| QAxe+, other QAxe/OctAxe revisions, NerdQX, GT800 and other devices | No supported image in this QAxe release | Do not infer compatibility from shared upstream driver definitions |
 
 ## Included
 
