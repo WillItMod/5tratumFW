@@ -2,7 +2,7 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.5`. Its clean source `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`, full family CI and offline checks passed. The exact pair passed the scoped supervised update; see [Beta5 validation](validation-qa-beta5.md). The published Beta4 pair retains its own validation; that record does not qualify this new source. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version.
+The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.6`. Its clean-source build and supervised installed-pair checks are pending; see [Beta6 validation](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) retains its separate historical evidence. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. Public helpers retain the original 320×170 screen. [Experimental 480×320 profiles](experimental-480-display.md) are excluded from this release/package path.
 
 ## Requirements
 
@@ -61,7 +61,7 @@ These files contain no NVS partition and are not merged factory flash images. Us
 Check package hashes before installation:
 
 ```sh
-cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.5'
+cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.6'
 shasum -a 256 -c SHA256SUMS
 ```
 

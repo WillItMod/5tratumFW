@@ -6,6 +6,8 @@ Current qualified QAxe BETA pair: `5tratumFW-qa-0.1.0-beta.5`. This QAxe image i
 
 The new matched QAxe `5tratumFW-qa-0.1.0-beta.5` and OctAxe `5tratumFW-oct-0.1.0-beta.3` pairs are built from `3ffbe84f43e265e61d5bae3eca1cd985def2bb3f`, with family CI and offline package checks passed. Both exact pairs completed supervised OTA, 94-asset and exported-settings checks on 8 October 2026. QAxe has four fresh hardware counters, OctAxe has eight, and both retained Dual pool 50/50 with fresh A/B context. The Oct scope remains the owned PCB 2.2 unit only. Connection editors now appear above the ten named pool slots, with separate save/storage and destination-specific Apply actions. Strict acknowledgment/readback checks leave uncertain operations unconfirmed and never retry writes automatically. Model compatibility is unchanged. Read [QAxe Beta5 validation](docs/validation-qa-beta5.md) and [OctAxe Beta3 validation](docs/validation-oct-beta3.md).
 
+The next source versions are QAxe `5tratumFW-qa-0.1.0-beta.6` and OctAxe `5tratumFW-oct-0.1.0-beta.4`. They add six randomized glazed-donut block-candidate celebrations with a short animation and explicit **Awaiting verification** status. Standard public packages retain the original 320×170 display. Their exact-pair build, installed-device checks and publication are pending: [QAxe Beta6 validation](docs/validation-qa-beta6.md) · [OctAxe Beta4 validation](docs/validation-oct-beta4.md). The earlier qualified pairs above remain separate evidence. [480×320 QAxe profiles](docs/experimental-480-display.md) remain private and experimental.
+
 ## Choose the correct firmware
 
 | Device | Image family | Evidence |
