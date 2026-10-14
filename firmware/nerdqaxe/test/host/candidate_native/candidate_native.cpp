@@ -247,6 +247,12 @@ int main(int argc, char **argv) {
     }
     assert(descendants(lv_layer_top()) == baselineWidgets && timers() == baselineTimers);
     lv_disp_remove(registered);
+    // LVGL 8.3 removes the display/screens/timer, but leaves the driver-owned
+    // draw context allocated. Keep it alive through screen deletion, then
+    // deinitialize and release it with the same allocator used at registration.
+    display.draw_ctx_deinit(&display, display.draw_ctx);
+    lv_mem_free(display.draw_ctx);
+    display.draw_ctx = nullptr;
     std::cout << "{\"passed\":true,\"resolution\":[" << width << ',' << height << "],\"images\":"
               << captures << ",\"productionMethods\":12,\"productionPriorityCases\":3,\"replacementEvents\":1024,\"fixtureOnly\":true}\n";
 }
