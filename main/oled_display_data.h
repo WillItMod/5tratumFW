@@ -11,7 +11,7 @@
 typedef enum {
     OLED_RATE, OLED_HEALTH, OLED_SHARES, OLED_ROUTE, OLED_OPERATING, OLED_WIFI,
     OLED_JOB, OLED_CANDIDATE, OLED_FAULT, OLED_OVERHEAT, OLED_SELF_TEST,
-    OLED_UPDATE, OLED_SETUP, OLED_CONNECTION, OLED_BOOT, OLED_CREDITS
+    OLED_UPDATE, OLED_SETUP, OLED_CONNECTION, OLED_BOOT, OLED_CREDITS, OLED_IDENTIFY
 } FiveTratumOledPage;
 
 typedef struct {
@@ -19,6 +19,7 @@ typedef struct {
     float fan_percent, configured_mhz, configured_mv, core_mv, input_mv;
     uint16_t fan_rpm;
     uint64_t accepted, rejected, uptime_seconds;
+    uint8_t candidate_variant, candidate_frame;
     int rssi, block_height;
     bool initialized, runtime_ready, requested_paused, applied_paused, pools_unavailable, rate_fresh;
     bool wifi_connected, fallback, sv2, tls, mux_connected, mux_acknowledged, mux_expired, hardware_fault;
@@ -27,6 +28,50 @@ typedef struct {
     const char *network_difficulty, *scriptsig, *message, *result, *finished;
     const char *filename, *update_status, *board_name, *board_version;
 } FiveTratumOledData;
+
+#define OLED_DONUT_VARIANTS 6u
+#define OLED_CANDIDATE_ANIMATION_US UINT64_C(6000000)
+
+/* RAM-only presentation state. The firmware's existing local-target candidate
+ * count/acknowledgement remains the authority; this never changes mining state. */
+typedef struct {
+    bool active, has_variant;
+    uint32_t event_count;
+    uint8_t variant;
+    uint64_t started_us;
+} FiveTratumOledCandidate;
+
+static inline bool oled_candidate_is_new(const FiveTratumOledCandidate *s, bool active, uint32_t count)
+{
+    return active && (!s->active || s->event_count != count);
+}
+static inline void oled_candidate_update(FiveTratumOledCandidate *s, bool active, uint32_t count,
+                                         uint64_t now_us, uint32_t entropy)
+{
+    if (oled_candidate_is_new(s, active, count)) {
+        /* Pick once per event; subsequent polling/safety interruptions keep it.
+         * Every next event changes artwork without storing anything in NVS. */
+        s->variant = s->has_variant ? (s->variant + 1u + entropy % (OLED_DONUT_VARIANTS-1u)) % OLED_DONUT_VARIANTS :
+                                     entropy % OLED_DONUT_VARIANTS;
+        s->has_variant = true;
+        s->event_count = count;
+        s->started_us = now_us;
+    }
+    s->active = active;
+}
+static inline uint8_t oled_candidate_frame(const FiveTratumOledCandidate *s, uint64_t now_us)
+{
+    if (!s->active || now_us < s->started_us || now_us-s->started_us >= OLED_CANDIDATE_ANIMATION_US) return 0;
+    return (uint8_t)(1u + ((now_us-s->started_us)/UINT64_C(500000)) % 4u);
+}
+static inline const char *oled_candidate_heading(unsigned variant)
+{
+    static const char *const headings[OLED_DONUT_VARIANTS] = {
+        "DONUT CANDIDATE", "POTENTIAL DONUT", "GLAZE PENDING",
+        "FRESHLY MINED", "SPRINKLE HOPE", "LOOKING TASTY"
+    };
+    return headings[variant % OLED_DONUT_VARIANTS];
+}
 
 static inline const char *oled_text(const char *text) { return text && *text ? text : "--"; }
 static inline bool oled_positive(float value) { return isfinite(value) && value > 0; }

@@ -1,6 +1,7 @@
 #pragma once
 
-// Native LVGL320x170 layouts shared by firmware and the host render test.
+// Native LVGL layouts shared by firmware and the host render test. The original
+// 320x170 geometry stays exact; explicit 480x320 profiles use the full viewport.
 // Existing fonts and a12KiB established emblem; no theme-sized background.
 #include "lvgl.h"
 #include "display_logo.h"
@@ -26,12 +27,25 @@ constexpr uint32_t Danger = 0xFF6B6B;
 constexpr uint32_t Surface = 0x101F30;
 constexpr uint32_t Amber = 0xFFC06C;
 
+inline int viewportWidth() { return lv_disp_get_default() ? lv_disp_get_hor_res(nullptr) : 320; }
+inline int viewportHeight() { return lv_disp_get_default() ? lv_disp_get_ver_res(nullptr) : 170; }
+inline int layoutX(int value) { return value * viewportWidth() / 320; }
+inline int layoutY(int value) { return value * viewportHeight() / 170; }
+inline const lv_font_t *layoutFont(const lv_font_t *font) {
+    if (viewportWidth() < 440 || viewportHeight() < 280) return font;
+    if (font == &lv_font_montserrat_10) return &lv_font_montserrat_16;
+    if (font == &ui_font_OpenSansBold13 || font == &ui_font_OpenSansBold14) return &lv_font_montserrat_20;
+    if (font == &ui_font_OpenSansBold24) return &lv_font_montserrat_32;
+    if (font == &ui_font_OpenSansBold45) return &lv_font_montserrat_48;
+    return font;
+}
+
 inline lv_obj_t *rectangle(lv_obj_t *parent, int x, int y, int width, int height,
                           uint32_t color, int radius = 0, bool outline = false) {
     lv_obj_t *obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
-    lv_obj_set_pos(obj, x, y);
-    lv_obj_set_size(obj, width, height);
+    lv_obj_set_pos(obj, layoutX(x), layoutY(y));
+    lv_obj_set_size(obj, layoutX(width), layoutY(height));
     lv_obj_set_style_radius(obj, radius, 0);
     lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
     lv_obj_set_style_bg_opa(obj, outline ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
@@ -46,11 +60,12 @@ enum class Icon { Chip, Power, Thermometer, Fan, Clock, Network, Trophy, Check, 
 inline void stroke(lv_obj_t *parent, int x, int y, const lv_point_t *points,
                    uint16_t count, uint32_t color) {
     lv_obj_t *line = lv_line_create(parent);
-    lv_obj_set_pos(line, x, y);
+    lv_obj_set_pos(line, layoutX(x), layoutY(y));
     lv_line_set_points(line, points, count);
     lv_obj_set_style_line_color(line, lv_color_hex(color), 0);
     lv_obj_set_style_line_width(line, 2, 0);
     lv_obj_set_style_line_rounded(line, true, 0);
+    if (viewportWidth() >= 440) lv_obj_set_style_transform_zoom(line, layoutX(256), 0);
     lv_obj_clear_flag(line, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
@@ -109,7 +124,7 @@ inline void icon(lv_obj_t *parent, Icon kind, int x, int y, uint32_t color = Cya
 inline lv_obj_t *screen() {
     lv_obj_t *obj = lv_obj_create(nullptr);
     lv_obj_remove_style_all(obj);
-    lv_obj_set_size(obj, 320, 170);
+    lv_obj_set_size(obj, viewportWidth(), viewportHeight());
     lv_obj_set_style_bg_color(obj, lv_color_hex(Background), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
@@ -121,9 +136,9 @@ inline lv_obj_t *text(lv_obj_t *parent, const char *value, int x, int y, int wid
                        uint32_t color = Foreground) {
     lv_obj_t *obj = lv_label_create(parent);
     lv_obj_remove_style_all(obj);
-    lv_obj_set_pos(obj, x, y);
-    lv_obj_set_width(obj, width);
-    lv_obj_set_style_text_font(obj, font, 0);
+    lv_obj_set_pos(obj, layoutX(x), layoutY(y));
+    lv_obj_set_width(obj, layoutX(width));
+    lv_obj_set_style_text_font(obj, layoutFont(font), 0);
     lv_obj_set_style_text_color(obj, lv_color_hex(color), 0);
     lv_label_set_long_mode(obj, LV_LABEL_LONG_DOT);
     lv_label_set_text(obj, value);
@@ -133,8 +148,8 @@ inline lv_obj_t *text(lv_obj_t *parent, const char *value, int x, int y, int wid
 inline void divider(lv_obj_t *parent, int y) {
     lv_obj_t *obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
-    lv_obj_set_pos(obj, 8, y);
-    lv_obj_set_size(obj, 304, 1);
+    lv_obj_set_pos(obj, layoutX(8), layoutY(y));
+    lv_obj_set_size(obj, layoutX(304), 1);
     lv_obj_set_style_bg_color(obj, lv_color_hex(Line), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
@@ -144,8 +159,8 @@ inline lv_obj_t *logo(lv_obj_t *parent, int x, int y, int size) {
     lv_obj_t *obj = lv_img_create(parent);
     lv_img_set_src(obj, &firmwareLogo);
     lv_img_set_pivot(obj, 0, 0);
-    lv_img_set_zoom(obj, size * 256 / 240);
-    lv_obj_set_pos(obj, x, y);
+    lv_img_set_zoom(obj, layoutX(size) * 256 / 240);
+    lv_obj_set_pos(obj, layoutX(x), layoutY(y));
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     return obj;
 }
@@ -154,8 +169,8 @@ inline lv_obj_t *header(lv_obj_t *parent, const char *page) {
     auto *mark = lv_img_create(parent);
     lv_img_set_src(mark, &firmwareWordmark);
     lv_img_set_pivot(mark, 0, 0);
-    lv_img_set_zoom(mark, 192);
-    lv_obj_set_pos(mark, 6, 0);
+    lv_img_set_zoom(mark, layoutX(192));
+    lv_obj_set_pos(mark, layoutX(6), 0);
     lv_obj_clear_flag(mark, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *title = text(parent, page, 180, 8, 132, &lv_font_montserrat_10, Cyan);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_RIGHT, 0);
@@ -391,7 +406,7 @@ inline SettingsWidgets settings(lv_obj_t *parent) {
     lv_obj_set_style_text_align(fields.ip, LV_TEXT_ALIGN_RIGHT, 0);
     fields.pool = text(parent, "Pool --", 8, 34, 160, &ui_font_OpenSansBold13, Cyan);
     fields.host = text(parent, "--", 8, 51, 304, &ui_font_OpenSansBold13);
-    lv_obj_set_height(fields.host, 18);
+    lv_obj_set_height(fields.host, layoutY(18));
     fields.port = text(parent, "Port --", 8, 71, 304, &lv_font_montserrat_10, Muted);
     text(parent, "CONFIGURED: shared clock / voltage / fan", 8, 82, 304, &lv_font_montserrat_10, Muted);
     rectangle(parent, 8, 91, 304, 31, Surface, 5);
@@ -479,14 +494,14 @@ inline lv_obj_t *portal(lv_obj_t *parent) {
 inline lv_obj_t *warning(lv_obj_t *parent, const char *message, const char *detail) {
     lv_obj_t *overlay = lv_obj_create(parent);
     lv_obj_remove_style_all(overlay);
-    lv_obj_set_size(overlay, 320, 170);
+    lv_obj_set_size(overlay, viewportWidth(), viewportHeight());
     lv_obj_set_style_bg_color(overlay, lv_color_hex(Background), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
     header(overlay, "DEVICE WARNING");
     lv_obj_t *title = text(overlay, message, 8, 45, 304, &ui_font_OpenSansBold24, Danger);
     lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
-    lv_obj_set_height(title, 77);
+    lv_obj_set_height(title, layoutY(77));
     lv_obj_t *info = text(overlay, detail, 8, 129, 304, &ui_font_OpenSansBold13, Muted);
     lv_label_set_long_mode(info, LV_LABEL_LONG_WRAP);
     return overlay;
@@ -496,7 +511,7 @@ inline lv_obj_t *authenticator(lv_obj_t *parent, void *buffer, int side) {
     header(parent, "AUTHENTICATOR");
     lv_obj_t *canvas = lv_canvas_create(parent);
     lv_canvas_set_buffer(canvas, buffer, side, side, LV_IMG_CF_TRUE_COLOR);
-    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -8, 16);
+    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -layoutX(8), layoutY(16));
     lv_obj_t *label = text(parent, "Scan with your\nAuthenticator app.\n\nAny button cancels.",
                            8, 47, 166, &ui_font_OpenSansBold13);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);

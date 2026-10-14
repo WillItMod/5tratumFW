@@ -14,6 +14,7 @@
 #include "display.h"
 #include "connect.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "5tratumfw.h"
 #include "mining_state.h"
 #include "mining_schedule.h"
@@ -68,6 +69,7 @@ static bool compact_oled;
 static bool compact_boot_shown;
 static FiveTratumOledView compact_views[MAX_SCREENS];
 static FiveTratumOledView compact_identify;
+static FiveTratumOledCandidate compact_candidate;
 
 static const FiveTratumOledPage compact_pages[MAX_SCREENS] = {
     [SCR_SELF_TEST]=OLED_SELF_TEST, [SCR_OVERHEAT]=OLED_OVERHEAT,
@@ -388,7 +390,7 @@ static lv_obj_t * create_scr_wifi() {
 static void scr_create_overlay()
 {
     if (compact_oled) {
-        compact_identify = oled_create_view_on(lv_layer_top(), OLED_CANDIDATE);
+        compact_identify = oled_create_view_on(lv_layer_top(), OLED_IDENTIFY);
         identify_image = compact_identify.screen;
         lv_label_set_text(compact_identify.title, "IDENTIFY");
         lv_label_set_text(compact_identify.rows[0], "Identify miner");
@@ -477,6 +479,11 @@ static FiveTratumOledData compact_data(void)
     int8_t rssi = -128;
     if (s->is_connected) get_wifi_current_rssi(&rssi);
     int64_t now_us = esp_timer_get_time();
+    uint64_t presentation_now = now_us > 0 ? (uint64_t)now_us : 0;
+    uint32_t candidate_count = (uint32_t)s->block_found;
+    bool candidate_active = s->show_new_block;
+    uint32_t entropy = oled_candidate_is_new(&compact_candidate, candidate_active, candidate_count) ? esp_random() : 0;
+    oled_candidate_update(&compact_candidate, candidate_active, candidate_count, presentation_now, entropy);
     int64_t elapsed = now_us - s->start_time;
     HashrateDisplaySnapshot rate = hashrate_monitor_display_snapshot(GLOBAL_STATE, now_us > 0 ? (uint64_t)now_us : 0);
     static char pool_host[254];
@@ -489,6 +496,7 @@ static FiveTratumOledData compact_data(void)
         .configured_mhz=nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY),
         .configured_mv=nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE), .core_mv=p->core_voltage, .input_mv=p->voltage,
         .accepted=s->shares_accepted, .rejected=s->shares_rejected, .uptime_seconds=elapsed>0 ? elapsed/1000000 : 0,
+        .candidate_variant=compact_candidate.variant, .candidate_frame=oled_candidate_frame(&compact_candidate, presentation_now),
         .rssi=rssi, .block_height=GLOBAL_STATE->block_height, .initialized=GLOBAL_STATE->ASIC_initalized,
         .runtime_ready=s->mining_runtime_ready, .requested_paused=mining_state_should_stop(GLOBAL_STATE),
         .applied_paused=mining_schedule_applied_paused(), .pools_unavailable=s->pools_unavailable,

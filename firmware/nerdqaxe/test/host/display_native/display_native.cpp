@@ -12,8 +12,9 @@
 #include <limits>
 #include "display_fixture_platform.h"
 
-static std::array<lv_color_t, 320 * 170> frame{};
-static std::array<lv_color_t, 320 * 170> drawBuffer{};
+static int canvasWidth = 320, canvasHeight = 170;
+static std::array<lv_color_t, 480 * 320> frame{};
+static std::array<lv_color_t, 480 * 320> drawBuffer{};
 static lv_obj_t *parkingScreen = nullptr;
 static unsigned capturedPages = 0;
 
@@ -21,7 +22,7 @@ static void flush(lv_disp_drv_t *driver, const lv_area_t *area, lv_color_t *pixe
     size_t index = 0;
     for (int y = area->y1; y <= area->y2; ++y)
         for (int x = area->x1; x <= area->x2; ++x)
-            frame[static_cast<size_t>(y) * 320 + x] = pixels[index++];
+            frame[static_cast<size_t>(y) * canvasWidth + x] = pixels[index++];
     lv_disp_flush_ready(driver);
 }
 
@@ -29,13 +30,13 @@ static void validate(lv_obj_t *obj) {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return;
     lv_area_t bounds;
     lv_obj_get_coords(obj, &bounds);
-    assert(bounds.x1 >= 0 && bounds.y1 >= 0 && bounds.x2 < 320 && bounds.y2 < 170);
+    assert(bounds.x1 >= 0 && bounds.y1 >= 0 && bounds.x2 < canvasWidth && bounds.y2 < canvasHeight);
     if (lv_obj_check_type(obj, &lv_img_class) && lv_img_get_zoom(obj) > LV_IMG_ZOOM_NONE) {
         lv_point_t pivot; lv_img_get_pivot(obj, &pivot);
         assert(pivot.x == 0 && pivot.y == 0); // Established logo layout anchors scaling at top-left.
         const int width = lv_obj_get_width(obj) * lv_img_get_zoom(obj) / LV_IMG_ZOOM_NONE;
         const int height = lv_obj_get_height(obj) * lv_img_get_zoom(obj) / LV_IMG_ZOOM_NONE;
-        assert(bounds.x1 + width <= 320 && bounds.y1 + height <= 170);
+        assert(bounds.x1 + width <= canvasWidth && bounds.y1 + height <= canvasHeight);
     }
     // Long mode may truncate bounded hostnames, but core data and navigation
     // text must fit naturally without ellipsis or an unplanned second line.
@@ -68,8 +69,9 @@ static void capture(lv_obj_t *page, const std::string &path) {
     lv_obj_invalidate(page); // Capture the complete frame, including unchanged glyph regions.
     lv_refr_now(nullptr);
     std::ofstream file(path, std::ios::binary);
-    file << "P6\n320 170\n255\n";
-    for (const auto pixel : frame) {
+    file << "P6\n" << canvasWidth << ' ' << canvasHeight << "\n255\n";
+    for (size_t index = 0; index < static_cast<size_t>(canvasWidth * canvasHeight); ++index) {
+        const auto pixel = frame[index];
         lv_color32_t rgb;
         rgb.full = lv_color_to32(pixel);
         const char bytes[] = {static_cast<char>(rgb.ch.red), static_cast<char>(rgb.ch.green), static_cast<char>(rgb.ch.blue)};
@@ -321,14 +323,18 @@ static void octaxeFixtures(const std::string &directory) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 2);
+    assert(argc == 2 || argc == 3);
+    if (argc == 3) {
+        assert(!strcmp(argv[2], "480x320"));
+        canvasWidth = 480; canvasHeight = 320;
+    }
     const std::string directory = argv[1];
     lv_init();
     static lv_disp_draw_buf_t draw;
     lv_disp_draw_buf_init(&draw, drawBuffer.data(), nullptr, drawBuffer.size());
     static lv_disp_drv_t driver;
     lv_disp_drv_init(&driver);
-    driver.hor_res = 320; driver.ver_res = 170; driver.draw_buf = &draw; driver.flush_cb = flush;
+    driver.hor_res = canvasWidth; driver.ver_res = canvasHeight; driver.draw_buf = &draw; driver.flush_cb = flush;
     lv_disp_drv_register(&driver);
     parkingScreen = lv_scr_act();
     using namespace FiveTratumDisplay;
@@ -613,7 +619,7 @@ int main(int argc, char **argv) {
     lv_obj_del(fault);
     const unsigned baselinePages = capturedPages;
     octaxeFixtures(directory);
-    std::cout << "{\"passed\":true,\"nativeLvgl\":\"8.3.11\",\"resolution\":[320,170],\"pages\":"
-              << capturedPages << ",\"octaxePages\":" << capturedPages - baselinePages
+    std::cout << "{\"passed\":true,\"nativeLvgl\":\"8.3.11\",\"resolution\":[" << canvasWidth << ',' << canvasHeight
+              << "],\"pages\":" << capturedPages << ",\"octaxePages\":" << capturedPages - baselinePages
               << ",\"fixtureOnly\":true}\n";
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lvgl.h"
+#include "display_candidate.h"
 #include "../boards/board.h"
 #include "../otp/qrcodegen.h"
 
@@ -23,7 +24,6 @@ LV_FONT_DECLARE(ui_font_vt323_21);
 
 #define TDISPLAYS3_LVGL_TICK_PERIOD_MS 30
 
-LV_IMG_DECLARE(ui_img_found_block_png);
 
 class DisplayDriver;
 
@@ -99,6 +99,9 @@ protected:
     lv_obj_t *ui_lblTempPrice = nullptr;
     lv_obj_t *ui_errOverlayContainer = nullptr;
     lv_obj_t *ui_imageOverlayContainer = nullptr;
+    FiveTratumDisplay::CandidatePresentation m_candidatePresentation;
+    FiveTratumDisplay::CandidateVariantCycle m_candidateVariants;
+    uint32_t m_candidateStartedTick = 0;
     lv_obj_t *ui_GlobalStats = nullptr;
     lv_obj_t *ui_lblJobCoin[2]{};
     lv_obj_t *ui_lblJobHeight[2]{};
@@ -122,7 +125,8 @@ protected:
     void changeScreen(void);
     void manual_lvgl_update();
 
-    void showImageOverlay(const lv_img_dsc_t *img);
+    void showCandidateOverlay(bool animate);
+    void updateCandidateOverlayAnimation(bool enabled);
     void hideImageOverlay();
 
     // QR

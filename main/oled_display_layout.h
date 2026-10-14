@@ -4,12 +4,14 @@
 #include "lvgl.h"
 #include "oled_display_data.h"
 #include "oled_display_assets.h"
+#include "oled_donut_assets.h"
 #include <string.h>
 
 LV_FONT_DECLARE(lv_font_portfolio_6x8);
 
 typedef struct {
     lv_obj_t *screen, *title, *rows[3], *rate, *unit, *temperature, *power, *thermal_fill, *qr;
+    lv_obj_t *donut, *sprinkles[4];
     FiveTratumOledPage page;
 } FiveTratumOledView;
 
@@ -56,6 +58,22 @@ static inline FiveTratumOledView oled_create_view_on(lv_obj_t *parent, FiveTratu
     lv_obj_set_style_bg_color(v.screen, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(v.screen, LV_OPA_COVER, 0);
     lv_obj_remove_flag(v.screen, LV_OBJ_FLAG_SCROLLABLE);
+    if (page == OLED_CANDIDATE) {
+        v.donut = lv_image_create(v.screen);
+        lv_image_set_src(v.donut, &oled_donut_variants[0]);
+        lv_obj_set_pos(v.donut, 2, 3);
+        v.title = oled_label(v.screen, 32, 0, 96, oled_candidate_heading(0), false);
+        for (int row=0; row<3; ++row) v.rows[row] = oled_label(v.screen, 32, 8+row*8, 96, "", false);
+        for (unsigned i=0; i<4; ++i) {
+            v.sprinkles[i] = lv_obj_create(v.screen);
+            lv_obj_remove_style_all(v.sprinkles[i]);
+            lv_obj_set_size(v.sprinkles[i], i%2 ? 1 : 2, i%2 ? 2 : 1);
+            lv_obj_set_style_bg_color(v.sprinkles[i], lv_color_white(), 0);
+            lv_obj_set_style_bg_opa(v.sprinkles[i], LV_OPA_COVER, 0);
+            lv_obj_add_flag(v.sprinkles[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        return v;
+    }
     if (page == OLED_BOOT || page == OLED_CREDITS) {
         oled_image(v.screen, 0, 0, &oled_logo_32);
         oled_label(v.screen, 36, 0, 92, "5tratumFW", false);
@@ -189,10 +207,20 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         snprintf(c, sizeof(c), "%s", oled_text(d->scriptsig));
         break;
     case OLED_CANDIDATE:
-        title = "NOTICE";
+        title = oled_candidate_heading(d->candidate_variant);
+        lv_image_set_src(v->donut, &oled_donut_variants[d->candidate_variant % OLED_DONUT_VARIANTS]);
+        /* Six seconds of two-pixel sparkle motion, then a still candidate.
+         * Re-rendering the same pending event cannot restart the animation. */
+        lv_obj_set_y(v->donut, 3 + (d->candidate_frame == 2 || d->candidate_frame == 4));
+        for (unsigned i=0; i<4; ++i) {
+            lv_obj_set_pos(v->sprinkles[i], i%2 ? 29 : 0,
+                           1 + ((i*7 + d->candidate_frame*3) % 30));
+            lv_obj_set_flag(v->sprinkles[i], LV_OBJ_FLAG_HIDDEN,
+                            !d->candidate_frame || (i+d->candidate_frame)%2);
+        }
         strcpy(a, "BLOCK CANDIDATE");
         snprintf(b, sizeof(b), "Diff %s", oled_text(d->best_session));
-        strcpy(c, "Check pool acceptance");
+        strcpy(c, "Awaiting pool");
         break;
     case OLED_FAULT:
         title = d->hardware_fault ? "FAULT" : "ASIC";
@@ -241,6 +269,12 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         strcpy(a, "Open source");
         strcpy(b, "ESP-Miner");
         strcpy(c, "OSMU / Bitaxe");
+        break;
+    case OLED_IDENTIFY:
+        title = "IDENTIFY";
+        strcpy(a, "Identify miner");
+        snprintf(b, sizeof(b), "IP %s", oled_text(d->ip));
+        strcpy(c, "Button to exit");
         break;
     }
     if (v->title) lv_label_set_text(v->title, title);

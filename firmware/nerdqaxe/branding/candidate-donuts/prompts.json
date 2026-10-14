@@ -1,0 +1,61 @@
+{
+  "mode": "built-in image_gen",
+  "intent": "generate",
+  "transparent_background": true,
+  "files": [
+    {
+      "file": "static/celebrations/donut/01-honey-glaze.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "0b10b8f162748c6c22455aef120392ea1c499b72f10f0138380e427bf6eebf8d",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: classic translucent honey-colored sugar glaze on golden dough, with three tiny restrained warm gold sparkles close to the rim. Keep the donut as the clear main subject."
+    },
+    {
+      "file": "static/celebrations/donut/02-strawberry-sprinkles.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "daf1d07f7291ac8552aa4e56c5727baeffed893e872408959c95ba5b8012136c",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: soft strawberry pink icing with sparse small pastel rainbow sugar sprinkles embedded in the icing, glossy but natural. The dough remains golden and visible beneath the icing."
+    },
+    {
+      "file": "static/celebrations/donut/03-chocolate-glaze.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "be1fa689058aa5aaf9c210f05f1f1db07e7fcd1674954b3150ef281618f9891c",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: rich dark chocolate glaze with realistic smooth glossy highlights and a few tiny chocolate flecks, golden dough visible at its rounded lower edge. Keep enough edge lighting to read clearly on a dark background."
+    },
+    {
+      "file": "static/celebrations/donut/04-icy-cyan.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "daaa3078992fa9ba6ed904fcb0baae9d2463538d9db048520b251186846b8860",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: icy white sugar glaze with a delicate cyan-tinted sheen and small translucent pale blue sugar crystals embedded in the icing. Cool celebratory palette, still visibly delicious baked golden dough."
+    },
+    {
+      "file": "static/celebrations/donut/05-violet-galaxy.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "b0bb4c19cdc4e321593a1f42ad4c57db07e2257607523714ff46c55f95faea1c",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: glossy violet and deep purple galaxy icing with restrained tiny embedded white and pale blue star-like sugar flecks and a soft lavender swirl. Elegant and playful; no space backdrop, halos, or scenery."
+    },
+    {
+      "file": "static/celebrations/donut/06-caramel-party.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "db48fe6eec74ea2d666099354797ff9f1c855b1df68958aff96c59cd2a22653d",
+      "prompt": "Use case: stylized-concept.\nAsset type: square transparent game UI celebration icon for the dark 5tratum mining dashboard.\nPrimary request: one plump freshly baked golden ring donut, polished playful 3D product/game icon with realistic soft glaze; appetizing, tactile, premium, friendly without any face or mascot.\nComposition/framing: square 1024x1024 canvas, centered single donut viewed from a gentle front three-quarter angle so the circular central hole is clearly visible; donut occupies about 70% of the width; generous safe transparent margins. Consistent silhouette and camera angle for a six-icon family.\nLighting: soft studio key light upper-left, clean highlights, subtle cool rim light for contrast against a very dark UI. Golden baked dough, soft rounded edges, gentle glazing drips.\nBackground: genuinely transparent alpha outside the object and through the central hole. No floor, backdrop, gradient, rectangular card, plate, cast background shadow, or baked-in checkerboard.\nConstraints: no text, letters, logos, coin symbols, watermarks, borders, faces, eyes, arms, people, mascots, duplicate donuts, or extra props. Crisp readable silhouette even at small UI sizes.\nVariant: warm golden caramel glaze, subtle caramel drizzle and five restrained tiny confetti pieces near the donut's outer rim in cyan, pink, and warm gold. Isolated celebratory cutout, with no large confetti cloud."
+    }
+  ]
+}

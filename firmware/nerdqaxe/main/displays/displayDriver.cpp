@@ -179,6 +179,7 @@ void DisplayDriver::checkAutoTurnOffScreen(void) {
 void DisplayDriver::startShutdownCountdown() {
     if (m_shutdownCountdownActive) return;
 
+    m_ui->hideImageOverlay();
     m_shutdownCountdownActive = true;
     m_isActiveOverlay = true;
     m_shutdownStartTime = esp_timer_get_time();
@@ -240,6 +241,8 @@ void DisplayDriver::showError(const char *error_message, uint32_t error_code) {
     // hide the overlay and free the memory in case it was open
     m_ui->hideErrorOverlay();
 
+    // Safety cancels the informational celebration and its decorative motion.
+    m_ui->hideImageOverlay();
     // now show the (new) error overlay
     m_ui->showErrorOverlay(error_message, error_code);
     if (m_state == UiState::Identify || m_state == UiState::Brand) enterState(UiState::Mining, now_us());
@@ -257,20 +260,20 @@ void DisplayDriver::hideError() {
 
 void DisplayDriver::showFoundBlockOverlay() {
     PThreadGuard lock(m_lvglMutex);
-    // A candidate is informational and cannot cover a safety fault.
-    if (m_ui->ui_errOverlayContainer) return;
-    // hide the overlay and free the memory in case it was open
-    m_ui->hideImageOverlay();
-
-    // not enabled?
-    if (!m_showFoundBlockEnabled) {
-        return;
-    }
+    // Faults, shutdown and enrollment outrank this informational celebration.
+    if (!m_showFoundBlockEnabled || m_ui->ui_errOverlayContainer ||
+        m_shutdownCountdownActive || POWER_MANAGEMENT_MODULE.isShutdown() ||
+        otp.isEnrollmentActive() || m_state == UiState::ShowQR ||
+        m_state == UiState::PowerOff || m_state == UiState::Identify ||
+        m_state == UiState::Splash1 || m_state == UiState::Splash2 ||
+        m_state == UiState::Wait || m_state == UiState::Portal) return;
     if (m_state == UiState::Brand) enterState(UiState::Mining, now_us());
-
-    // now show the (new) image overlay
-    m_ui->showImageOverlay(&ui_img_found_block_png);
+    // Existing animation scheduling is bounded; the illustration stays visible
+    // and dismissible after its short bob/shine/confetti burst has finished.
+    enableLvglAnimations(true);
+    m_ui->showCandidateOverlay(m_animationsEnabled);
     m_isActiveOverlay = true;
+    displayTurnOn();
     refreshScreen();
 }
 
@@ -381,11 +384,13 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         safe_screen_change(m_ui->ui_BrandScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0);
         break;
     case UiState::ShowQR:
+        m_ui->hideImageOverlay();
         ESP_LOGI(TAG, "enter qr state");
         enableLvglAnimations(true);
         safe_screen_change(m_ui->ui_qrScreen, LV_SCR_LOAD_ANIM_FADE_ON, 500, 0);
         break;
     case UiState::Identify:
+        m_ui->hideImageOverlay();
         ESP_LOGI(TAG, "enter state identify (blink %lums)", m_identifyDuration_ms);
         break;
     case UiState::PowerOff:
@@ -562,6 +567,7 @@ uint32_t DisplayDriver::handleLvglTick(int32_t &elapsed_Ani_cycles) {
     {
         PThreadGuard lock(m_lvglMutex);
         increaseLvglTick();
+        m_ui->updateCandidateOverlayAnimation(m_animationsEnabled);
         const uint32_t waitMs = lv_timer_handler();
         if (m_animationsEnabled) {
             if (++elapsed_Ani_cycles > 80) {
@@ -832,7 +838,7 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = TDISPLAYS3_PIN_NUM_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order = FiveTratumDisplay::PanelProfile.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
 
@@ -845,14 +851,12 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
     esp_lcd_panel_swap_xy(panel_handle, true);
 
     Board *board = SYSTEM_MODULE.getBoard();
-    if (!board->isFlipScreenEnabled()) {
-        esp_lcd_panel_mirror(panel_handle, true, false);
-    } else {
-        esp_lcd_panel_mirror(panel_handle, false, true);
-    }
+    esp_lcd_panel_mirror(panel_handle,
+        FiveTratumDisplay::panelMirrorX(board->isFlipScreenEnabled()),
+        FiveTratumDisplay::panelMirrorY(board->isFlipScreenEnabled()));
 
     // the gap is LCD panel specific, even panels with the same driver IC, can have different gap value
-    esp_lcd_panel_set_gap(panel_handle, 0, 35);
+    esp_lcd_panel_set_gap(panel_handle, 0, FiveTratumDisplay::PanelProfile.gapY);
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 

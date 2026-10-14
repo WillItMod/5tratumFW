@@ -1,0 +1,11 @@
+# OctAxe Beta4 — glazed-donut candidate screen
+
+`5tratumFW-oct-0.1.0-beta.4` · `octaxe-v0.1.0-beta.4` · source `689b2c8fcd01c4b507be102bb1caed22f4552738`.
+
+The physical screen gets six glazed-donut block-candidate celebrations, with random designs, no consecutive repeat and one short bob, shine and confetti burst. **Block candidate / Awaiting verification** stays visible until dismissed; this is not a confirmed-win claim. Faults, shutdown and enrollment retain priority.
+
+**NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 / ESP32-S3 / original 320×170 display only.** Physical evidence remains limited to the owned PCB 2.2 assembly; no other revision is newly qualified. Use `esp-miner-NerdOCTAXE-Gamma.bin` and its matching `www.bin` from this package, with its manifest, checksums and corresponding GPL source. Existing clocks, voltage, regulator/fan behavior, credentials, twenty slots, schedules and native A/B behavior are retained. No factory/NVS image, automatic tuning or independent ASIC mining is added.
+
+Full pinned build and same-source CI passed. The exact pair completed supervised OTA, all 94 served-asset and exported-settings checks on 14 October 2026. All 8 counters were fresh; accepted shares increased by 4 during a 56-second same-boot window. Both A/B streams carried fresh 5TRAT coin/job context. An outage after OTA was followed by a verified cold boot and the new-boot observation above; the owner confirmed normal screens/fans. A later simultaneous power-on reset interrupted the first manual-control restoration, which is not counted as a completed test. A fresh pause/resume retry restored running mode and the original override/settings; board/regulator-reported power changed 183.25 → 0.0625 → 184.75 W, without a wall-power measurement.
+
+The six-design celebration has native fixture evidence; no physical block candidate was created or observed. The 480×320 profiles remain **private/experimental, with no public larger-screen binary**. These separate completed checks do not qualify sustained soak, thermal faults, scheduled power boundaries, all recovery cases or another PCB revision. [Beta4 validation](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/validation-oct-beta4.md) · [Model guide](https://github.com/WillItMod/5tratumFW/blob/main/docs/nerdoctaxe.md).

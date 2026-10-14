@@ -27,17 +27,25 @@ def run():
     with (BUILD / "build.log").open("w") as log:
         subprocess.run(["cmake", "--build", str(BUILD), "--target", "display-native", "-j", "6"],
                        check=True, stdout=log, stderr=subprocess.STDOUT)
-    result = subprocess.run([str(BUILD / "display-native"), str(OUTPUT)],
-                            check=True, text=True, capture_output=True)
-    report = json.loads(result.stdout)
+    results = []
+    for resolution in ("320x170", "480x320"):
+        output = OUTPUT if resolution == "320x170" else OUTPUT / resolution
+        output.mkdir(parents=True, exist_ok=True)
+        args = [str(BUILD / "display-native"), str(output)]
+        if resolution == "480x320":
+            args.append(resolution)
+        result = subprocess.run(args, check=True, text=True, capture_output=True)
+        results.append(json.loads(result.stdout))
+    report = results[0]
+    report["wideDisplay"] = results[1]
     report["productionDriver"] = json.loads((BUILD / "display-driver-source.json").read_text())
-    report["images"] = [str(path) for path in sorted(OUTPUT.glob("*.ppm"))]
+    report["images"] = [str(path) for path in sorted(OUTPUT.rglob("*.ppm"))]
     try:
         from PIL import Image
-        for image in OUTPUT.glob("*.ppm"):
+        for image in OUTPUT.rglob("*.ppm"):
             # Encoding the native framebuffer unchanged; no mockup/resizing.
             Image.open(image).save(image.with_suffix(".png"))
-        report["pngImages"] = [str(path) for path in sorted(OUTPUT.glob("*.png"))]
+        report["pngImages"] = [str(path) for path in sorted(OUTPUT.rglob("*.png"))]
     except ImportError:
         report["pngImages"] = []
     report["scope"] = "Host LVGL layout and formatting only; not hardware display validation"

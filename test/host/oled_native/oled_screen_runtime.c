@@ -8,6 +8,7 @@ int host_display_timeout=-1;
 FiveTratumMuxSnapshot host_mux;
 float host_rate_gh=1200;
 uint64_t host_rate_sample_us=9000000;
+uint32_t host_random_calls;
 /* The legacy image declarations link, but compact runtime uses established new mark. */
 const lv_img_dsc_t osmu_logo={0}, identify_text={0};
 #include "../../../main/screen.c"
@@ -21,6 +22,7 @@ static void update(void)
     assert(host_lock_depth==0);
     lvgl_port_lock(0);
     screen_update_cb(NULL);
+    lv_obj_update_layout(lv_screen_active());
     lvgl_port_unlock();
     assert(host_lock_depth==0);
 }
@@ -53,6 +55,8 @@ int main(void)
     host_display_timeout=0;
     lv_tick_inc(100000);
     update(); assert(!lv_obj_has_flag(identify_image,LV_OBJ_FLAG_HIDDEN));
+    assert(compact_identify.page==OLED_IDENTIFY && compact_identify.donut==NULL);
+    assert(!strcmp(lv_label_get_text(compact_identify.rows[0]),"Identify miner"));
     assert(host_display_on); /* Explicit identify wakes a configured-off display. */
     state.SYSTEM_MODULE.hardware_fault=true;
     strcpy(state.SYSTEM_MODULE.hardware_fault_msg,"ASIC power-off failed");
@@ -84,13 +88,44 @@ int main(void)
     update(); assert(get_current_screen()==SCR_SELF_TEST);
     state.SELF_TEST_MODULE.is_active=false; state.SYSTEM_MODULE.asic_status=NULL;
     state.SYSTEM_MODULE.show_new_block=true;
+    state.SYSTEM_MODULE.block_found=1;
     update(); assert(get_current_screen()==SCR_CANDIDATE);
     assert(strstr(lv_label_get_text(compact_views[SCR_CANDIDATE].rows[0]),"CANDIDATE"));
+    assert(!strcmp(lv_label_get_text(compact_views[SCR_CANDIDATE].rows[2]),"Awaiting pool"));
+    assert(host_random_calls==1);
+    const uint8_t first_variant=compact_candidate.variant;
+    const uint64_t first_started=compact_candidate.started_us;
+    const int64_t before_candidate_time=host_now;
+    host_now+=500000;
+    update(); assert(compact_candidate.variant==first_variant && host_random_calls==1);
+    assert(compact_candidate.started_us==first_started);
+    assert(lv_obj_get_y(compact_views[SCR_CANDIDATE].donut)==4);
     state.SYSTEM_MODULE.hardware_fault=true;
     update(); assert(get_current_screen()==SCR_ASIC_STATUS);
     state.SYSTEM_MODULE.hardware_fault=false;
     update(); assert(get_current_screen()==SCR_CANDIDATE); /* Clearing fault retains candidate. */
+    assert(compact_candidate.variant==first_variant && compact_candidate.started_us==first_started && host_random_calls==1);
+    state.SYSTEM_MODULE.is_firmware_update=true;
+    update(); assert(get_current_screen()==SCR_FIRMWARE);
+    state.SYSTEM_MODULE.is_firmware_update=false;
+    state.SYSTEM_MODULE.is_connected=false;
+    update(); assert(get_current_screen()==SCR_CONNECTION);
+    state.SYSTEM_MODULE.is_connected=true;
+    update(); assert(get_current_screen()==SCR_CANDIDATE && compact_candidate.variant==first_variant);
+    host_now=(int64_t)(first_started+OLED_CANDIDATE_ANIMATION_US);
+    update();
+    assert(lv_obj_get_y(compact_views[SCR_CANDIDATE].donut)==3);
+    for (unsigned i=0;i<4;++i) assert(lv_obj_has_flag(compact_views[SCR_CANDIDATE].sprinkles[i],LV_OBJ_FLAG_HIDDEN));
+    update(); assert(host_random_calls==1 && compact_candidate.started_us==first_started);
+    state.SYSTEM_MODULE.block_found=2; /* Another candidate before acknowledging the first. */
+    update(); assert(compact_candidate.variant!=first_variant && host_random_calls==2);
+    const uint8_t second_variant=compact_candidate.variant;
     state.SYSTEM_MODULE.show_new_block=false;
+    update(); assert(get_current_screen()!=SCR_CANDIDATE);
+    state.SYSTEM_MODULE.show_new_block=true; /* Existing remote flag can also start a distinct event. */
+    update(); assert(compact_candidate.variant!=second_variant && host_random_calls==3);
+    state.SYSTEM_MODULE.show_new_block=false;
+    host_now=before_candidate_time;
     state.SYSTEM_MODULE.mining_paused=true;
     update(); assert(!strcmp(lv_label_get_text(compact_views[SCR_STATS].title),"PAUSING"));
     assert(!strcmp(lv_label_get_text(compact_views[SCR_STATS].rate),"--"));
@@ -131,7 +166,7 @@ int main(void)
     host_rate_sample_us=0; state.SYSTEM_MODULE.mining_paused=false; host_applied=false;
     update(); assert(!strcmp(lv_label_get_text(compact_views[SCR_STATS].title),"NO DATA"));
     assert(host_lock_depth==0);
-    puts("PASS: actual screen.c startup/carousel, self-test recovery, safety priority, pause transitions, stale rates and MUX fallback");
+    puts("PASS: actual screen.c candidate lifecycle/no repeats/bounded animation/identify separation, startup/carousel, safety priority, pause transitions, stale rates and MUX fallback");
     lv_deinit();
     return 0;
 }

@@ -95,4 +95,5 @@ docker run --rm -e BOARD=NERDOCTAXEGAMMA \
       -D FIVETRATUM_BM1370_CAPTURE=OFF build' \
   oct-build "/project/$OCT_BUILD_REL" "$OCT_VERSION" "$OCT_DEFAULT_CONFIG"
 "$OCT_TEST_PYTHON" test/host/render_display_native.py
+"$OCT_TEST_PYTHON" test/host/render_candidate_native.py
 python3 tools/package_5tratumfw_oct.py --build-dir "$OCT_BUILD_REL"

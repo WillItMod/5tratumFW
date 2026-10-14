@@ -29,8 +29,10 @@ for pgm in sorted(OUT.glob("*.pgm")):
     png=pgm.with_suffix(".png")
     image.save(png)
     images.append({"name":pgm.stem,"path":str(png.relative_to(OUT)),"width":128,"height":32})
-selected=["boot","rate","health","shares","mux-connected","operating","wifi","paused","candidate","overheat","setup","unavailable"]
-montage=Image.new("RGB",(540,12*164+44),"#101820")
+selected=["boot","rate","health","shares","mux-connected","operating","wifi","paused",
+          "candidate-01","candidate-02","candidate-03","candidate-04","candidate-05","candidate-06",
+          "candidate-motion-2","candidate-motion-3","identify","overheat","setup","unavailable"]
+montage=Image.new("RGB",(540,len(selected)*164+44),"#101820")
 draw=ImageDraw.Draw(montage)
 draw.text((14,10),"SIMULATED READINGS - actual native LVGL 128 x 32",fill="white")
 for index,name in enumerate(selected):
@@ -38,6 +40,16 @@ for index,name in enumerate(selected):
     draw.text((14,y),name.replace("-"," ").upper(),fill="#80d6e8")
     montage.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(14,y+22))
 montage.save(OUT/"oled-simulated-contact-sheet.png")
+donuts=Image.new("RGB",(1080,3*164+44),"#101820")
+donut_draw=ImageDraw.Draw(donuts)
+donut_draw.text((14,10),"SIMULATED CANDIDATES - actual native LVGL 128 x 32, enlarged 4x",fill="white")
+for index in range(6):
+    name=f"candidate-{index+1:02d}"
+    x=14+(index%2)*540
+    y=44+(index//2)*164
+    donut_draw.text((x,y),f"CANDIDATE {index+1}",fill="#80d6e8")
+    donuts.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(x,y+22))
+donuts.save(OUT/"oled-candidate-contact-sheet.png")
 (OUT/"oled-native-report.json").write_text(json.dumps({
     "fixtureOnly":True,"hardwareCalls":False,"runtimeDependencies":"Managed LVGL9.3 and production portfolio font",
     "targetConfiguration":"main/lv_conf.h; host only substitutes OS NONE and libc allocator",

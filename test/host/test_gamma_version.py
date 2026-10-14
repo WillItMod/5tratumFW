@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class GammaVersionTests(unittest.TestCase):
     def test_current_application_marker_and_generated_web_pair_match(self):
         version = (ROOT / "version.txt").read_text().strip()
-        self.assertEqual(version, "5tratumFW-0.1.0-beta.8")
+        self.assertEqual(version, "5tratumFW-0.1.0-beta.9")
         self.assertLessEqual(len(version.encode()), 31)
         with tempfile.TemporaryDirectory(prefix="gamma-version-") as temporary:
             directory = Path(temporary)

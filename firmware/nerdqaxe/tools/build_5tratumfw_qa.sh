@@ -95,4 +95,5 @@ docker run --rm -e BOARD=NERDQAXEPLUS2 \
       -D FIVETRATUM_BM1370_CAPTURE=OFF build' \
   qa-build "/project/$QA_BUILD_REL" "$QA_VERSION" "$QA_DEFAULT_CONFIG"
 "$QA_TEST_PYTHON" test/host/render_display_native.py
+"$QA_TEST_PYTHON" test/host/render_candidate_native.py
 python3 tools/package_5tratumfw_qa.py --build-dir "$QA_BUILD_REL"
