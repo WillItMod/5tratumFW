@@ -1,9 +1,14 @@
 # Miner display celebrations and the larger QAxe screen
 
-This source change updates the local block-candidate presentation on Gamma,
-NerdQAxe++ and NerdOctAxe Gamma. It is not a new qualified firmware release.
-The published downloads and their existing physical-validation records remain
-the qualified pairs until a new matched release is tested and published.
+Gamma Beta9, NerdQAxe++ Beta6 and NerdOctAxe Gamma Beta4 update the local
+block-candidate presentation. Their standard matched pairs were built from
+clean source `689b2c8fcd01c4b507be102bb1caed22f4552738` and installed on the
+owned Gamma 601, Gamma 602, QAxe and PCB 2.2 OctAxe on 14 October 2026.
+Paired versions, served assets, retained settings, mining and cold starts were
+checked; the owner confirmed normal physical screens and fans. See the
+[release index](releases/README.md) for each family's exact validation scope.
+The new candidate artwork and animation were exercised in native fixtures;
+no fabricated block event was sent to a live miner.
 
 ## Candidate celebration
 

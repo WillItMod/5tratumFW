@@ -2,7 +2,7 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.6`. Its clean-source build and supervised installed-pair checks are pending; see [Beta6 validation](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) retains its separate historical evidence. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. Public helpers retain the original 320×170 screen. [Experimental 480×320 profiles](experimental-480-display.md) are excluded from this release/package path.
+The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.6`, compiled from clean source `689b2c8fcd01c4b507be102bb1caed22f4552738`. Its pinned build, exact-source CI and supervised installed-pair checks passed; see [Beta6 validation](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) retains its separate historical evidence. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. Public helpers retain the original 320×170 screen. [Experimental 480×320 profiles](experimental-480-display.md) are excluded from this release/package path.
 
 ## Requirements
 
@@ -102,6 +102,6 @@ After target compilation resolves the pinned LVGL component, render native scree
 python3 test/host/render_display_native.py
 ```
 
-Those output images are simulated, not photographs or hardware telemetry. The exact Beta5 pair's separate short OTA/settings/mining record is in [Beta5 validation](validation-qa-beta5.md); it does not qualify physical display readability, sustained soak or all protection faults. Each future pair needs its own installation and preservation record. Do not copy an earlier candidate's hardware qualification into another build.
+Those output images are simulated, not photographs or hardware telemetry. The exact Beta6 pair's separate short OTA/settings/mining record and owner normal-screen confirmation are in [Beta6 validation](validation-qa-beta6.md); candidate animations, sustained soak and all protection faults were not physically exercised. Each future pair needs its own installation and preservation record. Do not copy an earlier candidate's hardware qualification into another build.
 
 Native Dual pool provides two MUX connections using the shared ASIC chain. It does **not** establish independent mining on individual physical ASICs. The manifest keeps `independentWorkAssignment: false`. Saved clocks, voltage, cooling, pool/tuning slots and schedules must be retained through compatible OTA; no presets or automatic tuning run during this build or upgrade.
