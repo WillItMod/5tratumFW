@@ -23,6 +23,18 @@ static void save(const char *directory, const char *name, FiveTratumOledView *vi
     lv_obj_update_layout(view->screen);
     lv_refr_now(NULL);
     assert(lv_obj_get_width(view->screen)==128 && lv_obj_get_height(view->screen)==32);
+    if (view->page==OLED_CANDIDATE) {
+        assert(lv_image_get_src(view->donut)==&oled_donut_variants[data->candidate_variant%OLED_DONUT_VARIANTS]);
+        assert(lv_obj_get_x(view->donut)>=0 && lv_obj_get_y(view->donut)>=0);
+        assert(lv_obj_get_x(view->donut)+lv_obj_get_width(view->donut)<=32);
+        assert(lv_obj_get_y(view->donut)+lv_obj_get_height(view->donut)<=32);
+        for (unsigned i=0;i<4;++i) {
+            lv_obj_t *label=i ? view->rows[i-1] : view->title;
+            const char *text=lv_label_get_text(label);
+            assert(lv_text_get_width(text,(uint32_t)strlen(text),&lv_font_portfolio_6x8,0)<=96);
+            assert(lv_obj_get_y(label)+lv_obj_get_height(label)<=32);
+        }
+    }
     unsigned lit=0;
     for (unsigned i=0; i<sizeof(framebuffer); ++i) lit+=framebuffer[i];
     assert(lit>50 && lit<3000);
@@ -35,6 +47,30 @@ static void save(const char *directory, const char *name, FiveTratumOledView *vi
 }
 static void data_tests(void)
 {
+    FiveTratumOledCandidate candidate={0};
+    oled_candidate_update(&candidate,false,0,1,UINT32_MAX);
+    assert(!candidate.has_variant && !candidate.active);
+    for (unsigned i=0;i<100;++i) {
+        uint8_t previous=candidate.variant;
+        const uint64_t started=UINT64_C(10000000)+i*UINT64_C(1000000);
+        oled_candidate_update(&candidate,true,i,started,UINT32_MAX-i);
+        assert(candidate.variant<OLED_DONUT_VARIANTS && (!i || candidate.variant!=previous));
+        const uint8_t chosen=candidate.variant;
+        assert(oled_candidate_frame(&candidate,started)==1);
+        assert(oled_candidate_frame(&candidate,started+OLED_CANDIDATE_ANIMATION_US-1)>0);
+        assert(oled_candidate_frame(&candidate,started+OLED_CANDIDATE_ANIMATION_US)==0);
+        assert(oled_candidate_frame(&candidate,started-1)==0);
+        oled_candidate_update(&candidate,true,i,started+1,0);
+        assert(candidate.variant==chosen && candidate.started_us==started);
+        oled_candidate_update(&candidate,false,i,started+2,0);
+        assert(!candidate.active && oled_candidate_frame(&candidate,started+2)==0);
+    }
+    for (unsigned i=0;i<OLED_DONUT_VARIANTS;++i) {
+        assert(oled_donut_variants[i].header.w==26 && oled_donut_variants[i].header.h==26);
+        assert(oled_donut_variants[i].header.cf==LV_COLOR_FORMAT_I1 && oled_donut_variants[i].header.stride==4);
+        assert(oled_donut_variants[i].data_size==112);
+        assert(lv_text_get_width(oled_candidate_heading(i),(uint32_t)strlen(oled_candidate_heading(i)),&lv_font_portfolio_6x8,0)<=96);
+    }
     FiveTratumOledData d={.initialized=true,.runtime_ready=true,.rate_fresh=true,.rate_gh=1200,.power_w=18.4};
     assert(oled_rate_available(&d));
     d.rate_gh=0; assert(oled_rate_available(&d));
@@ -101,6 +137,18 @@ int main(int argc,char **argv)
     for (unsigned i=0;i<=OLED_CREDITS;++i) save(argv[1],names[i],&views[i],&d);
     assert(strstr(lv_label_get_text(views[OLED_CANDIDATE].rows[0]),"CANDIDATE"));
     assert(!strstr(lv_label_get_text(views[OLED_CANDIDATE].rows[2]),"accepted"));
+    for (unsigned i=0;i<OLED_DONUT_VARIANTS;++i) {
+        char name[32]; snprintf(name,sizeof(name),"candidate-%02u",i+1);
+        d.candidate_variant=i; d.candidate_frame=0;
+        save(argv[1],name,&views[OLED_CANDIDATE],&d);
+    }
+    d.candidate_variant=0;
+    d.candidate_frame=2; save(argv[1],"candidate-motion-2",&views[OLED_CANDIDATE],&d);
+    d.candidate_frame=3; save(argv[1],"candidate-motion-3",&views[OLED_CANDIDATE],&d);
+    d.candidate_frame=0;
+    FiveTratumOledView identify=oled_create_view(OLED_IDENTIFY);
+    save(argv[1],"identify",&identify,&d);
+    assert(identify.donut==NULL && !strcmp(lv_label_get_text(identify.title),"IDENTIFY"));
     const char *recovery="Hold BOOT button for 2 seconds to cancel self-test, or press RESET to run self-test again.";
     d.message="ASIC chain detection failed"; d.result="SELF-TEST FAIL!"; d.finished=recovery;
     save(argv[1],"self-test-asic-failure",&views[OLED_SELF_TEST],&d);
@@ -131,7 +179,7 @@ int main(int argc,char **argv)
     assert(!strcmp(lv_label_get_text(views[OLED_RATE].title),"NO DATA"));
     save(argv[1],"stale-positive-efficiency",&views[OLED_HEALTH],&d);
     assert(!strcmp(lv_label_get_text(views[OLED_HEALTH].rows[2]),"Eff -- J/TH"));
-    puts("PASS: 27 actual LVGL9 I1 framebuffer views, complete self-test recovery and expired positive rate");
+    printf("PASS: 36 actual LVGL9 I1 framebuffer views, six donuts (%u bitmap bytes), candidate bounds/no repeats/bounded motion, separate identify, self-test recovery and expired positive rate\n",(unsigned)(sizeof(oled_donut_variants)/sizeof(oled_donut_variants[0])*oled_donut_variants[0].data_size));
     lv_deinit();
     return 0;
 }

@@ -15,6 +15,8 @@ endif()
 
 message(STATUS "Selected board: $ENV{BOARD}")
 
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/display_profile.cmake")
+
 # Public helpers bind the application descriptor to a separate exact model family.
 # An inherited board definition alone is not a public build or hardware qualification.
 if(DEFINED FIVETRATUM_RELEASE_PROFILE)

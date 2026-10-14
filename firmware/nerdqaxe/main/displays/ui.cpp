@@ -2,6 +2,8 @@
 #include "ui_helpers.h"
 #include "ui.h"
 #include "display_layout.h"
+#include "display_candidate_assets.h"
+#include "esp_random.h"
 
 #include "displayDriver.h"
 #include "esp_log.h"
@@ -85,7 +87,9 @@ void UI::miningScreenInit() {
     ui_lbASIC = FiveTratumDisplay::hiddenValue(ui_MiningScreen);
     ui_imgNet = lv_img_create(ui_MiningScreen);
     lv_img_set_src(ui_imgNet, &ui_img_wifi_png);
-    lv_obj_set_pos(ui_imgNet, 294, 6);
+    lv_img_set_pivot(ui_imgNet, 0, 0);
+    lv_img_set_zoom(ui_imgNet, FiveTratumDisplay::layoutX(256));
+    lv_obj_set_pos(ui_imgNet, FiveTratumDisplay::layoutX(294), FiveTratumDisplay::layoutY(6));
     lv_obj_clear_flag(ui_imgNet, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(ui_MiningScreen, on_screen_loaded, LV_EVENT_SCREEN_LOADED, m_display);
 }
@@ -128,7 +132,7 @@ void UI::logScreenInit() {
     FiveTratumDisplay::header(ui_LogScreen, "SYSTEM LOG");
     ui_LogLabel = FiveTratumDisplay::text(ui_LogScreen, "", 8, 38, 304);
     lv_label_set_long_mode(ui_LogLabel, LV_LABEL_LONG_WRAP);
-    lv_obj_set_height(ui_LogLabel, 124);
+    lv_obj_set_height(ui_LogLabel, FiveTratumDisplay::layoutY(124));
 }
 
 void UI::bTCScreenInit() {
@@ -162,7 +166,7 @@ bool UI::createQRScreen(uint8_t *buf, int size) {
     // the header. Refuse larger inputs rather than clip a security QR.
     if (!buf || size < 21 || size > 57 || (size - 21) % 4 != 0) return false;
     const int quiet = 4;
-    const int scale = std::max(2, 136 / (size + 2 * quiet));
+    const int scale = std::max(2, FiveTratumDisplay::layoutX(136) / (size + 2 * quiet));
     const int side = (size + 2 * quiet) * scale;
     const size_t bytes = static_cast<size_t>(side) * side * sizeof(lv_color_t);
     lv_color_t *newBuffer = m_qr_canvas_buf;
@@ -176,7 +180,8 @@ bool UI::createQRScreen(uint8_t *buf, int size) {
         lv_obj_add_event_cb(ui_qrScreen, on_screen_loaded, LV_EVENT_SCREEN_LOADED, m_display);
     } else if (newBuffer != m_qr_canvas_buf) {
         lv_canvas_set_buffer(m_qr_canvas, newBuffer, side, side, LV_IMG_CF_TRUE_COLOR);
-        lv_obj_align(m_qr_canvas, LV_ALIGN_RIGHT_MID, -8, 16);
+        lv_obj_align(m_qr_canvas, LV_ALIGN_RIGHT_MID,
+            -FiveTratumDisplay::layoutX(8), FiveTratumDisplay::layoutY(16));
     }
     if (newBuffer != m_qr_canvas_buf && m_qr_canvas_buf) FREE(m_qr_canvas_buf);
     m_qr_canvas_buf = newBuffer;
@@ -228,19 +233,25 @@ void UI::hideErrorOverlay()
     }
 }
 
-// Function to show the overlay with a centered image
-void UI::showImageOverlay(const lv_img_dsc_t *image) {
-    // The existing event is a locally found candidate, not pool acceptance.
-    (void)image;
-    ui_imageOverlayContainer = FiveTratumDisplay::warning(lv_scr_act(), "Block candidate", "Pool acceptance is not verified.\nPress a button to dismiss.");
+// This is a locally found block candidate, never a claim of pool or chain proof.
+void UI::showCandidateOverlay(bool animate) {
+    hideImageOverlay();
+    const unsigned variant = m_candidateVariants.next(esp_random());
+    m_candidatePresentation = FiveTratumDisplay::candidatePresentation(
+        lv_layer_top(), &FiveTratumDisplay::donutCandidateImages[variant], variant);
+    ui_imageOverlayContainer = m_candidatePresentation.container;
+    m_candidateStartedTick = lv_tick_get();
+    FiveTratumDisplay::animateCandidate(m_candidatePresentation, 0, animate);
 }
 
-void UI::hideImageOverlay()
-{
-    if (ui_imageOverlayContainer != NULL) {
-        lv_obj_del(ui_imageOverlayContainer);
-        ui_imageOverlayContainer = NULL;
-    }
+void UI::updateCandidateOverlayAnimation(bool enabled) {
+    FiveTratumDisplay::animateCandidate(m_candidatePresentation,
+        lv_tick_get() - m_candidateStartedTick, enabled);
+}
+
+void UI::hideImageOverlay() {
+    FiveTratumDisplay::dismissCandidate(m_candidatePresentation);
+    ui_imageOverlayContainer = nullptr;
 }
 
 void UI::init(Board* board, DisplayDriver *display)

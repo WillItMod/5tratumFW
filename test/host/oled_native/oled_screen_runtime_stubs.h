@@ -28,6 +28,7 @@ typedef struct {
     uint64_t shares_accepted, shares_rejected, work_received, best_session_nonce_diff;
     int64_t start_time;
     int identify_mode_time_ms;
+    int block_found;
     bool is_connected, ap_enabled, mining_paused, mining_runtime_ready, hardware_fault, overheat_mode;
     bool pools_unavailable, is_screen_active, is_firmware_update, is_using_fallback, show_new_block;
     bool pool_decode_coinbase_tx, fallback_pool_decode_coinbase_tx;
@@ -52,6 +53,8 @@ extern int host_display_timeout;
 extern FiveTratumMuxSnapshot host_mux;
 extern float host_rate_gh;
 extern uint64_t host_rate_sample_us;
+extern uint32_t host_random_calls;
+static inline uint32_t esp_random(void) { return ++host_random_calls; }
 static inline bool lvgl_port_lock(uint32_t wait) { (void)wait; ++host_lock_depth; return true; }
 static inline void lvgl_port_unlock(void) { --host_lock_depth; }
 static inline esp_err_t display_on(bool on) { host_display_on=on; return ESP_OK; }

@@ -10,6 +10,7 @@
 #include "ui_ipc.h"
 #include "display_data.h"
 #include "boot_status.h"
+#include "display_profile.h"
 #include "stratum/stratum_manager.h"
 
 /* INCLUDES ------------------------------------------------------------------*/
@@ -21,7 +22,7 @@
 #define PIN_BUTTON_2 (gpio_num_t) 0  // Button 2 GPIO pin
 
 // Display settings
-#define TDISPLAYS3_LCD_PIXEL_CLOCK_HZ (6528000)                             // Pixel clock for LCD in Hz (60 FPS, 170 x 320 pixels)
+#define TDISPLAYS3_LCD_PIXEL_CLOCK_HZ (FiveTratumDisplay::PanelProfile.pixelClock)
 #define TDISPLAYS3_LCD_BK_LIGHT_ON_LEVEL 1                                  // Backlight ON level (1: ON, 0: OFF)
 #define TDISPLAYS3_LCD_BK_LIGHT_OFF_LEVEL !TDISPLAYS3_LCD_BK_LIGHT_ON_LEVEL // Backlight OFF level
 
@@ -45,9 +46,9 @@
 #define TDISPLAYS3_PIN_NUM_BK_LIGHT (gpio_num_t) 38 // LCD backlight control pin
 
 // LCD resolution and buffer size
-#define TDISPLAYS3_LCD_H_RES 320                                            // Horizontal resolution
-#define TDISPLAYS3_LCD_V_RES 170                                            // Vertical resolution
-#define LVGL_LCD_BUF_SIZE (TDISPLAYS3_LCD_H_RES * TDISPLAYS3_LCD_V_RES) / 4 // Buffer size for display
+#define TDISPLAYS3_LCD_H_RES (FiveTratumDisplay::PanelProfile.width)
+#define TDISPLAYS3_LCD_V_RES (FiveTratumDisplay::PanelProfile.height)
+#define LVGL_LCD_BUF_SIZE (FiveTratumDisplay::PanelProfile.bufferPixels)
 
 // Bit sizes for LCD commands and parameters
 #define TDISPLAYS3_LCD_CMD_BITS 8   // Bits for LCD commands
