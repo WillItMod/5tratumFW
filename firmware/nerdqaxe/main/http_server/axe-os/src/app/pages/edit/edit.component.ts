@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnInit, OnDestroy, TemplateRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { switchMap, startWith, tap, catchError, of, Observable, timer, Subscription, throwError } from 'rxjs';
+import { switchMap, startWith, tap, catchError, of, Observable, timer, Subscription, throwError, forkJoin, timeout } from 'rxjs';
 import { FiveTratumProfiles, ProfileSlot, PoolSchedule, PowerReport, PowerSchedule, PowerWindow } from '../../models/IFiveTratumProfiles';
 import { LoadingService } from '../../services/loading.service';
 import { SystemService } from '../../services/system.service';
@@ -11,6 +11,8 @@ import { LocalStorageService } from 'src/app/services/local-storage.service';
 import { OtpAuthService, EnsureOtpResult, EnsureOtpOptions } from '../../services/otp-auth.service';
 import { TranslateService } from '@ngx-translate/core';
 import { ISettingsV2, ISettingsV2Fan } from '../../models/ISettingsV2';
+import { DisplayProfileId } from '../../models/IDisplaySettings';
+import { ISystemV2 } from '../../models/ISystemV2';
 import { sectionFields, changedFields, settingsPatch } from './settings-scope';
 
 enum SupportLevel { Safe = 0, Advanced = 1, Pro = 2 }
@@ -24,6 +26,16 @@ export class EditComponent implements OnInit, OnDestroy {
   public manualTuning = false;
   public saving = false;
   public restartPending = false;
+  public displayProfileSupported = false;
+  public displayProfileEditable = false;
+  public displayActiveProfile: DisplayProfileId = '320x170';
+  public savedDisplayProfile: DisplayProfileId = '320x170';
+  public displayProfileChoices: {id: DisplayProfileId; label: string}[] = [];
+  private readonly allDisplayProfiles: {id: DisplayProfileId; label: string}[] = [
+    {id:'320x170', label:'Standard 320×170'},
+    {id:'480x320-rgb', label:'3.5-inch 480×320 RGB'},
+    {id:'480x320-bgr', label:'3.5-inch 480×320 BGR'},
+  ];
   public tuningReview: {frequencyMHz:number;coreVoltageMv:number;name:string;source:'manual'|'slot'} | null = null;
   private baseline: Record<string,any> = {};
   private scheduleBaseline = '';
@@ -46,6 +58,7 @@ export class EditComponent implements OnInit, OnDestroy {
   public powerError = '';
   public powerBusy = false;
   private powerWatch?: Subscription;
+  private settingsRead?: Subscription;
   public readonly weekDays = [{label:'Sun',bit:1},{label:'Mon',bit:2},{label:'Tue',bit:4},{label:'Wed',bit:8},{label:'Thu',bit:16},{label:'Fri',bit:32},{label:'Sat',bit:64}];
   public readonly utcOffsets = Array.from({length: 105}, (_,i) => (i-48)*15);
 
@@ -166,7 +179,31 @@ export class EditComponent implements OnInit, OnDestroy {
       this.profiles = data; this.profilesError = ''; this.selectTuningSlot(this.tuningSlot);
   }
   get sectionDirty(): boolean {return !!this.form && changedFields(this.form.getRawValue(),this.baseline,this.section,this.fanCount).length>0;}
-  get sectionInvalid(): boolean {return !!this.form && sectionFields(this.section,this.fanCount).some(k=>this.form.get(k)?.enabled && this.form.get(k)?.invalid);}
+  get sectionInvalid(): boolean {return !!this.form && (this.invalidDisplaySelection || sectionFields(this.section,this.fanCount).some(k=>this.form.get(k)?.enabled && this.form.get(k)?.invalid));}
+  private get invalidDisplaySelection(): boolean {
+    const value = this.form?.get('displayProfile')?.value;
+    return this.section === 'display' && value !== this.baseline.displayProfile &&
+      (!this.displayProfileEditable || !this.displayProfileChoices.some(option => option.id === value));
+  }
+  get displayProfileRestartPending(): boolean {return this.displayProfileSupported && this.savedDisplayProfile !== this.displayActiveProfile;}
+  displayProfileLabel(id: DisplayProfileId): string {return this.allDisplayProfiles.find(option => option.id === id)!.label;}
+  private configureDisplayProfile(info: ISettingsV2, system: ISystemV2 | null): void {
+    const hardwareProfiles = info.asicModel === eASICModel.BM1370 && info.deviceModel === 'NerdQAxe++'
+      ? this.allDisplayProfiles.map(option => option.id)
+      : info.asicModel === eASICModel.BM1370 && info.deviceModel === 'NerdOCTAXE-γ' ? ['320x170'] : [];
+    const options = system?.displayProfileOptions;
+    const validOptions = Array.isArray(options) && options.length > 0 && options.includes('320x170') &&
+      new Set(options).size === options.length && options.every(id => hardwareProfiles.includes(id));
+    this.displayProfileSupported = !!validOptions && system!.displayProfileCapabilityVersion === 1 &&
+      system!.deviceModel === info.deviceModel && system!.asicModel === info.asicModel && system!.version === info.version &&
+      system!.displayProfile === info.displayProfile &&
+      options!.includes(info.displayProfile!) && options!.includes(system!.displayActiveProfile!) &&
+      typeof system!.displayRestartRequired === 'boolean' && system!.displayRestartRequired === (info.displayProfile !== system!.displayActiveProfile);
+    this.displayProfileChoices = this.allDisplayProfiles.filter(option => this.displayProfileSupported ? options!.includes(option.id) : option.id === '320x170');
+    this.savedDisplayProfile = this.displayProfileSupported ? info.displayProfile! : '320x170';
+    this.displayActiveProfile = this.displayProfileSupported ? system!.displayActiveProfile! : '320x170';
+    this.displayProfileEditable = this.displayProfileSupported && this.displayProfileChoices.length > 1;
+  }
   get hasUnsavedChanges(): boolean {return !!this.form && Object.keys(this.baseline).some(k=>this.form.getRawValue()[k] !== this.baseline[k]) || !!this.poolSchedule && this.scheduleSnapshot() !== this.scheduleBaseline || !!this.powerSchedule && JSON.stringify(this.powerSchedule) !== this.powerBaseline;}
   private scheduleSnapshot(): string {const s=this.poolSchedule;return s ? JSON.stringify({enabled:s.enabled,utcOffsetMinutes:s.utcOffsetMinutes,events:s.events}) : '';}
   refreshPoolSchedule(): void {
@@ -202,7 +239,7 @@ export class EditComponent implements OnInit, OnDestroy {
       error:()=>{this.powerBusy=false;this.powerError='Power request could not be confirmed. Check the miner status before trying again.';}
     });
   }
-  ngOnDestroy(): void { this.powerWatch?.unsubscribe(); }
+  ngOnDestroy(): void { this.powerWatch?.unsubscribe(); this.settingsRead?.unsubscribe(); }
   selectTuningSlot(slot: number): void { this.tuningSlot = Number(slot); this.tuningName = this.profiles?.tuning[this.tuningSlot]?.name || ''; }
   selectPoolSaveSlot(index: number, slot: number): void {
     this.poolSaveSlots[index] = Number(slot);
@@ -337,10 +374,14 @@ export class EditComponent implements OnInit, OnDestroy {
     this.refreshPoolSchedule();
     this.refreshPower();
     this.powerWatch = timer(2000,2000).subscribe(()=>{if(this.section==='scheduler' && !this.powerBusy)this.refreshPower();});
-    this.systemService.getSettingsV2(this.uri)
+    this.settingsRead = forkJoin({
+      settings: this.systemService.getSettingsV2(this.uri),
+      system: this.systemService.getSystemV2(this.uri).pipe(timeout(4000), catchError(() => of(null))),
+    })
       .pipe(this.loadingService.lockUIUntilComplete())
-      .subscribe((info: ISettingsV2) => {
+      .subscribe(({settings: info, system}) => {
         this.originalSettings = structuredClone(info);
+        this.configureDisplayProfile(info, system);
 
         this.originalSettings["poolMode"] = info.poolMode ?? 0;
         this.originalSettings["stratumProtocol"] = info.pools?.[0]?.protocol ?? 0;
@@ -390,6 +431,7 @@ export class EditComponent implements OnInit, OnDestroy {
         this.form = this.fb.group({
           stratumKeep: [info.stratumKeep == 1],
           canMaster: [info.can.enabled == true],
+          displayProfile: [{value: this.savedDisplayProfile, disabled: !this.displayProfileEditable}],
           flipScreen: [info.flipScreen == 1],
           invertScreen: [info.invertScreen == 1],
           autoScreenOff: [info.autoScreenOff == 1],
@@ -590,11 +632,13 @@ export class EditComponent implements OnInit, OnDestroy {
   }
 
   public updateSystem(totp?: string) {
+    if (this.invalidDisplaySelection) return throwError(() => new Error('Screen selection is not supported by this application.'));
     const snapshot=this.form.getRawValue();
     const section=this.section;
     const fields=changedFields(snapshot,this.baseline,section,this.fanCount);
     const needsRestart=this.requiresReboot;
-    const payload=settingsPatch(snapshot,this.baseline,section,this.fanCount);
+    const payload=settingsPatch(snapshot,this.baseline,section,this.fanCount,
+      this.displayProfileEditable ? this.displayProfileChoices.map(option => option.id) : []);
     const request=Object.keys(payload).length ? this.systemService.updateSettingsV2(this.uri,payload,totp) : of(null);
     return request.pipe(tap(()=>{
       if(section==='display' && fields.includes('timeFormat')) {
@@ -602,6 +646,7 @@ export class EditComponent implements OnInit, OnDestroy {
         window.dispatchEvent(new CustomEvent('timeFormatChanged',{detail:snapshot.timeFormat}));
       }
       for(const field of fields){this.baseline[field]=snapshot[field];this.form.get(field)?.markAsPristine();}
+      if(section==='display' && fields.includes('displayProfile')) this.savedDisplayProfile=snapshot.displayProfile;
       this.restartPending=this.restartPending || needsRestart;
     }));
   }

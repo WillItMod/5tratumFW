@@ -29,6 +29,7 @@
 #define NVS_CONFIG_ASIC_JOB_INTERVAL "asicjobinterval"
 #define NVS_CONFIG_FLIP_SCREEN "flipscreen"
 #define NVS_CONFIG_INVERT_SCREEN "invertscreen"
+#define NVS_CONFIG_DISPLAY_PROFILE "lcdprofile"
 #define NVS_CONFIG_INVERT_FAN_POLARITY "invertfanpol"   // kept for downgrade compatibility
 #define NVS_CONFIG_AUTO_FAN_POLARITY "autofanpol"       // kept for downgrade compatibility
 #define NVS_CONFIG_FAN_PWM_POLARITY "pwmfanpol"         // new setting
@@ -151,6 +152,18 @@ namespace Config {
     inline char* getWifiSSID() { return cfgGetStrAlloc(NVS_CONFIG_WIFI_SSID, CONFIG_ESP_WIFI_SSID); }
     inline char* getWifiPass() { return cfgGetStrAlloc(NVS_CONFIG_WIFI_PASS, CONFIG_ESP_WIFI_PASSWORD); }
     inline char* getHostname() { return cfgGetStrAlloc(NVS_CONFIG_HOSTNAME, CONFIG_LWIP_LOCAL_HOSTNAME); }
+    // Display identity is independent of board identity and partition geometry.
+    // Keep the raw value available for diagnostics/update guards; validate writes
+    // at API boundaries, and fall back safely without rewriting invalid storage.
+    inline char* getDisplayProfile() {
+#if FIVETRATUM_LCD_PROFILE == 1
+        return cfgGetStrAlloc(NVS_CONFIG_DISPLAY_PROFILE, "480x320-rgb");
+#elif FIVETRATUM_LCD_PROFILE == 2
+        return cfgGetStrAlloc(NVS_CONFIG_DISPLAY_PROFILE, "480x320-bgr");
+#else
+        return cfgGetStrAlloc(NVS_CONFIG_DISPLAY_PROFILE, "320x170");
+#endif
+    }
     inline char* getStratumURL() { return cfgGetStrAlloc(NVS_CONFIG_STRATUM_URL, CONFIG_STRATUM_URL); }
     inline char* getStratumUser() { return cfgGetStrAlloc(NVS_CONFIG_STRATUM_USER, CONFIG_STRATUM_USER); }
     inline char* getStratumPass() { return cfgGetStrAlloc(NVS_CONFIG_STRATUM_PASS, CONFIG_STRATUM_PW); }
@@ -293,7 +306,7 @@ namespace Config {
     inline void setVrFrequency(uint32_t value) { cfgSetU64(NVS_CONFIG_VR_FREQUENCY, value); }
 
     // ---- Boolean Getters (Stored as uint16_t but used as bool) ----
-    inline bool isInvertScreenEnabled() { return cfgGetU16(NVS_CONFIG_INVERT_SCREEN, 0) != 0; } // todo unused?
+    inline bool isInvertScreenEnabled() { return cfgGetU16(NVS_CONFIG_INVERT_SCREEN, 0) != 0; }
     inline bool isSelfTestEnabled() { return cfgGetU16(NVS_CONFIG_SELF_TEST, 0) != 0; }
     inline bool isAutoScreenOffEnabled() { return cfgGetU16(NVS_CONFIG_AUTO_SCREEN_OFF, CONFIG_AUTO_SCREEN_OFF_VALUE) != 0; }
     inline bool isInfluxEnabled() { return cfgGetU16(NVS_CONFIG_INFLUX_ENABLE, CONFIG_INFLUX_ENABLE_VALUE) != 0; }
@@ -326,6 +339,7 @@ namespace Config {
     // ---- Boolean Setters ----
     inline void setFlipScreen(bool value) { cfgSetU16(NVS_CONFIG_FLIP_SCREEN, value ? 1 : 0); }
     inline void setInvertScreen(bool value) { cfgSetU16(NVS_CONFIG_INVERT_SCREEN, value ? 1 : 0); }
+    inline void setDisplayProfile(const char* value) { cfgSetStr(NVS_CONFIG_DISPLAY_PROFILE, value); }
     inline void setFanPolarity(bool value) { cfgSetU16(NVS_CONFIG_FAN_PWM_POLARITY, value ? 1 : 0); }
     inline void setSelfTest(bool value) { cfgSetU16(NVS_CONFIG_SELF_TEST, value ? 1 : 0); }
     inline void setAutoScreenOff(bool value) { cfgSetU16(NVS_CONFIG_AUTO_SCREEN_OFF, value ? 1 : 0); }

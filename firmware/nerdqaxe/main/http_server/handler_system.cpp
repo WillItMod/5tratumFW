@@ -10,6 +10,7 @@
 #include "nvs_config.h"
 #include "http_cors.h"
 #include "http_utils.h"
+#include "display_settings.h"
 
 #include "ping_task.h"
 
@@ -227,7 +228,8 @@ esp_err_t GET_system_info(httpd_req_t *req)
     doc["stratumDifficulty"] = Config::getStratumDifficulty();
     doc["overheat_temp"]      = Config::getOverheatTemp();
     doc["flipscreen"]         = board->isFlipScreenEnabled() ? 1 : 0;
-    doc["invertscreen"]       = Config::isInvertScreenEnabled() ? 1 : 0; // unused?
+    doc["invertscreen"]       = Config::isInvertScreenEnabled() ? 1 : 0;
+    FiveTratumDisplay::appendSavedDisplayProfile(doc);
     doc["autoscreenoff"]      = Config::isAutoScreenOffEnabled() ? 1 : 0;
     doc["invertfanpolarity"]  = board->isInvertFanPolarityEnabled() ? 1 : 0;
     doc["autofanspeed"]       = Config::getTempControlMode();
@@ -294,6 +296,22 @@ esp_err_t PATCH_update_settings(httpd_req_t *req)
     esp_err_t err = getJsonData(req, doc);
     if (err != ESP_OK) {
         return err;
+    }
+
+    // Validate the complete display request before any other settings mutation.
+    const auto displayPatch = FiveTratumDisplay::validateDisplayProfilePatch(doc.as<JsonObjectConst>());
+    if (displayPatch.error)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, displayPatch.error);
+    if (displayPatch.id) {
+        // The asynchronous factory worker can be flashing after its HTTP
+        // trigger has returned. Do not change its display preconditions.
+        FactoryOTAUpdate::OtaStatus displayOtaStatus{};
+        FACTORY_OTA_UPDATER.getStatus(&displayOtaStatus);
+        if (displayOtaStatus.pending || displayOtaStatus.running) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_sendstr(req, "Firmware update in progress; display settings were not saved");
+        }
+        Config::setDisplayProfile(displayPatch.id);
     }
 
     if (doc["ssid"].is<const char*>()) {

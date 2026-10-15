@@ -169,6 +169,10 @@
 
     <section class="config-section" [hidden]="section !== 'display'">
       <header class="section-heading"><div><h2>Display</h2><p>Miner screen and browser preferences.</p></div></header>
+      <div class="config-panel" data-display-settings>
+        <label class="field"><span>Screen</span><select formControlName="displayProfile" aria-describedby="display-profile-help" data-display-profile><option *ngFor="let option of displayProfileChoices" [value]="option.id">{{ option.label }}</option></select><small id="display-profile-help" *ngIf="displayProfileEditable">3.5-inch profiles are experimental. If colours look wrong, try the other 3.5-inch variant.</small><small id="display-profile-help" *ngIf="!displayProfileEditable">{{ displayProfileSupported ? 'This device offers the standard 320×170 screen.' : 'Screen selection requires a matching application update.' }}</small></label>
+        <div *ngIf="displayProfileRestartPending" role="status" aria-live="polite" data-display-restart><p>Active: {{ displayProfileLabel(displayActiveProfile) }}. Next boot: {{ displayProfileLabel(savedDisplayProfile) }}.</p><p>Screen selection saved. Restart device to apply it.</p></div>
+      </div>
       <div class="config-panel checkbox-stack"><nb-checkbox formControlName="flipScreen">Rotate miner screen</nb-checkbox><nb-checkbox formControlName="invertScreen">Invert screen colours</nb-checkbox><nb-checkbox formControlName="autoScreenOff">Automatic screen off</nb-checkbox></div>
       <div class="config-panel"><label class="field"><span>Browser time format</span><nb-select formControlName="timeFormat"><nb-option value="24h">24 hour</nb-option><nb-option value="12h">12 hour</nb-option></nb-select></label></div>
 
@@ -183,7 +187,7 @@
 
     <div class="save-bar" [hidden]="section === 'update' || section === 'security' || section === 'scheduler' || section === 'pool'">
       <div><span *ngIf="sectionDirty">Unsaved changes</span><span *ngIf="!sectionDirty">Settings loaded</span><small *ngIf="requiresReboot || restartPending">Restart required after saving.</small></div>
-      <div class="save-actions"><button nbButton status="basic" size="small" type="button" (click)="restart()">Restart</button><button nbButton status="primary" size="small" type="button" [disabled]="sectionInvalid || !sectionDirty || saving" (click)="confirmSave(warningDialog)">{{ saving ? 'Saving…' : 'Save this section' }}</button></div>
+      <div class="save-actions"><button nbButton status="basic" size="small" type="button" (click)="restart()" [disabled]="saving || profileBusy" data-restart-device>Restart device</button><button nbButton status="primary" size="small" type="button" [disabled]="sectionInvalid || !sectionDirty || saving" (click)="confirmSave(warningDialog)" data-save-settings>{{ saving ? 'Saving…' : 'Save this section' }}</button></div>
     </div>
   </form>
 

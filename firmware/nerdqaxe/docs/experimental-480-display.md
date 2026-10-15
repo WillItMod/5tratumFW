@@ -1,9 +1,12 @@
 # Experimental QAxe 480×320 display profiles
 
-These are private, display-only source/build profiles for **NERDQAXEPLUS2**.
-They are not hardware-qualified OTA releases. The normal QAxe and OctAxe build
-helpers keep the original 320×170 display; they reject experimental profiles.
-Do not select a profile from a guessed PCB revision or screen resolution alone.
+The fixed compile-time profiles below were the private 480×320 experiments used
+before QAxe Beta7. **QAxe Beta7 adds these panel settings to one firmware as a
+saved runtime selector:** see [Screen selection](display-settings.md). Its default
+remains 320×170; both 3.5-inch choices remain experimental rather than physically
+qualified by a compile or a guessed PCB revision. OctAxe retains only 320×170.
+Public helpers still reject a fixed experimental compile-time default; the
+unified QAxe image is built with the standard default and verified runtime support.
 
 | Setting | Standard | QAXE_480X320_RGB | QAXE_480X320_BGR |
 | --- | --- | --- | --- |
@@ -12,8 +15,13 @@ Do not select a profile from a guessed PCB revision or screen resolution alone.
 | Draw buffer | 13,600 pixels | 25,600 pixels | 25,600 pixels |
 | Panel colour order | RGB | RGB | BGR |
 | Panel gap | 0, 35 | 0, 0 | 0, 0 |
-| Mirroring | Original one-axis flip | Both axes follow flip | Neither axis |
+| Mirroring in current source | Original one-axis flip | Both axes follow flip | Both axes follow flip |
 | Public OTA/package admission | Existing model policy | Rejected | Rejected |
+
+The BGR reference originally left both mirror axes off. Current source permits
+180-degree rotation on both larger profiles. The package restriction in this
+table concerns a fixed compile-time experimental default, rather than Beta7's
+standard-default firmware with saved runtime choices.
 
 All profiles preserve the existing 8-bit Intel 8080 bus: data GPIOs
 39/40/41/42/45/46/47/48, RD9, power15, WR8, CS6, DC7, reset5 and backlight38;
@@ -51,15 +59,18 @@ The actual CMake policy rejects unknown names, other boards, missing opt-in,
 and any experimental selection alongside `FIVETRATUM_RELEASE_PROFILE`.
 No factory/NVS image or public release asset is produced for these profiles.
 
-The current miner and OS updater policies select the normal model-specific
-firmware, not display profiles. An experimental profile must not be exposed for
-installation until a matching profile advertisement, manifest, updater selection
-policy and physical validation are in place. In particular, it must not offer a
-normal 320×170 release as its next automatic update.
+Beta7 persists the user's selection and advertises saved/active profile metadata.
+Its manifest declares the supported runtime profiles. Known legacy application
+and upstream factory updates are rejected while a larger profile is saved or
+active, preventing an automatic return to the old standard-only application.
+Central OS/MUX controls still require their own exact version/source admission;
+profile metadata does not widen physical-board qualification or independent
+ASIC assignment. Earlier Beta6 and its downloads remain standard-only images.
 
 `test/host/test_display_profiles.py` executes the real CMake selection policy and
 compiled production constexpr profiles, including negative/reconfiguration
 cases. Native rendering exercises 54 pages at each viewport and all six candidate
 variants. These checks establish source/layout behavior, not physical support for
-an unidentified seller screen. Board, regulator, clock/voltage settings, NVS and
-partition geometry are outside this display change.
+an unidentified seller screen. Board, regulator, clock/voltage settings, existing
+non-display settings, NVS layout and partition geometry remain unchanged. Beta7
+adds only the saved display-profile value within the existing settings store.

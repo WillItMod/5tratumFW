@@ -772,6 +772,12 @@ void DisplayDriver::mainCreatSysteTasks(void)
 
 lv_obj_t *DisplayDriver::initTDisplayS3(void)
 {
+    // Boot-only selection: never resize or replace active DMA buffers from a
+    // settings request. Board identity has already passed its normal guard.
+    char *savedProfile = Config::getDisplayProfile();
+    FiveTratumDisplay::displayProfileRuntime.latch(savedProfile);
+    free(savedProfile);
+    const auto &panel = FiveTratumDisplay::displayProfileRuntime.active();
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
     // GPIO configuration
@@ -810,14 +816,14 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
                                                    TDISPLAYS3_PIN_NUM_DATA7,
                                                },
                                            .bus_width = 8,
-                                           .max_transfer_bytes = LVGL_LCD_BUF_SIZE * sizeof(uint16_t),
+                                           .max_transfer_bytes = panel.bufferPixels * sizeof(uint16_t),
                                            .psram_trans_align = LCD_PSRAM_TRANS_ALIGN,
                                            .sram_trans_align = LCD_SRAM_TRANS_ALIGN};
     ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i80_config_t io_config = {
         .cs_gpio_num = TDISPLAYS3_PIN_NUM_CS,
-        .pclk_hz = TDISPLAYS3_LCD_PIXEL_CLOCK_HZ,
+        .pclk_hz = panel.pixelClock,
         .trans_queue_depth = 20,
         .on_color_trans_done = notifyLvglFlushReady,
         .user_ctx = &disp_drv,
@@ -838,7 +844,7 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = TDISPLAYS3_PIN_NUM_RST,
-        .rgb_ele_order = FiveTratumDisplay::PanelProfile.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order = panel.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
 
@@ -846,17 +852,18 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
 
     esp_lcd_panel_reset(panel_handle);
     esp_lcd_panel_init(panel_handle);
-    esp_lcd_panel_invert_color(panel_handle, true);
+    esp_lcd_panel_invert_color(panel_handle,
+        FiveTratumDisplay::panelInvertColors(Config::isInvertScreenEnabled()));
 
     esp_lcd_panel_swap_xy(panel_handle, true);
 
     Board *board = SYSTEM_MODULE.getBoard();
     esp_lcd_panel_mirror(panel_handle,
-        FiveTratumDisplay::panelMirrorX(board->isFlipScreenEnabled()),
-        FiveTratumDisplay::panelMirrorY(board->isFlipScreenEnabled()));
+        FiveTratumDisplay::panelMirrorX(board->isFlipScreenEnabled(), panel),
+        FiveTratumDisplay::panelMirrorY(board->isFlipScreenEnabled(), panel));
 
     // the gap is LCD panel specific, even panels with the same driver IC, can have different gap value
-    esp_lcd_panel_set_gap(panel_handle, 0, FiveTratumDisplay::PanelProfile.gapY);
+    esp_lcd_panel_set_gap(panel_handle, 0, panel.gapY);
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
@@ -868,15 +875,15 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
     lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = (lv_color_t*) MALLOC_DMA(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t));
+    lv_color_t *buf1 = (lv_color_t*) MALLOC_DMA(panel.bufferPixels * sizeof(lv_color_t));
     assert(buf1);
     // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, LVGL_LCD_BUF_SIZE);
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, panel.bufferPixels);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = TDISPLAYS3_LCD_H_RES;
-    disp_drv.ver_res = TDISPLAYS3_LCD_V_RES;
+    disp_drv.hor_res = panel.width;
+    disp_drv.ver_res = panel.height;
     disp_drv.flush_cb = lvglFlushCallback;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;

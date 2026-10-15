@@ -32,7 +32,7 @@ BGR = {
     "profile": "experimental-qaxe-480x320-bgr", "width": 480, "height": 320,
     "pixelClock": 12000000, "bufferPixels": 25600, "bufferBytes": 51200,
     "bgr": True, "gapY": 0, "experimental": True,
-    "mirrorNormal": [False, False], "mirrorFlipped": [False, False],
+    "mirrorNormal": [False, False], "mirrorFlipped": [True, True],
 }
 
 
@@ -91,7 +91,12 @@ class DisplayProfileTests(unittest.TestCase):
     def assert_configured_profile(self, expected, **arguments):
         result = self.configure(**arguments)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.compile_and_read(arguments.get("build", "build")), expected)
+        actual = self.compile_and_read(arguments.get("build", "build"))
+        runtime = arguments.get("board", "NERDQAXEPLUS2") == "NERDQAXEPLUS2"
+        self.assertEqual(actual.pop("runtimeDisplaySelector"), runtime)
+        cache = (self.directory / arguments.get("build", "build") / "CMakeCache.txt").read_text()
+        self.assertIn("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR:BOOL=" + ("ON" if runtime else "OFF"), cache)
+        self.assertEqual(actual, expected)
 
     def test_default_cmake_selection_preserves_stock(self):
         self.assert_configured_profile(STOCK)
@@ -154,7 +159,9 @@ class DisplayProfileTests(unittest.TestCase):
                         "-I", str(DISPLAY), str(HARNESS), "-o", str(binary)],
                        capture_output=True, text=True, check=True)
         result = subprocess.run([str(binary)], capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(result.stdout), STOCK)
+        actual = json.loads(result.stdout)
+        self.assertFalse(actual.pop("runtimeDisplaySelector"))
+        self.assertEqual(actual, STOCK)
 
     def test_header_rejects_invalid_compiler_profile(self):
         result = subprocess.run(

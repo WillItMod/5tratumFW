@@ -1,4 +1,5 @@
 import { eASICModel } from './enum/eASICModel';
+import { DisplayProfileId } from './IDisplaySettings';
 
 export interface ISettingsV2FanPid {
     targetTemp: number;
@@ -76,6 +77,7 @@ export interface ISettingsV2 {
     mempoolUrl: string;
 
     // Display
+    displayProfile?: DisplayProfileId;
     flipScreen: number;
     invertScreen: number;
     autoScreenOff: number;

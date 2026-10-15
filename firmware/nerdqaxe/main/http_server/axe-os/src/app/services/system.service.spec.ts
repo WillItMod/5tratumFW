@@ -27,6 +27,18 @@ describe('SystemService', () => {
     expect(service).toBeTruthy();
   });
 
+  it('reads display runtime metadata from the same selected miner without a settings write', () => {
+    let result: any;
+    service.getSystemV2('/selected-miner').subscribe(info => result = info);
+    const req = httpMock.expectOne('/selected-miner/api/v2/system');
+    expect(req.request.method).toBe('GET');
+    req.flush({deviceModel:'NerdQAxe++',version:'5tratumFW-test',displayActiveProfile:'320x170',
+      displayProfileOptions:['320x170','480x320-rgb','480x320-bgr'],displayRestartRequired:false});
+    expect(result.displayActiveProfile).toBe('320x170');
+    httpMock.expectNone('/api/v2/system');
+    httpMock.expectNone('/selected-miner/api/v2/settings');
+  });
+
   it('reads the update identity through the v1 endpoint shared by old and new applications', () => {
     let result: any;
     service.getUpdateInfo().subscribe(info => result = info);
