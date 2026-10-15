@@ -425,7 +425,7 @@ describe('Pool connection options in the production template', () => {
     expect(Array.from(select.options).map(option=>[option.value,option.textContent?.trim()])).toEqual([
       ['320x170','Standard 320×170'],['480x320-rgb','3.5-inch 480×320 RGB'],['480x320-bgr','3.5-inch 480×320 BGR'],
     ]);
-    expect(fixture.nativeElement.querySelector('[data-display-settings]').textContent).toContain('wrong colours or is mirrored');
+    expect(fixture.nativeElement.querySelector('[data-display-settings]').textContent).toContain('If colours look wrong, try the other 3.5-inch variant.');
     expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();
     expect(component.sectionDirty).toBeFalse();expect(source).toEqual(before);
     expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();expect(authorize).not.toHaveBeenCalled();
