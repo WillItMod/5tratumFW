@@ -9,7 +9,8 @@ One QAxe application supports these choices:
 | 3.5-inch RGB | 480×320 | Full viewport, zero offset, RGB order and large-panel orientation |
 | 3.5-inch BGR | 480×320 | Full viewport, zero offset, alternate colour order and large-panel orientation |
 
-Save the selection, then restart the miner. The page distinguishes the saved
+Click **Save this section**, then **Restart device**. Refresh the page after the
+miner returns to read its active screen again. The page distinguishes the saved
 choice from the active screen until that restart. Opening the page does not
 change the screen. Existing settings default to **Standard** when no choice has
 been stored. The selection stays in the miner's existing settings through

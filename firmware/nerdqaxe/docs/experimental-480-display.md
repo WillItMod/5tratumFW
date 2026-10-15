@@ -15,8 +15,13 @@ unified QAxe image is built with the standard default and verified runtime suppo
 | Draw buffer | 13,600 pixels | 25,600 pixels | 25,600 pixels |
 | Panel colour order | RGB | RGB | BGR |
 | Panel gap | 0, 35 | 0, 0 | 0, 0 |
-| Mirroring | Original one-axis flip | Both axes follow flip | Neither axis |
+| Mirroring in current source | Original one-axis flip | Both axes follow flip | Both axes follow flip |
 | Public OTA/package admission | Existing model policy | Rejected | Rejected |
+
+The BGR reference originally left both mirror axes off. Current source permits
+180-degree rotation on both larger profiles. The package restriction in this
+table concerns a fixed compile-time experimental default, rather than Beta7's
+standard-default firmware with saved runtime choices.
 
 All profiles preserve the existing 8-bit Intel 8080 bus: data GPIOs
 39/40/41/42/45/46/47/48, RD9, power15, WR8, CS6, DC7, reset5 and backlight38;
@@ -66,5 +71,6 @@ ASIC assignment. Earlier Beta6 and its downloads remain standard-only images.
 compiled production constexpr profiles, including negative/reconfiguration
 cases. Native rendering exercises 54 pages at each viewport and all six candidate
 variants. These checks establish source/layout behavior, not physical support for
-an unidentified seller screen. Board, regulator, clock/voltage settings, NVS and
-partition geometry are outside this display change.
+an unidentified seller screen. Board, regulator, clock/voltage settings, existing
+non-display settings, NVS layout and partition geometry remain unchanged. Beta7
+adds only the saved display-profile value within the existing settings store.
