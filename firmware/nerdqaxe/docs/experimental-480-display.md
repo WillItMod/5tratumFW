@@ -1,9 +1,12 @@
 # Experimental QAxe 480×320 display profiles
 
-These are private, display-only source/build profiles for **NERDQAXEPLUS2**.
-They are not hardware-qualified OTA releases. The normal QAxe and OctAxe build
-helpers keep the original 320×170 display; they reject experimental profiles.
-Do not select a profile from a guessed PCB revision or screen resolution alone.
+The fixed compile-time profiles below were the private 480×320 experiments used
+before QAxe Beta7. **QAxe Beta7 adds these panel settings to one firmware as a
+saved runtime selector:** see [Screen selection](display-settings.md). Its default
+remains 320×170; both 3.5-inch choices remain experimental rather than physically
+qualified by a compile or a guessed PCB revision. OctAxe retains only 320×170.
+Public helpers still reject a fixed experimental compile-time default; the
+unified QAxe image is built with the standard default and verified runtime support.
 
 | Setting | Standard | QAXE_480X320_RGB | QAXE_480X320_BGR |
 | --- | --- | --- | --- |
@@ -51,11 +54,13 @@ The actual CMake policy rejects unknown names, other boards, missing opt-in,
 and any experimental selection alongside `FIVETRATUM_RELEASE_PROFILE`.
 No factory/NVS image or public release asset is produced for these profiles.
 
-The current miner and OS updater policies select the normal model-specific
-firmware, not display profiles. An experimental profile must not be exposed for
-installation until a matching profile advertisement, manifest, updater selection
-policy and physical validation are in place. In particular, it must not offer a
-normal 320×170 release as its next automatic update.
+Beta7 persists the user's selection and advertises saved/active profile metadata.
+Its manifest declares the supported runtime profiles. Known legacy application
+and upstream factory updates are rejected while a larger profile is saved or
+active, preventing an automatic return to the old standard-only application.
+Central OS/MUX controls still require their own exact version/source admission;
+profile metadata does not widen physical-board qualification or independent
+ASIC assignment. Earlier Beta6 and its downloads remain standard-only images.
 
 `test/host/test_display_profiles.py` executes the real CMake selection policy and
 compiled production constexpr profiles, including negative/reconfiguration

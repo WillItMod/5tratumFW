@@ -1,5 +1,5 @@
 import { FormBuilder } from '@angular/forms';
-import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, flush, discardPeriodicTasks } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, flush, discardPeriodicTasks, tick } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { NbDialogService, NbLayoutModule, NbThemeModule, NbToastrService } from '@nebular/theme';
 import { NbEvaIconsModule } from '@nebular/eva-icons';
@@ -8,6 +8,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { EditComponent } from './edit.component';
 import { EditModule } from './edit.module';
 import { ISettingsV2 } from '../../models/ISettingsV2';
+import { ISystemV2 } from '../../models/ISystemV2';
 import { eASICModel } from '../../models/enum/eASICModel';
 import { SystemService } from '../../services/system.service';
 import { LoadingService } from '../../services/loading.service';
@@ -32,7 +33,20 @@ function settingsFixture(): ISettingsV2 {
       { label: 'Regulator fan', mode: 3, manualSpeed: 71, overheatTemp: 78, pid: { targetTemp: 65, p: 6.2, i: .21, d: 11.5 } },
     ],
     invertFanPolarity: 0, pidUseMax: true, hostname: 'fixture-miner', ssid: 'fixture-wifi',
-    mempoolCustom: false, mempoolUrl: '', flipScreen: 0, invertScreen: 1, autoScreenOff: 1,
+    mempoolCustom: false, mempoolUrl: '', flipScreen: 0, invertScreen: 1, autoScreenOff: 1, displayProfile: '320x170',
+  };
+}
+
+function displaySystemFixture(settings: ISettingsV2): ISystemV2 {
+  return {
+    deviceModel: settings.deviceModel, asicModel: settings.asicModel, version: settings.version,
+    uptimeSeconds: 60, lastResetReason: 'fixture',
+    network: {hostname:settings.hostname,ssid:settings.ssid,macAddr:'',ipAddr:'',wifiStatus:'Connected',wifiRSSI:-50},
+    memory: {freeHeap:100000,freeHeapInt:100000},
+    displayProfile: settings.displayProfile, displayActiveProfile:'320x170',
+    displayProfileOptions: settings.deviceModel === 'NerdQAxe++' ? ['320x170','480x320-rgb','480x320-bgr'] : ['320x170'],
+    displayRestartRequired: settings.displayProfile !== '320x170', displayWidth:320,displayHeight:170,
+    displayProfileCapabilityVersion:1,displayProfileStorageValid:true,displayProfileExperimental:false,
   };
 }
 
@@ -66,6 +80,7 @@ describe('Nerd settings payload preservation', () => {
     success = jasmine.createSpy('success');danger = jasmine.createSpy('danger');
     component = new EditComponent(new FormBuilder(), {
       getSettingsV2: getSettings, updateSettingsV2: update,
+      getSystemV2: () => of(displaySystemFixture(source)),
       getProfiles,
       getPoolSchedule: () => of({schemaVersion:1,enabled:false,utcOffsetMinutes:0,events:[],clockValid:false}),
       getPowerSchedule: () => of({supported:true,schedule:{enabled:false,timezone:'UTC',windows:[]},status:{clockValid:false,localTime:null,scheduledPause:false,manualOverride:'none',requestedPaused:false,appliedPaused:false,transitionPending:false,error:null},limits:{maxWindows:8,timezones:['UTC','Europe/London']}}),
@@ -348,6 +363,8 @@ describe('Pool connection options in the production template', () => {
   let authorize: jasmine.Spy;
   let saveProfile: jasmine.Spy;
   let applyProfile: jasmine.Spy;
+  let getSystem: jasmine.Spy;
+  let restart: jasmine.Spy;
 
   beforeEach(async () => {
     source = settingsFixture();
@@ -355,12 +372,15 @@ describe('Pool connection options in the production template', () => {
     authorize = jasmine.createSpy('ensureOtp$').and.returnValue(of({ totp: '123456' }));
     saveProfile = jasmine.createSpy('saveProfile').and.returnValue(of({ok:true,restartRequired:false}));
     applyProfile = jasmine.createSpy('applyProfile').and.returnValue(of({ok:true,restartRequired:false}));
+    getSystem = jasmine.createSpy('getSystemV2').and.callFake(() => of(displaySystemFixture(source)));
+    restart = jasmine.createSpy('restart').and.returnValue(of('Restart requested'));
     await TestBed.configureTestingModule({
       imports: [EditModule, NbThemeModule.forRoot({ name: 'default' }), NbLayoutModule,
         NbEvaIconsModule, NoopAnimationsModule, TranslateModule.forRoot()],
       providers: [
         { provide: SystemService, useValue: {
           getSettingsV2: () => of(source), updateSettingsV2: update,
+          getSystemV2: getSystem, restart,
           getProfiles: () => of({ tuning: [], pools: Array.from({length:10},(_,slot)=>slot===2 ? {slot,configured:true,name:'Saved BTC',host:'saved.test',port:3333,user:'saved.worker',passwordConfigured:true} : {slot,configured:false,name:null}) }),
           saveProfile, applyProfile,
           getPoolSchedule: () => of({ schemaVersion: 1, enabled: false, utcOffsetMinutes: 0, events: [] }),
@@ -373,17 +393,17 @@ describe('Pool connection options in the production template', () => {
           setItem: () => {}, setBool: () => {}, setNumber: () => {},
         } },
         { provide: NbDialogService, useValue: { open: jasmine.createSpy('open') } },
-        { provide: OtpAuthService, useValue: { ensureOtp$: authorize } },
+        { provide: OtpAuthService, useValue: { ensureOtp$: authorize, clearSession: () => {} } },
       ],
     }).compileComponents();
   });
 
   afterEach(() => fixture?.destroy());
 
-  function render(model = 'NerdQAxe++'): EditComponent {
+  function render(model = 'NerdQAxe++', section = 'pool'): EditComponent {
     source.deviceModel = model;
     fixture = TestBed.createComponent(EditComponent);
-    fixture.componentInstance.section = 'pool';
+    fixture.componentInstance.section = section;
     fixture.detectChanges();
     return fixture.componentInstance;
   }
@@ -392,6 +412,159 @@ describe('Pool connection options in the production template', () => {
     const details = Array.from(fixture.nativeElement.querySelectorAll('details')) as HTMLDetailsElement[];
     return details.find(item => item.querySelector('summary')?.textContent?.trim() === 'Connection options')!;
   }
+
+  function chooseScreen(id: string): void {
+    const select = fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
+    select.value=id;select.dispatchEvent(new Event('change',{bubbles:true}));fixture.detectChanges();
+  }
+
+  it('offers exactly the application-advertised QAxe screen choices without changing a setting on entry',()=>{
+    const before=structuredClone(source),component=render('NerdQAxe++','display');
+    const select=fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
+    expect(select.disabled).toBeFalse();expect(select.value).toBe('320x170');
+    expect(Array.from(select.options).map(option=>[option.value,option.textContent?.trim()])).toEqual([
+      ['320x170','Standard 320×170'],['480x320-rgb','3.5-inch 480×320 RGB'],['480x320-bgr','3.5-inch 480×320 BGR'],
+    ]);
+    expect(fixture.nativeElement.querySelector('[data-display-settings]').textContent).toContain('wrong colours or is mirrored');
+    expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();
+    expect(component.sectionDirty).toBeFalse();expect(source).toEqual(before);
+    expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();expect(authorize).not.toHaveBeenCalled();
+    expect(saveProfile).not.toHaveBeenCalled();expect(applyProfile).not.toHaveBeenCalled();
+  });
+
+  it('saves only the selected screen after OTP and shows its pending restart only after acknowledgement',()=>{
+    const component=render('NerdQAxe++','display'),before=structuredClone(source),saved=new Subject<any>();
+    update.and.returnValue(saved);
+    const profiles=structuredClone(component.profiles),poolSchedule=structuredClone(component.poolSchedule),powerSchedule=structuredClone(component.powerSchedule);
+    component.form.patchValue({frequency:588,coreVoltage:1191,stratumUser:'unsaved-primary',fallbackStratumUser:'unsaved-secondary',fan1ManualSpeed:28});
+    chooseScreen('480x320-rgb');
+    expect(component.sectionDirty).toBeTrue();expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();
+    (fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(authorize).toHaveBeenCalledTimes(1);
+    expect(update.calls.mostRecent().args).toEqual(['',{displayProfile:'480x320-rgb'},'123456']);
+    expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();
+    expect((fixture.nativeElement.querySelector('[data-restart-device]') as HTMLButtonElement).disabled).toBeTrue();
+    saved.next({});saved.complete();fixture.detectChanges();
+    const pending=fixture.nativeElement.querySelector('[data-display-restart]') as HTMLElement;
+    expect(pending.textContent).toContain('Active: Standard 320×170. Next boot: 3.5-inch 480×320 RGB.');
+    expect(pending.textContent).toContain('Restart device to apply it.');expect(component.sectionDirty).toBeFalse();
+    expect(component.form.get('frequency')?.value).toBe(588);expect(component.form.get('coreVoltage')?.value).toBe(1191);
+    expect(component.form.get('stratumUser')?.value).toBe('unsaved-primary');expect(component.form.get('fallbackStratumUser')?.value).toBe('unsaved-secondary');
+    expect(component.form.get('fan1ManualSpeed')?.value).toBe(28);
+    expect(component.form.get('flipScreen')?.value).toBeFalse();expect(component.form.get('invertScreen')?.value).toBeTrue();expect(component.form.get('autoScreenOff')?.value).toBeTrue();
+    expect(component.profiles).toEqual(profiles);expect(component.poolSchedule).toEqual(poolSchedule);expect(component.powerSchedule).toEqual(powerSchedule);
+    expect(source).toEqual(before);expect(saveProfile).not.toHaveBeenCalled();expect(applyProfile).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();
+    (fixture.nativeElement.querySelector('[data-restart-device]') as HTMLButtonElement).click();
+    expect(restart.calls.mostRecent().args).toEqual(['','123456']);expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  for(const profile of ['480x320-rgb','480x320-bgr'] as const) {
+    it(`loads saved ${profile} with its active screen and clears the notice after the reported restart`,()=>{
+      source.displayProfile=profile;
+      const component=render('NerdQAxe++','display');
+      expect((fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement).value).toBe(profile);
+      expect(component.displayProfileRestartPending).toBeTrue();expect(update).not.toHaveBeenCalled();
+      fixture.destroy();
+      getSystem.and.callFake(()=>of({...displaySystemFixture(source),displayActiveProfile:profile,displayRestartRequired:false,displayWidth:480,displayHeight:320,displayProfileExperimental:true}));
+      const rebooted=render('NerdQAxe++','display');
+      expect(rebooted.displayActiveProfile).toBe(profile);expect(rebooted.displayProfileRestartPending).toBeFalse();
+      expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();expect(rebooted.sectionDirty).toBeFalse();
+      expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();
+    });
+  }
+
+  it('clears a pending screen change when the active profile is explicitly saved again',()=>{
+    source.displayProfile='480x320-bgr';const component=render('NerdQAxe++','display');
+    chooseScreen('320x170');(fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(update.calls.mostRecent().args[1]).toEqual({displayProfile:'320x170'});
+    expect(component.displayActiveProfile).toBe('320x170');expect(component.displayProfileRestartPending).toBeFalse();
+    expect(fixture.nativeElement.querySelector('[data-display-restart]')).toBeNull();expect(component.restartPending).toBeFalse();expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed screen save unsaved without inventing a pending restart or retry',()=>{
+    const component=render('NerdQAxe++','display');update.and.returnValue(throwError(()=>new Error('fixture failure')));
+    chooseScreen('480x320-bgr');(fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(component.sectionDirty).toBeTrue();expect(component.displayProfileRestartPending).toBeFalse();
+    expect(update).toHaveBeenCalledTimes(1);expect(restart).not.toHaveBeenCalled();expect(component.savedDisplayProfile).toBe('320x170');
+  });
+
+  it('preserves a screen draft edited during saving and requires another explicit save for it',()=>{
+    const component=render('NerdQAxe++','display'),saved=new Subject<any>();update.and.returnValue(saved);
+    chooseScreen('480x320-rgb');(fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();
+    chooseScreen('480x320-bgr');saved.next({});saved.complete();fixture.detectChanges();
+    expect(component.savedDisplayProfile).toBe('480x320-rgb');expect(component.form.get('displayProfile')?.value).toBe('480x320-bgr');
+    expect(component.sectionDirty).toBeTrue();expect(update).toHaveBeenCalledTimes(1);expect(restart).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-display-restart]').textContent).toContain('Next boot: 3.5-inch 480×320 RGB.');
+    update.and.returnValue(of({}));(fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(update.calls.allArgs()).toEqual([['',{displayProfile:'480x320-rgb'},'123456'],['',{displayProfile:'480x320-bgr'},'123456']]);
+    expect(component.savedDisplayProfile).toBe('480x320-bgr');expect(component.sectionDirty).toBeFalse();expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('falls back to read-only screen selection when runtime metadata does not respond',fakeAsync(()=>{
+    getSystem.and.returnValue(new Subject<ISystemV2>());const component=render('NerdQAxe++','display');
+    expect(component.form).toBeUndefined();tick(4001);fixture.detectChanges();
+    expect(component.form).toBeDefined();expect(component.displayProfileSupported).toBeFalse();
+    expect((fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement).disabled).toBeTrue();
+    expect(component.sectionDirty).toBeFalse();expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();
+    fixture.destroy();discardPeriodicTasks();flush(500);
+  }));
+
+  it('cancels the runtime read when leaving the editor without applying a late selection',()=>{
+    const runtime=new Subject<ISystemV2>();getSystem.and.returnValue(runtime);
+    const component=render('NerdQAxe++','display');fixture.destroy();
+    runtime.next(displaySystemFixture(source));runtime.complete();
+    expect(component.form).toBeUndefined();expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('keeps older firmware read-only for screen type while preserving its rotate/invert/auto-off controls',()=>{
+    delete source.displayProfile;getSystem.and.returnValue(throwError(()=>new Error('older runtime')));
+    const component=render('NerdQAxe++','display'),select=fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
+    expect(select.disabled).toBeTrue();expect(Array.from(select.options).map(option=>option.value)).toEqual(['320x170']);
+    expect(component.sectionDirty).toBeFalse();expect(update).not.toHaveBeenCalled();
+    component.form.patchValue({flipScreen:true,invertScreen:false,autoScreenOff:false});
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(update.calls.mostRecent().args[1]).toEqual({flipScreen:true,invertScreen:false,autoScreenOff:false});
+    expect(component.requiresReboot).toBeFalse();expect(component.restartPending).toBeTrue();
+  });
+
+  for(const options of [['320x170'],['320x170','480x320-rgb','480x320-bgr']]) {
+    it(`keeps OctAxe standard-only even when its advertised options are ${options.length}`,()=>{
+      getSystem.and.callFake(()=>of({...displaySystemFixture(source),displayProfileOptions:options}));
+      const component=render('NerdOCTAXE-γ','display'),select=fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
+      expect(select.disabled).toBeTrue();expect(Array.from(select.options).map(option=>option.value)).toEqual(['320x170']);
+      component.form.get('displayProfile')!.setValue('480x320-rgb');fixture.detectChanges();
+      expect(component.sectionInvalid).toBeTrue();expect((fixture.nativeElement.querySelector('[data-save-settings]') as HTMLButtonElement).disabled).toBeTrue();
+      const error=jasmine.createSpy('unsupported');component.updateSystem().subscribe({error});
+      expect(error).toHaveBeenCalled();expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();expect(authorize).not.toHaveBeenCalled();
+    });
+  }
+
+  it('uses only coherent known backend options rather than inferring a screen from the miner name',()=>{
+    const invalid: Partial<ISystemV2>[]=[
+      {displayProfileOptions:['320x170','unknown']},{displayProfileOptions:['480x320-rgb']},
+      {displayProfileOptions:['320x170','320x170']},{displayProfileOptions:undefined},
+      {displayActiveProfile:undefined},{displayRestartRequired:undefined},{displayRestartRequired:true},
+      {displayProfileCapabilityVersion:2},{displayProfileCapabilityVersion:true as any},
+      {displayProfile:'480x320-bgr'},{version:'different-application'},{deviceModel:'NerdQAxe+'},{asicModel:'BM1368'},
+    ];
+    for(const metadata of invalid){
+      getSystem.and.callFake(()=>of({...displaySystemFixture(source),...metadata}));
+      const component=render('NerdQAxe++','display'),select=fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
+      expect(select.disabled).withContext(JSON.stringify(metadata)).toBeTrue();expect(select.options.length).toBe(1);
+      expect(component.sectionDirty).toBeFalse();expect(component.displayProfileRestartPending).toBeFalse();fixture.destroy();
+    }
+    expect(update).not.toHaveBeenCalled();expect(restart).not.toHaveBeenCalled();expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it('does not post a profile outside the backend list and leaves other sections independent',()=>{
+    getSystem.and.callFake(()=>of({...displaySystemFixture(source),displayProfileOptions:['320x170','480x320-rgb']}));
+    const component=render('NerdQAxe++','display');component.form.get('displayProfile')!.setValue('480x320-bgr');fixture.detectChanges();
+    expect(component.sectionInvalid).toBeTrue();const error=jasmine.createSpy('unsupported');component.updateSystem().subscribe({error});
+    expect(error).toHaveBeenCalled();expect(update).not.toHaveBeenCalled();
+    component.section='performance';component.form.get('frequency')!.setValue(580);component.updateSystem().subscribe();
+    expect(update.calls.mostRecent().args[1]).toEqual({frequency:580});expect(restart).not.toHaveBeenCalled();
+  });
 
   for (const model of ['NerdQAxe++', 'NerdOCTAXE-γ']) {
     it(`shows the saved difficulty when ${model} opens Connection options at the default level`, () => {

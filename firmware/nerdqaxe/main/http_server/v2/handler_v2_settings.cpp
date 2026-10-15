@@ -13,6 +13,7 @@
 #include "http_utils.h"
 #include "macros.h"
 #include "network_manager.h"
+#include "display_settings.h"
 
 static const char *TAG = "http_v2_settings";
 
@@ -168,6 +169,9 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
     doc["flipScreen"]    = board->isFlipScreenEnabled() ? 1 : 0;
     doc["invertScreen"]  = Config::isInvertScreenEnabled() ? 1 : 0;
     doc["autoScreenOff"] = Config::isAutoScreenOffEnabled() ? 1 : 0;
+    // Keep this endpoint durable-only: central settings hashes must not include
+    // the boot-latched profile, changing restart state or capability telemetry.
+    FiveTratumDisplay::appendSavedDisplayProfile(doc);
 
     return sendJsonResponse(req, doc);
 }
@@ -201,6 +205,19 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
     esp_err_t err = getJsonData(req, doc);
     if (err != ESP_OK) {
         return err;
+    }
+
+    const auto displayPatch = FiveTratumDisplay::validateDisplayProfilePatch(doc.as<JsonObjectConst>());
+    if (displayPatch.error)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, displayPatch.error);
+    if (displayPatch.id) {
+        FactoryOTAUpdate::OtaStatus displayOtaStatus{};
+        FACTORY_OTA_UPDATER.getStatus(&displayOtaStatus);
+        if (displayOtaStatus.pending || displayOtaStatus.running) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_sendstr(req, "Firmware update in progress; display settings were not saved");
+        }
+        Config::setDisplayProfile(displayPatch.id);
     }
 
     // --- network ---

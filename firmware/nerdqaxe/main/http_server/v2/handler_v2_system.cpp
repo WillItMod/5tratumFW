@@ -11,6 +11,7 @@
 #include "nvs_config.h"
 #include "http_cors.h"
 #include "http_utils.h"
+#include "display_settings.h"
 
 static const char *TAG = "http_v2_system";
 
@@ -40,6 +41,7 @@ esp_err_t GET_V2_system(httpd_req_t *req)
     doc["deviceModel"] = board->getDeviceModel();
     doc["asicModel"]   = board->getAsicModel();
     doc["version"]     = esp_app_get_description()->version;
+    FiveTratumDisplay::appendDisplayRuntimeMetadata(doc);
 
     // Uptime & reset
     doc["uptimeSeconds"]    = (esp_timer_get_time() - SYSTEM_MODULE.getStartTime()) / 1000000;

@@ -23,6 +23,7 @@ const defaultInfo: ISystemInfo = {
   flipscreen: 0,
   invertscreen: 0,
   autoscreenoff: 0,
+  displayProfile: '320x170',
   power: 0,
   minPower: 0,
   maxPower: 0,
@@ -284,8 +285,8 @@ export class SystemService {
     );
   }
 
-  public getSystemV2(): Observable<ISystemV2> {
-    return this.httpClient.get<ISystemV2>(`/api/v2/system`);
+  public getSystemV2(uri: string = ''): Observable<ISystemV2> {
+    return this.httpClient.get<ISystemV2>(`${uri}/api/v2/system`);
   }
 
   public getInfluxInfo(uri: string = ''): Observable<IInfluxDB> {

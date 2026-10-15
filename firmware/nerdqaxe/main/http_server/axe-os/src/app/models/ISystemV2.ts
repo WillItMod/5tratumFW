@@ -1,3 +1,5 @@
+import { IDisplaySettings } from './IDisplaySettings';
+
 export interface ISystemV2Network {
     hostname: string;
     ssid: string;
@@ -12,7 +14,7 @@ export interface ISystemV2Memory {
     freeHeapInt: number;
 }
 
-export interface ISystemV2 {
+export interface ISystemV2 extends IDisplaySettings {
     deviceModel: string;
     asicModel: string;
     version: string;
