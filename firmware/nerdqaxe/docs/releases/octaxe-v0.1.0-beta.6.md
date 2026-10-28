@@ -10,12 +10,16 @@ Download this release's **[application — esp-miner-NerdOCTAXE-Gamma.bin](https
 
 To update from **5tratumOS**:
 
-1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
-2. Find the OctAxe and click **Open miner**.
-3. On the miner's **Updates** page, upload this release's `esp-miner-NerdOCTAXE-Gamma.bin` first and wait for its restart. Then upload this release's matching `www.bin` through the web-interface updater and refresh.
-4. Confirm that both application and web interface report `5tratumFW-oct-0.1.0-beta.6`, then select the screen as below.
+1. Update 5tratumOS to **0.8.48** through **Settings → Updates**, then reload the portal.
+2. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
+3. On the correct **NerdOctAxe Gamma**, select **Firmware update**, choose **BETA**, then **Check for updates**.
+4. Confirm the model-labelled **Firmware version** names **NerdOctAxe Gamma Beta 6**, the newest compatible default.
+5. Select **Install firmware → Confirm install**. Keep the miner powered and wait for **Firmware installation verified**. The OS installs both matching images, handles restarts and checks the resulting application/web versions and retained settings.
+6. Use **Open miner** to inspect the result or select the screen below. **Standard 320×170** remains the default.
 
-The current public **5tratumOS v0.8.47** does not offer OctAxe Beta6 through its central one-click firmware installer. Use **Open miner** for this release; publishing the firmware does not change OS admission. These steps apply to an existing compatible 5tratumFW installation. For stock firmware, use the separate [initial-installation instructions](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/installation-5tratumfw-oct.md#central-management-and-initial-installation).
+The same updater offers **Bitaxe Gamma 601/602 Beta 10** and **NerdQAxe++ Beta 8** as their newest defaults. **NerdQAxe++ Beta 6** is an additional choice when upgrading an older NerdQAxe++ installation; the central updater does not downgrade a miner already on Beta 6 or newer to Beta 6. Future compatible firmware releases are discovered without another OS update for each beta number; the BETA channel also includes compatible stable releases. New hardware or a breaking package/API contract can still require an adapter. See the [5tratumOS 0.8.48 release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.48).
+
+On older **5tratumOS 0.8.47**, use **Open miner** from Devices and install manually through the miner's **Updates** page: upload this release's `esp-miner-NerdOCTAXE-Gamma.bin` first, wait for restart, then upload its matching `www.bin` and refresh. These routes apply to an existing compatible 5tratumFW installation. For stock firmware, use the separate [initial-installation instructions](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/installation-5tratumfw-oct.md#central-management-and-initial-installation).
 
 To enable and check the larger screen:
 
@@ -25,9 +29,11 @@ To enable and check the larger screen:
 4. Check the full-screen position and readable, unmirrored text. If colours are wrong, select **3.5-inch BGR**, save and restart again. **Rotate miner screen** handles a separate 180-degree mounting orientation; save and restart after changing it.
 5. Before downgrading to Beta5 or other standard-only firmware, select **Standard**, save, restart and refresh to confirm it is active. Then install that older release's matched application/web pair. Beta6 refuses known older standard-only applications while a larger screen remains saved or active.
 
-The existing RC1 base, saved tuning-profile schedules, clocks/voltage, both fans, protection, pools and slots remain part of the separate OctAxe family. A display-only save does not alter them. Native A/B sessions share the ASIC chain; independent per-chip routing remains unsupported and disabled. Central OS/MUX admission still requires its own exact-release update.
+The existing RC1 base, saved tuning-profile schedules, clocks/voltage, both fans, protection, pools and slots remain part of the separate OctAxe family. A display-only save does not alter them. Native A/B sessions share the ASIC chain; independent per-chip routing remains unsupported and disabled. The separate central Dual pool and Power controls retain their own qualification; the dynamic one-click firmware updater does not extend those permissions.
 
-The pinned target build, **159 browser tests**, **29 host entry points**, **20 web-control checks**, native simulated display checks and independent package/source audit passed. **No new physical Beta6 installation was tested, including Standard.** Earlier owned-PCB-2.2 observations belong to Beta5 only. The larger panel still needs physical position, reflection, colours, rotation, startup, refresh and persistence checks. Other PCB revisions or vendor flash layouts are not qualified. The unchanged manifest records `hardwareTested: false` and `physicalLayoutVerified: false`. [Exact validation and limitations](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/validation-oct-beta6.md).
+The pinned target build, **159 browser tests**, **29 host entry points**, **20 web-control checks**, native simulated display checks and independent package/source audit passed. Those original publication checks were software-only. **Later installed-device check, 28 October 2026:** the production 5tratumOS updater modules, invoked by a local QA driver, completed **NerdOctAxe Gamma Beta 5 → Beta 6** on the owned **PCB 2.2** unit, verifying the matched application/web pair and retained settings. The installed 5tratumOS system was not upgraded for this test; browser interactions were checked separately with fictional miners. The owner confirmed the **standard screen and both fans looked normal**. Earlier pause/resume and profile-schedule observations remain scoped to Beta 5; they were not repeated as new Beta 6 qualification.
+
+**The larger panel remains physically unqualified:** position, reflection, colours, rotation, startup, refresh and persistence still need checking on the actual panel. Other PCB revisions or vendor flash layouts are not qualified. Immutable images, checksums and the original manifest are unchanged; its build-time `hardwareTested: false` and `physicalLayoutVerified: false` flags remain intact. [Original build validation and limitations](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/validation-oct-beta6.md).
 
 | Image | Bytes | SHA-256 |
 | --- | ---: | --- |
