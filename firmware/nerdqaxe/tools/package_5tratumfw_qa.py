@@ -142,7 +142,8 @@ def cache_values(path: Path) -> dict[str, str]:
 
 def verified_display_profiles(identity: BuildIdentity, cache: dict[str, str], commands: list[dict]) -> dict:
     """Bind update metadata to the actual public display-driver compilation."""
-    wide = identity == QA
+    checked_identity(identity)
+    wide = identity in (QA, OCT)
     if (cache.get("FIVETRATUM_DISPLAY_PROFILE") != "TDISPLAY_S3_320X170"
         or cache.get("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR") != ("ON" if wide else "OFF")):
         raise ValueError("Public display build must preserve the stock default and exact runtime selector")

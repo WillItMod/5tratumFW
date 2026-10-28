@@ -55,13 +55,26 @@ inline bool takeLiteral(const char *&cursor, const char *end, const char *litera
 }
 
 inline bool profileAwareVersion(const uint8_t *field, std::size_t size) {
+#if defined(NERDOCTAXEGAMMA) && !defined(NERDQAXEPLUS2)
+    constexpr const char *familyPrefix = "5tratumFW-oct-";
+    constexpr unsigned firstProfileBeta = 6;
+#elif defined(NERDQAXEPLUS2) && !defined(NERDOCTAXEGAMMA)
+    constexpr const char *familyPrefix = "5tratumFW-qa-";
+    constexpr unsigned firstProfileBeta = 7;
+#else
+    // An absent, unsupported or mixed build identity cannot admit an image.
+    (void)field;
+    (void)size;
+    return false;
+#endif
+#if defined(NERDOCTAXEGAMMA) != defined(NERDQAXEPLUS2)
     if (!field) return false;
     const auto *start = reinterpret_cast<const char *>(field);
     const auto *end = static_cast<const char *>(std::memchr(start, 0, size));
     if (!end) return false;
     const char *cursor = start;
     unsigned major, minor, patch, iteration = 0, stage = 3;
-    if (!takeLiteral(cursor, end, "5tratumFW-qa-") || !takeNumber(cursor, end, major) ||
+    if (!takeLiteral(cursor, end, familyPrefix) || !takeNumber(cursor, end, major) ||
         !takeLiteral(cursor, end, ".") || !takeNumber(cursor, end, minor) ||
         !takeLiteral(cursor, end, ".") || !takeNumber(cursor, end, patch)) return false;
     if (cursor != end) {
@@ -72,13 +85,14 @@ inline bool profileAwareVersion(const uint8_t *field, std::size_t size) {
         if (!takeNumber(cursor, end, iteration)) return false;
     }
     if (cursor != end) return false;
-    // QA beta.7 is the first universal app with persisted display profiles.
-    // Future QA releases must retain this contract. A semantic version is
+    // QA beta.7 and Oct beta.6 first expose persisted wide-display profiles.
+    // Future releases of the same family must retain this contract. A version is
     // neither cryptographic proof nor permission to interchange board images.
     if (major != 0) return true;
     if (minor != 1) return minor > 1;
     if (patch != 0) return true;
-    return stage > 1 || (stage == 1 && iteration >= 7);
+    return stage > 1 || (stage == 1 && iteration >= firstProfileBeta);
+#endif
 }
 
 inline bool compatibleImagePrefix(const uint8_t *data, std::size_t bytes) {

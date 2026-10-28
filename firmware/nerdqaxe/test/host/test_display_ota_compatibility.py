@@ -45,22 +45,30 @@ class DisplayOtaCompatibilityTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory(prefix='display-ota-')
         cls.directory = Path(cls.temporary.name)
-        cls.binary = cls.directory / 'parser'
+        cls.binaries = {}
         compiler = shutil.which('c++')
         if not compiler:
             raise RuntimeError('Display OTA compatibility checks require a C++ compiler')
-        subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror',
-                        '-I', str(HTTP), str(ROOT / 'test/host/display_ota_compatibility_harness.cpp'),
-                        '-o', str(cls.binary)], check=True, capture_output=True, text=True)
+        for board, defines in [('NERDQAXEPLUS2', ['NERDQAXEPLUS2']),
+                               ('NERDOCTAXEGAMMA', ['NERDOCTAXEGAMMA']),
+                               ('unknown', []), ('unsupported', ['NERDOCTAXEPLUS']),
+                               ('mixed', ['NERDQAXEPLUS2', 'NERDOCTAXEGAMMA'])]:
+            binary = cls.directory / board
+            subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror',
+                            *['-D' + define for define in defines],
+                            '-I', str(HTTP), str(ROOT / 'test/host/display_ota_compatibility_harness.cpp'),
+                            '-o', str(binary)], check=True, capture_output=True, text=True)
+            cls.binaries[board] = binary
+        cls.binary = cls.binaries['NERDQAXEPLUS2']
 
     @classmethod
     def tearDownClass(cls):
         cls.temporary.cleanup()
 
-    def parse(self, image=None, saved='480x320-rgb', active='320x170'):
+    def parse(self, image=None, saved='480x320-rgb', active='320x170', board='NERDQAXEPLUS2'):
         path = self.directory / 'prefix.bin'
         path.write_bytes(image_prefix() if image is None else image)
-        result = subprocess.run([str(self.binary), str(path), saved, active],
+        result = subprocess.run([str(self.binaries[board]), str(path), saved, active],
                                 check=True, capture_output=True, text=True)
         required, admitted, null_profiles, null_data = map(int, result.stdout.split())
         self.assertEqual((null_profiles, null_data), (0, 0))
@@ -84,6 +92,32 @@ class DisplayOtaCompatibilityTests(unittest.TestCase):
             with self.subTest(version=version):
                 self.assertEqual(self.parse(image_prefix(version)), (True, True))
 
+    def test_oct_aware_versions_and_saved_or_active_panel_protection(self):
+        for version in ['5tratumFW-oct-0.1.0-beta.6', '5tratumFW-oct-0.1.0-beta.7',
+                        '5tratumFW-oct-0.1.0-rc.1', '5tratumFW-oct-0.1.0',
+                        '5tratumFW-oct-0.1.1-alpha.0', '5tratumFW-oct-0.2.0',
+                        '5tratumFW-oct-1.0.0-beta.0']:
+            for saved, active in [('480x320-rgb', '320x170'), ('480x320-bgr', '320x170'),
+                                  ('320x170', '480x320-rgb'), ('320x170', '480x320-bgr')]:
+                with self.subTest(version=version, saved=saved, active=active):
+                    self.assertEqual(self.parse(image_prefix(version), saved, active,
+                                                board='NERDOCTAXEGAMMA'), (True, True))
+
+    def test_oct_legacy_versions_and_both_cross_family_directions_are_refused(self):
+        for version in ['5tratumFW-oct-0.1.0-beta.5', '5tratumFW-oct-0.1.0-beta.0',
+                        '5tratumFW-oct-0.1.0-alpha.9', '5tratumFW-oct-0.0.9',
+                        '5tratumFW-qa-0.1.0-beta.7', '5tratumFW-qa-0.1.0-beta.8',
+                        '5tratumFW-qa-2.0.0', '5tratumFW-0.1.0-beta.10', 'v1.1.1-rc1']:
+            with self.subTest(version=version):
+                self.assertEqual(self.parse(image_prefix(version), board='NERDOCTAXEGAMMA'), (True, False))
+        self.assertEqual(self.parse(image_prefix('5tratumFW-oct-0.1.0-beta.6')), (True, False))
+
+    def test_missing_unsupported_or_mixed_identity_cannot_admit_either_family(self):
+        for board in ['unknown', 'unsupported', 'mixed']:
+            for version in ['5tratumFW-qa-0.1.0-beta.8', '5tratumFW-oct-0.1.0-beta.6']:
+                with self.subTest(board=board, version=version):
+                    self.assertEqual(self.parse(image_prefix(version), board=board), (True, False))
+
     def test_older_and_other_family_versions_are_refused(self):
         for version in ['5tratumFW-qa-0.1.0-beta.6', '5tratumFW-qa-0.1.0-beta.0',
                         '5tratumFW-qa-0.1.0-alpha.9', '5tratumFW-qa-0.0.9',
@@ -96,8 +130,9 @@ class DisplayOtaCompatibilityTests(unittest.TestCase):
         for suffix in ['0.1.0-beta.07', '0.1.0-beta.-1', '0.1.0-beta.', '0.1.0-beta.7x',
                        '00.1.0-beta.7', '0.01.0-beta.7', '0.1.00-beta.7', '0.1.0-dev.7',
                        '0.1.0-beta.7\n', '0.1.0-beta.7+test', '0.1.0-rc.01', '0.1.0.7']:
-            with self.subTest(suffix=suffix):
-                self.assertEqual(self.parse(image_prefix('5tratumFW-qa-' + suffix)), (True, False))
+            for board, prefix in [('NERDQAXEPLUS2', '5tratumFW-qa-'), ('NERDOCTAXEGAMMA', '5tratumFW-oct-')]:
+                with self.subTest(suffix=suffix, board=board):
+                    self.assertEqual(self.parse(image_prefix(prefix + suffix), board=board), (True, False))
 
     def test_truncated_header_or_descriptor_is_refused(self):
         image = image_prefix()

@@ -187,8 +187,10 @@ struct Board {
     const char *getDeviceModel() {
 #if defined(NERDQAXEPLUS2)
         return "NerdQAxe++";
-#else
+#elif defined(NERDOCTAXEGAMMA)
         return "NerdOCTAXE-\xCE\xB3";
+#else
+        return "Unsupported host fixture";
 #endif
     }
 #define BOARD_GETTER(name) uint16_t name() { return 1; }

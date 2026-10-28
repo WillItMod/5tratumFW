@@ -58,7 +58,7 @@ class PackageFixture:
             "boardProfile": identity.board, "version": self.version, "idfImage": packaging.IDF_IMAGE}))
         self.cache = {"FIVETRATUM_RELEASE_PROFILE": identity.board,
             "FIVETRATUM_DISPLAY_PROFILE": "TDISPLAY_S3_320X170",
-            "FIVETRATUM_RUNTIME_DISPLAY_SELECTOR": "ON" if identity == QA else "OFF",
+            "FIVETRATUM_RUNTIME_DISPLAY_SELECTOR": "ON",
             "FIVETRATUM_ASIC_CAPTURE_LOGS": "OFF", "FIVETRATUM_BM1370_CAPTURE": "OFF",
             "FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER": "OFF"}
         self.write_cache()
@@ -85,7 +85,7 @@ class PackageFixture:
             "command": "clang " + " ".join("-D" + board for board in boards) + " -c main.cpp"},
             {"file": "/project/main/displays/displayDriver.cpp", "command":
              "clang -DFIVETRATUM_LCD_PROFILE=0 -DFIVETRATUM_RUNTIME_WIDE_DISPLAY="
-             + str(int(self.identity == QA)) + " -c displayDriver.cpp"}]))
+             + str(int(self.identity in (QA, OCT))) + " -c displayDriver.cpp"}]))
 
     def fake_recreate_spiffs(self, command, **kwargs):
         if command[:3] != ["docker", "run", "--rm"]:
@@ -137,8 +137,8 @@ class NerdPackageIdentityTests(unittest.TestCase):
                 self.assertEqual(manifest["partitionLayout"]["flashBytesAssumed"], 16 * 1024 * 1024)
                 self.assertEqual(manifest["displayProfiles"], {"schemaVersion": 1,
                     "defaultProfile": "320x170", "persistentSelection": True,
-                    "supportedProfiles": ["320x170", "480x320-rgb", "480x320-bgr"] if identity == QA else ["320x170"],
-                    "experimentalProfiles": ["480x320-rgb", "480x320-bgr"] if identity == QA else []})
+                    "supportedProfiles": ["320x170", "480x320-rgb", "480x320-bgr"],
+                    "experimentalProfiles": ["480x320-rgb", "480x320-bgr"]})
                 self.assertEqual({path.name for path in fixture.output.glob("*.bin")}, {identity.app_name, "www.bin"})
                 for name, entry in manifest["files"].items():
                     self.assertEqual(packaging.sha256(fixture.output / name), entry["sha256"])
@@ -186,7 +186,7 @@ class NerdPackageIdentityTests(unittest.TestCase):
                     fixture = PackageFixture(Path(temporary), identity)
                     if mutation == "missing-cache": fixture.cache.pop("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR")
                     elif mutation == "wrong-default": fixture.cache["FIVETRATUM_DISPLAY_PROFILE"] = "QAXE_480X320_BGR"
-                    elif mutation == "wrong-selector": fixture.cache["FIVETRATUM_RUNTIME_DISPLAY_SELECTOR"] = "OFF" if identity == QA else "ON"
+                    elif mutation == "wrong-selector": fixture.cache["FIVETRATUM_RUNTIME_DISPLAY_SELECTOR"] = "OFF"
                     fixture.write_cache()
                     commands = json.loads((fixture.build / "compile_commands.json").read_text())
                     if mutation == "missing-driver": commands = commands[:1]

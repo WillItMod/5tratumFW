@@ -150,7 +150,7 @@ esp_err_t POST_OTA_update(httpd_req_t *req)
         // still running normally: neither flash nor ASIC power changes first.
         if (!FiveTratumDisplayOta::compatibleImagePrefix(prefix, prefix_size)) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                "480x320 requires a profile-aware QAxe application (5tratumFW QA beta.7 or newer)");
+                "480x320 requires a profile-aware application for this miner (QAxe beta.7 or OctAxe beta.6 onward)");
         }
         remaining -= static_cast<int>(prefix_size);
     }

@@ -92,7 +92,7 @@ class DisplayProfileTests(unittest.TestCase):
         result = self.configure(**arguments)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         actual = self.compile_and_read(arguments.get("build", "build"))
-        runtime = arguments.get("board", "NERDQAXEPLUS2") == "NERDQAXEPLUS2"
+        runtime = arguments.get("board", "NERDQAXEPLUS2") in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA")
         self.assertEqual(actual.pop("runtimeDisplaySelector"), runtime)
         cache = (self.directory / arguments.get("build", "build") / "CMakeCache.txt").read_text()
         self.assertIn("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR:BOOL=" + ("ON" if runtime else "OFF"), cache)
@@ -107,6 +107,18 @@ class DisplayProfileTests(unittest.TestCase):
                 self.assert_configured_profile(
                     STOCK, board=board, profile="TDISPLAY_S3_320X170",
                     public=board, build=board)
+
+    def test_other_and_missing_targets_keep_stock_without_runtime_wide_profiles(self):
+        for board in ["NERDOCTAXEPLUS", "NERDQAXEPLUS", "NERDQAXEPLUS2-extra",
+                      "NERDOCTAXEGAMMA-extra", "", None]:
+            with self.subTest(board=board):
+                self.assert_configured_profile(STOCK, board=board, build=f"stock-{board}")
+
+    def test_board_reconfiguration_resets_runtime_capability(self):
+        for board in ["NERDQAXEPLUS2", "NERDOCTAXEGAMMA", "NERDOCTAXEPLUS",
+                      "NERDOCTAXEGAMMA", None]:
+            with self.subTest(board=board):
+                self.assert_configured_profile(STOCK, board=board)
 
     def test_explicit_private_rgb_and_bgr_profiles(self):
         for profile, expected in [("QAXE_480X320_RGB", RGB), ("QAXE_480X320_BGR", BGR)]:
@@ -124,12 +136,14 @@ class DisplayProfileTests(unittest.TestCase):
                     self.assertIn("explicit experimental opt-in", result.stdout + result.stderr)
 
     def test_wide_rejects_wrong_or_missing_board(self):
-        for board in ["NERDOCTAXEGAMMA", "NERDQAXEPLUS", "NERDQAXEPLUS2-extra", None]:
-            with self.subTest(board=board):
-                result = self.configure(board=board, profile="QAXE_480X320_RGB",
-                                        opt_in="ON", build=f"wrong-{board}")
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("BOARD=NERDQAXEPLUS2", result.stdout + result.stderr)
+        for profile in ["QAXE_480X320_RGB", "QAXE_480X320_BGR"]:
+            for board in ["NERDOCTAXEGAMMA", "NERDOCTAXEPLUS", "NERDQAXEPLUS",
+                          "NERDQAXEPLUS2-extra", "NERDOCTAXEGAMMA-extra", None]:
+                with self.subTest(board=board, profile=profile):
+                    result = self.configure(board=board, profile=profile,
+                                            opt_in="ON", build=f"wrong-{profile}-{board}")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("BOARD=NERDQAXEPLUS2", result.stdout + result.stderr)
 
     def test_public_build_cannot_admit_wide_even_with_opt_in(self):
         for profile in ["QAXE_480X320_RGB", "QAXE_480X320_BGR"]:
@@ -162,6 +176,20 @@ class DisplayProfileTests(unittest.TestCase):
         actual = json.loads(result.stdout)
         self.assertFalse(actual.pop("runtimeDisplaySelector"))
         self.assertEqual(actual, STOCK)
+
+    def test_header_only_runtime_support_requires_an_exact_admitted_target(self):
+        for board in ["NERDQAXEPLUS2", "NERDOCTAXEGAMMA", "NERDOCTAXEPLUS",
+                      "NERDQAXEPLUS", "NERDQAXEPLUS2_EXTRA", "NERDOCTAXEGAMMA_EXTRA"]:
+            with self.subTest(board=board):
+                binary = self.directory / f"header-{board}"
+                subprocess.run([self.cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                                f"-D{board}", "-I", str(DISPLAY), str(HARNESS),
+                                "-o", str(binary)], capture_output=True, text=True, check=True)
+                result = subprocess.run([str(binary)], capture_output=True, text=True, check=True)
+                actual = json.loads(result.stdout)
+                self.assertEqual(actual.pop("runtimeDisplaySelector"),
+                                 board in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA"))
+                self.assertEqual(actual, STOCK)
 
     def test_header_rejects_invalid_compiler_profile(self):
         result = subprocess.run(
