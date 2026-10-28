@@ -1,8 +1,8 @@
 # Aligned update validation — 28 October 2026
 
-These are local, uninstalled BETA candidates. Public Gamma Beta9, QAxe Beta6 and OctAxe Beta4 downloads retain their existing evidence. This record does not qualify their successors for physical operation.
+These BETA candidates have separate local build and supervised installed-device evidence below. Public Gamma Beta9, QAxe Beta6 and OctAxe Beta4 downloads remain unchanged. The short bench does not qualify other hardware or the experimental larger display.
 
-Gamma Beta10 was compiled and packaged from clean commit `b0451dc657f1d1f76d0e927c04c788295ddd1f87`. QAxe Beta8 and OctAxe Beta5 were compiled and packaged from clean commit `9874c765bd0b41136df28dba8e7220d56ed9853f`. The entire Nerd subtree is identical between those commits; subsequent root Gamma changes do not alter either Nerd package. Each manifest records its own exact compiled/source revision, checksums and family. Later documentation commits do not relabel these binaries.
+Gamma Beta10 was compiled and packaged from clean commit `b0451dc657f1d1f76d0e927c04c788295ddd1f87`. QAxe Beta8 and OctAxe Beta5 were compiled and packaged from clean commit `1a34b24100e1238e331d8145a70f6b08f85f943d`. Nerd production firmware and web source are identical to the Nerd tree in the Gamma source commit; a later host-test header correction makes that test portable on Linux. The earlier Nerd builds are retained privately as superseded candidates. Each manifest records its own exact compiled/source revision, checksums and family. Later documentation commits do not relabel these binaries.
 
 ## Source and build evidence
 
@@ -24,6 +24,10 @@ Gamma Beta10 was compiled and packaged from clean commit `b0451dc657f1d1f76d0e92
 | Target compilation | All three ESP32-S3 applications and matching WWW images passed. No factory/NVS images were produced for delivery. |
 | Package verification | Descriptors, family/version, selected build receipts, source inventories, web budget and image checksums passed. Gamma's ELF-bound embedded table matched every URL, gzip flag and payload byte of the current 11-asset interface; independently recreated SPIFFS matched WWW byte-for-byte. |
 
+The complete local Linux host checks also passed at `1a34b241`: **31/31 Nerd scripts** and **13/13 Gamma entry points**, with Node 24.14.0, Ubuntu 24.04, GCC 13 and Clang 18. Native Linux OLED, both Nerd viewports and 1,024-event candidate lifecycle checks also passed with sanitizers. The initial GitHub Linux failure was a host fixture using `<cmath>` while the production regulator uses `<math.h>`; the test now matches that boundary. No production regulator logic changed in that correction.
+
+All three fresh GitHub PR checks passed for source `1a34b241`: [Gamma](https://github.com/WillItMod/5tratumFW/actions/runs/40711985750), [QAxe](https://github.com/WillItMod/5tratumFW/actions/runs/40711985969), [OctAxe](https://github.com/WillItMod/5tratumFW/actions/runs/40711985808). These are independent Linux builds and package checks; their generated binaries are not asserted byte-identical to the local candidates. Gamma's CI target used the official pinned SDK6 container.
+
 Gamma's local build used clean official SDK 6.0.2 source `7101770dc6db2667b3c477cc31365dd1acd6db4e` and its pinned Linux ARM64 GCC 15.2.0 tools. The cached SDK 5.5.3 container supplied the Linux runtime only. Its actual identity, source/tool archives and compiler are recorded in `build-provenance.json`; this is not presented as an execution of the official SDK6 container. The standard helper and CI pin the official SDK6 image documented in [build instructions](build.md). The original web-budget baseline is retained as a fixed budget, independently of the newer firmware base.
 
 ## Matched local images
@@ -31,17 +35,30 @@ Gamma's local build used clean official SDK 6.0.2 source `7101770dc6db2667b3c477
 | Family | Version | App bytes | App SHA-256 |
 | --- | --- | ---: | --- |
 | Gamma 601/602 | `5tratumFW-0.1.0-beta.10` | 2,798,560 | `93f591fba971869059f0488c840f3f24b6d97d97bfea2b8af6bdadbf8158a4b8` |
-| QAxe++ | `5tratumFW-qa-0.1.0-beta.8` | 3,579,648 | `d4736e51f92b3fd4e094ce7113874c6f1f94983bb9099547d6923ef4528935e1` |
-| OctAxe Gamma | `5tratumFW-oct-0.1.0-beta.5` | 3,585,264 | `f16039af630c941256dc992a20a01d71f0a50e8f4c5b6e3445cdf9adff01eae9` |
+| QAxe++ | `5tratumFW-qa-0.1.0-beta.8` | 3,579,648 | `e48aa9d509b71a0a5b53509dea214b83f4aa9e13cc0e164f17513f77677d43ec` |
+| OctAxe Gamma | `5tratumFW-oct-0.1.0-beta.5` | 3,585,264 | `617efbabb05c1944f5de98df084ec4bcb2bb98ae62c5538213e033747e54f866` |
 
 Every WWW image is 3,145,728 bytes. Gamma's measured web payload is 624,901 bytes; QAxe's is 2,407,646 and OctAxe's is 2,407,650. Each package includes its own matched WWW, source, manifest, budget and checksums. Shared filenames do not make the packages interchangeable.
 
+## Supervised installed-device checks
+
+After the owner brought the four miners online, each application and matching WWW image was installed one device at a time, using fresh hardware/identity, original-settings and package-hash checks. Existing published rollback pairs were privately verified before installation; no factory or NVS image was written. All four rebooted into their new applications with their original device identities, configured points and ten tuning plus ten pool slots preserved. Gamma served all 11 matching web records. Each Nerd interface served 59 exact gzip URLs; their 49 decoded raw duplicates also matched, checking all 108 packaged records.
+
+| Owned hardware | Installed observation |
+| --- | --- |
+| Gamma PCB 601 | Initial Beta10 pair: 580 MHz / 1155 mV retained; accepted shares progressed with zero rejected in the recorded new session. Owner confirmed the physical screen and fan normal. |
+| Gamma PCB 602 | Initial Beta10 pair: 600 MHz / 1150 mV retained; accepted shares progressed with zero rejected in the recorded new session. |
+| NerdQAxe++ BM1370×4, PCB revision unidentified | Beta8 standard display pair: 500 MHz / 1130 mV retained; approximately 4 TH/s and accepted shares. Reported applied pause/resume and a temporary same-point tuning schedule passed; original settings, manual override, disabled empty schedule and all slots were restored. |
+| NerdOCTAXE-γ BM1370×8, owned PCB 2.2 | Beta5 standard display pair: 700 MHz / 1180 mV retained; approximately 11.4 TH/s and accepted shares. Reported applied pause/resume and a temporary same-point tuning schedule passed; original settings, manual override, disabled empty schedule and all slots were restored. |
+
+The Gamma schedule test was held when review identified that the initial 30-entry operating journal would prevent Beta9 startup after a tuning write. The compatibility correction retains the legacy 28-entry format when authentication values match the original raw keys; an actual authentication change can require 30 entries. The corrected Gamma application requires its own build receipt and post-update bench before those checks can be claimed. The initial Gamma hashes above record the first installed candidates.
+
 ## Physical checks still required
 
-No candidate was installed or flashed, and no device settings were changed. The owned standard QAxe did not respond to the read-only connection check. Tadets' larger panel is available only on his miner. Its controller cannot be identified from the photograph; verify full-screen position, readable unmirrored text, RGB/BGR colour order, rotation, startup and refresh using the saved screen selector. The online driver comparisons are recorded in the [display reference check](../firmware/nerdqaxe/docs/experimental-480-display.md#online-firmware-reference-check--28-october-2026).
+Tadets' larger panel is available only on his miner. Its controller cannot be identified from the photograph; verify full-screen position, readable unmirrored text, RGB/BGR colour order, rotation, startup and refresh using the saved screen selector. The online driver comparisons are recorded in the [display reference check](../firmware/nerdqaxe/docs/experimental-480-display.md#online-firmware-reference-check--28-october-2026).
 
-Each new family/base also needs its own compatible paired OTA, preserved settings, cold start, accepted shares, real pause/resume, scheduled profile transitions and protection checks. Imported board/display definitions do not expand the supported families. Gamma retains two active routes and ten saved pool slots through its compatibility layer; upstream eight-active-pool storage is not enabled.
+The short same-point bench does not exercise a different frequency/voltage pair, establish electrical or sustained thermal stability, or test every protection fault. Gamma pause/resume and scheduled activation remain pending the corrected application at this point in the record. Imported board/display definitions do not expand the supported families. Gamma retains two active routes and ten saved pool slots through its compatibility layer; upstream eight-active-pool storage is not enabled.
 
-Schedules use a fixed UTC offset and do not automatically change for daylight saving time. Hardware protection may override a requested operating point.
+Tuning and pool schedules use a fixed UTC offset and do not automatically change for daylight saving time. The pause schedule retains its configured timezone/DST behaviour. Hardware protection may override a requested operating point.
 
 Independent per-chip BM1370 work remains **unsupported and disabled**. Current primary-source rechecks do not establish an addressed work command or chip-local acceptance mechanism. The bounded passive-capture collector has fifteen host tests but no new physical capture. See the [investigation](../firmware/nerdqaxe/docs/asic-work-targeting-investigation.md). These packages do not claim four independently routed chips.

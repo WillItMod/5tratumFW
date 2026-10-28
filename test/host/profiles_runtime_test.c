@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <setjmp.h>
 #include "legacy_operating_journal_fixture.inc"
+#include "legacy_gamma_beta9_decoder.inc"
 _Static_assert(NVS_CONFIG_STRATUM_PROTOCOL==3 && NVS_CONFIG_USE_FALLBACK_STRATUM==27 && NVS_CONFIG_ASIC_FREQUENCY==28 && NVS_CONFIG_ASIC_VOLTAGE==29 && NVS_CONFIG_OVERCLOCK_ENABLED==30 && NVS_CONFIG_MINING_SCHEDULE==68,"Persisted journal key IDs must never be renumbered");
 
 typedef struct { unsigned ns; char key[32]; unsigned char *bytes; size_t size; int type; uint64_t number; } Entry;
@@ -14,6 +16,13 @@ static Entry store[100], pending;
 static size_t stored_count;
 static bool fail_set, fail_commit, authorized = true, reference_guard;
 static bool fail_hash, short_hash, fail_crypto_init, crypto_initialized;
+static unsigned fail_commits_remaining;
+static bool persist_before_commit_failure;
+static size_t queue_item_size;
+static unsigned char queued_update[64];
+static bool queue_pending, draining_queue;
+static jmp_buf queue_drained;
+static void (*nvs_worker)(void *);
 static unsigned writes, commits, erases, reloads;
 static httpd_uri_t routes[5];
 static unsigned route_count;
@@ -44,10 +53,10 @@ esp_err_t nvs_set_u16(nvs_handle_t h,const char *key,uint16_t n){(void)h;(void)k
 esp_err_t nvs_set_i32(nvs_handle_t h,const char *key,int32_t n){(void)h;(void)key;(void)n;writes++;return ESP_OK;}
 esp_err_t nvs_set_u64(nvs_handle_t h,const char *key,uint64_t n){(void)h;(void)key;(void)n;writes++;return ESP_OK;}
 esp_err_t nvs_erase_key(nvs_handle_t h,const char *key){(void)h;(void)key;writes++;return ESP_OK;}
-esp_err_t nvs_commit(nvs_handle_t h){(void)h;commits++;if(fail_commit)return ESP_FAIL;if(pending.bytes){Entry *entry=find(pending.ns,pending.key);if(!entry)entry=&store[stored_count++];free(entry->bytes);*entry=pending;memset(&pending,0,sizeof(pending));}return ESP_OK;}
-QueueHandle_t xQueueCreate(unsigned count,unsigned size){(void)count;(void)size;return(void *)1;}
-BaseType_t xQueueReceive(QueueHandle_t q,void *v,unsigned t){(void)q;(void)v;(void)t;return 0;}
-BaseType_t xQueueSend(QueueHandle_t q,const void *v,unsigned t){(void)q;(void)v;(void)t;return pdPASS;}
+esp_err_t nvs_commit(nvs_handle_t h){(void)h;commits++;bool fail=fail_commit||fail_commits_remaining;if(fail_commits_remaining)fail_commits_remaining--;if(fail&&!persist_before_commit_failure)return ESP_FAIL;if(pending.bytes){Entry *entry=find(pending.ns,pending.key);if(!entry)entry=&store[stored_count++];free(entry->bytes);*entry=pending;memset(&pending,0,sizeof(pending));}return fail?ESP_FAIL:ESP_OK;}
+QueueHandle_t xQueueCreate(unsigned count,unsigned size){(void)count;assert(size<=sizeof(queued_update));queue_item_size=size;return(void *)1;}
+BaseType_t xQueueReceive(QueueHandle_t q,void *v,unsigned t){(void)q;(void)t;if(!draining_queue)return 0;if(!queue_pending)longjmp(queue_drained,1);memcpy(v,queued_update,queue_item_size);queue_pending=false;return pdTRUE;}
+BaseType_t xQueueSend(QueueHandle_t q,const void *v,unsigned t){(void)q;(void)t;assert(!queue_pending&&queue_item_size);memcpy(queued_update,v,queue_item_size);queue_pending=true;return pdPASS;}
 #ifdef TUNING_SCHEDULE_RUNTIME_TEST
 SemaphoreHandle_t xSemaphoreCreateMutex(void){pthread_mutex_t *mutex=malloc(sizeof(*mutex));assert(mutex);assert(!pthread_mutex_init(mutex,NULL));return mutex;}
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s,unsigned t){(void)t;assert(!pthread_mutex_lock(s));return pdPASS;}
@@ -57,7 +66,7 @@ SemaphoreHandle_t xSemaphoreCreateMutex(void){return(void *)1;}
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s,unsigned t){(void)s;(void)t;return pdPASS;}
 BaseType_t xSemaphoreGive(SemaphoreHandle_t s){(void)s;return pdPASS;}
 #endif
-BaseType_t xTaskCreate(void(*fn)(void *),const char *name,unsigned size,void *arg,unsigned priority,TaskHandle_t *task){(void)fn;(void)name;(void)size;(void)arg;(void)priority;(void)task;return pdPASS;}
+BaseType_t xTaskCreate(void(*fn)(void *),const char *name,unsigned size,void *arg,unsigned priority,TaskHandle_t *task){if(!strcmp(name,"nvs_task"))nvs_worker=fn;(void)size;(void)arg;(void)priority;(void)task;return pdPASS;}
 const esp_app_desc_t *esp_app_get_description(void){static esp_app_desc_t descriptor={.version="5tratumFW-0.1.0-beta.2"};return &descriptor;}
 esp_err_t esp_read_mac(uint8_t *out,int kind){(void)kind;const uint8_t mac[]={2,0,0,0,0,1};memcpy(out,mac,6);return ESP_OK;}
 psa_status_t psa_crypto_init(void){if(fail_crypto_init)return -1;crypto_initialized=true;return PSA_SUCCESS;}
@@ -88,13 +97,32 @@ esp_err_t HTTP_send_json(httpd_req_t *req,const cJSON *root,int *prebuffer){(voi
 static httpd_req_t request(unsigned route,const char *body){httpd_req_t req={.code=200,.body=body,.content_len=body?strlen(body):0};routes[route].handler(&req);return req;}
 static void assert_string(NvsConfigKey key,const char *value){char *actual=nvs_config_get_string(key);assert(actual&&!strcmp(actual,value));free(actual);}
 static void set_auth(bool primary,bool fallback){NvsConfigMutation changes[]={{.key=NVS_CONFIG_SV2_REQUIRE_AUTH,.type=TYPE_BOOL,.value.b=primary},{.key=NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH,.type=TYPE_BOOL,.value.b=fallback}};assert(nvs_config_apply_atomic(changes,2)==ESP_OK);}
+static void drain_auth_write(void){assert(nvs_worker&&queue_pending);draining_queue=true;if(!setjmp(queue_drained))nvs_worker(NULL);draining_queue=false;assert(!queue_pending);}
+static Entry *journal(void){Entry *entry=find(1,"5fw_operating");assert(entry);return entry;}
+static bool beta9_accepts(const unsigned char *bytes,size_t size,float frequency,unsigned voltage)
+{
+ NvsConfigMutation entries[OPERATING_JOURNAL_COUNT];
+ if(journal_decode(bytes,size,entries)!=ESP_OK)return false;
+ bool has_frequency=false,has_voltage=false;
+ for(size_t i=0;i<OPERATING_JOURNAL_COUNT;i++){
+  if(entries[i].key==NVS_CONFIG_ASIC_FREQUENCY){assert(entries[i].value.f==frequency);has_frequency=true;}
+  if(entries[i].key==NVS_CONFIG_ASIC_VOLTAGE){assert(entries[i].value.u16==voltage);has_voltage=true;}
+ }
+ mutations_free(entries,OPERATING_JOURNAL_COUNT);assert(has_frequency&&has_voltage);return true;
+}
+static void assert_legacy_journal(float frequency,unsigned voltage){Entry *entry=journal();assert(entry->bytes[5]==28&&beta9_accepts(entry->bytes,entry->size,frequency,voltage));}
+static void assert_extended_journal(void){Entry *entry=journal();assert(entry->bytes[5]==30&&!beta9_accepts(entry->bytes,entry->size,0,0));}
+static void assert_auth(bool primary,bool fallback){assert(nvs_config_get_bool(NVS_CONFIG_SV2_REQUIRE_AUTH)==primary&&nvs_config_get_bool(NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH)==fallback);}
+static void assert_raw_auth(bool primary,bool fallback){Entry *p=find(1,"sv2reqauth"),*f=find(1,"fbsv2reqauth");assert(p&&f&&p->type==3&&f->type==3&&p->number==primary&&f->number==fallback);}
 static bool deny_apply(void *context){(void)context;return false;}
 static esp_err_t observe_slots(void *context){(*(unsigned *)context)++;return ESP_OK;}
 static void bootstrap(void){put(1,"boardversion",1,"601",0);put(1,"asicfrequency_f",1,"625.125",0);put(1,"asicvoltage",3,NULL,1173);put(1,"stratumprot",1,"SV1",0);put(1,"stratumurl",1,"pool.fixture.invalid",0);put(1,"stratumport",3,NULL,3333);put(1,"stratumuser",1,"fixture.worker",0);put(1,"stratumpass",1,"fixture-pass-A",0);put(1,"fbstratumurl",1,"backup.fixture.invalid",0);put(1,"fbstratumport",3,NULL,4444);put(1,"fbstratumpass",1,"fixture-pass-B",0);assert(nvs_config_init()==ESP_OK);assert(device_config_init(&gs)==ESP_OK);assert(operating_profiles_register(NULL,&gs)==ESP_OK);assert(!writes&&!commits&&!erases);}
+#include "journal_compatibility_cases.inc"
 #ifdef TUNING_SCHEDULE_RUNTIME_TEST
 #include "tuning_schedule_runtime_cases.inc"
 #endif
 int main(int argc,char **argv){assert(argc==2);bootstrap();const char *scenario=argv[1];
+ if(!strncmp(scenario,"journal-compat-",15)){assert(journal_compatibility_case(scenario));puts("PASS");return 0;}
 #ifdef TUNING_SCHEDULE_RUNTIME_TEST
  if(!strncmp(scenario,"tuning-",7)){tuning_runtime_case(scenario);puts("PASS");return 0;}
 #endif

@@ -32,6 +32,14 @@ class ProfileRuntimeTests(unittest.TestCase):
  def test_bounds_integer_voltage_duplicate_fields_and_unchanged_saved_fraction(self):self.run_case('bounds')
  def test_pool_capture_private_password_apply_preserves_other_route_and_reference_guard(self):self.run_case('pool')
  def test_pool_auth_capture_roundtrip_atomic_failure_false_and_reboot(self):self.run_case('pool-auth')
+ def test_same_point_and_changed_tuning_remain_byte_and_beta9_decoder_compatible(self):self.run_case('journal-compat-legacy')
+ def test_raw_auth_baselines_survive_legacy_extended_revert_and_reboot(self):
+  for bits in ('00','01','10','11'):
+   with self.subTest(raw_auth=bits):self.run_case('journal-compat-raw-'+bits)
+ def test_failed_commits_restore_independently_selected_legacy_or_extended_journal(self):self.run_case('journal-compat-rollback')
+ def test_first_queued_auth_change_preserves_raw_keys_and_can_revert_to_legacy(self):self.run_case('journal-compat-queued-auth')
+ def test_first_queued_tuning_write_is_atomic_preserves_legacy_format_and_reboots(self):self.run_case('journal-compat-queued-tuning')
+ def test_first_queued_auth_set_and_commit_failures_preserve_baseline_across_reboot(self):self.run_case('journal-compat-queued-failure')
  def test_nvs_set_and_commit_failures_preserve_old_point_across_reboot(self):self.run_case('failure')
  def test_json_allocation_failures_never_commit_partial_profile(self):self.run_case('oom')
  def test_journal_allocation_failures_preserve_complete_previous_snapshot(self):self.run_case('journal-oom')

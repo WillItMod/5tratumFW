@@ -48,8 +48,9 @@ No other fork's flash driver, partitions or tuning values are imported.
 
 Tadets' larger panel is not available locally. Confirm its physical position,
 orientation, colours, startup and refresh before treating a profile as qualified.
-The existing standard QAxe was also unreachable during the read-only connection
-check on 28 October. Builds and simulated tests do not replace those checks.
+The owned standard QAxe subsequently completed its paired update and short
+mining/control bench on 28 October. Those observations do not qualify the larger
+panel; builds and simulated tests do not replace that physical check.
 
 ## Independent chip work remains unavailable
 

@@ -249,13 +249,20 @@ static bool nvs_config_load_legacy(NvsConfigKey key, const Settings *setting, Co
 #define OPERATING_JOURNAL_MAX 32768
 #define OPERATING_JOURNAL_LEGACY_COUNT (NVS_CONFIG_USE_FALLBACK_STRATUM - NVS_CONFIG_STRATUM_PROTOCOL + 4)
 #define OPERATING_JOURNAL_COUNT (OPERATING_JOURNAL_LEGACY_COUNT + 2)
-static bool operating_journal_active;
+// Snapshot individual auth keys before journal replay. Omitting auth from a
+// legacy journal is safe only when replay would recover these exact values.
+static bool raw_primary_require_auth, raw_fallback_require_auth;
+
+static bool auth_key(NvsConfigKey key)
+{
+    return key == NVS_CONFIG_SV2_REQUIRE_AUTH || key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH;
+}
 
 static bool operating_key(NvsConfigKey key)
 {
     return (key >= NVS_CONFIG_STRATUM_PROTOCOL && key <= NVS_CONFIG_USE_FALLBACK_STRATUM) ||
            key == NVS_CONFIG_ASIC_FREQUENCY || key == NVS_CONFIG_ASIC_VOLTAGE || key == NVS_CONFIG_OVERCLOCK_ENABLED ||
-           key == NVS_CONFIG_SV2_REQUIRE_AUTH || key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH;
+           auth_key(key);
 }
 
 static void put16(uint8_t *p, uint16_t n) { p[0] = n; p[1] = n >> 8; }
@@ -284,18 +291,29 @@ static bool mutation_valid(const NvsConfigMutation *entry)
 
 static uint8_t *journal_encode(const NvsConfigMutation *entries, size_t count, size_t *size)
 {
-    size_t length = 12;
+    if (count != OPERATING_JOURNAL_COUNT) return NULL;
+    bool include_auth = false;
     for (size_t i = 0; i < count; i++) {
         if (!mutation_valid(&entries[i])) return NULL;
+        if (entries[i].key == NVS_CONFIG_SV2_REQUIRE_AUTH)
+            include_auth |= entries[i].value.b != raw_primary_require_auth;
+        if (entries[i].key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH)
+            include_auth |= entries[i].value.b != raw_fallback_require_auth;
+    }
+    const size_t encoded_count = include_auth ? OPERATING_JOURNAL_COUNT : OPERATING_JOURNAL_LEGACY_COUNT;
+    size_t length = 12;
+    for (size_t i = 0; i < count; i++) {
+        if (!include_auth && auth_key(entries[i].key)) continue;
         length += 5 + (entries[i].type == TYPE_STR ? strlen(entries[i].value.str) + 1 : entries[i].type == TYPE_FLOAT ? 4 : 2);
     }
-    if (count != OPERATING_JOURNAL_COUNT || length > OPERATING_JOURNAL_MAX) return NULL;
+    if (length > OPERATING_JOURNAL_MAX) return NULL;
     uint8_t *blob = malloc(length);
     if (!blob) return NULL;
-    memcpy(blob, "5FWJ", 4); blob[4] = 1; blob[5] = count; put16(blob + 6, length);
+    memcpy(blob, "5FWJ", 4); blob[4] = 1; blob[5] = encoded_count; put16(blob + 6, length);
     size_t offset = 12;
     for (size_t i = 0; i < count; i++) {
         const NvsConfigMutation *entry = &entries[i];
+        if (!include_auth && auth_key(entry->key)) continue;
         size_t bytes = entry->type == TYPE_STR ? strlen(entry->value.str) + 1 : entry->type == TYPE_FLOAT ? 4 : 2;
         put16(blob + offset, entry->key); blob[offset + 2] = entry->type; put16(blob + offset + 3, bytes); offset += 5;
         if (entry->type == TYPE_STR) memcpy(blob + offset, entry->value.str, bytes);
@@ -346,7 +364,7 @@ static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutat
     // Legacy v1 snapshots contain every original key and leave the newly
     // appended authentication settings untouched. Never rewrite them on load.
     for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) if (operating_key(key)) {
-        bool extension = key == NVS_CONFIG_SV2_REQUIRE_AUTH || key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH;
+        bool extension = auth_key(key);
         if (seen[key] != (!extension || *count == OPERATING_JOURNAL_COUNT)) goto failed;
     }
     return ESP_OK;
@@ -361,6 +379,12 @@ static void journal_install(NvsConfigMutation *entries, size_t count)
         Settings *setting = &settings[entries[i].key];
         if (setting->type == TYPE_STR) free(setting->value[0].str);
         setting->value[0] = entries[i].value;
+    }
+    // A successful 30 -> 28 transaction must also undo the cached auth values.
+    // Boot replay uses the same raw-key baseline without writing those keys.
+    if (count == OPERATING_JOURNAL_LEGACY_COUNT) {
+        settings[NVS_CONFIG_SV2_REQUIRE_AUTH].value[0].b = raw_primary_require_auth;
+        settings[NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH].value[0].b = raw_fallback_require_auth;
     }
 }
 
@@ -377,7 +401,7 @@ static esp_err_t journal_load(void)
     size_t count = 0;
     if (error == ESP_OK) error = journal_decode(blob, size, entries, &count);
     free(blob);
-    if (error == ESP_OK) { journal_install(entries, count); operating_journal_active = true; }
+    if (error == ESP_OK) journal_install(entries, count);
     return error;
 }
 
@@ -398,6 +422,8 @@ esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count
         index++;
     }
     size_t old_size = 0, new_size = 0;
+    // Auth may cross the raw-key baseline in either direction. The rollback
+    // snapshot chooses its own legacy/extended format independently.
     uint8_t *old_blob = journal_encode(before, index, &old_size), *new_blob = journal_encode(after, index, &new_size);
     esp_err_t error = ESP_ERR_NO_MEM;
     bool prepared = false;
@@ -413,13 +439,13 @@ esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count
                 if (error != ESP_OK) {
                     // Retain the previous authoritative snapshot on a commit
                     // error too. Never erase the partition or touch identity.
-                    if (nvs_set_blob(writer, OPERATING_JOURNAL_KEY, old_blob, old_size) == ESP_OK && nvs_commit(writer) == ESP_OK) operating_journal_active = true;
+                    if (nvs_set_blob(writer, OPERATING_JOURNAL_KEY, old_blob, old_size) == ESP_OK) nvs_commit(writer);
                 }
             }
             nvs_close(writer);
         }
     }
-    if (error == ESP_OK) { journal_install(decoded, decoded_count); operating_journal_active = true; }
+    if (error == ESP_OK) journal_install(decoded, decoded_count);
     else if (prepared) mutations_free(decoded, decoded_count);
     free(old_blob); free(new_blob);
     xSemaphoreGive(nvs_cache_mutex);
@@ -443,7 +469,10 @@ static void nvs_task(void *pvParameters)
         if (xQueueReceive(nvs_save_queue, &update, portMAX_DELAY) == pdTRUE) {
             Settings *setting = nvs_config_get_settings(update.key);
             if (setting && setting->type == update.type) {
-                if (operating_key(update.key) && operating_journal_active && update.index == 0) {
+                // Always serialize operating writes, including the first queued
+                // change racing an initial profile transaction. Raw-key values
+                // remain the stable baseline used by legacy journal replay.
+                if (operating_key(update.key) && update.index == 0) {
                     NvsConfigMutation mutation = {.key = update.key, .type = update.type, .value = update.value};
                     if (nvs_config_apply_atomic(&mutation, 1) != ESP_OK) ESP_LOGE(TAG, "Operating settings commit failed; prior values retained");
                     if (update.type == TYPE_STR) free(update.value.str);
@@ -654,6 +683,9 @@ esp_err_t nvs_config_init(void)
             }
         }
     }
+
+    raw_primary_require_auth = settings[NVS_CONFIG_SV2_REQUIRE_AUTH].value[0].b;
+    raw_fallback_require_auth = settings[NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH].value[0].b;
 
     // Replay only after the persisted board identity was validated, before any
     // hardware is initialized. Corrupt journals stop boot without defaults.

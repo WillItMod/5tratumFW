@@ -27,6 +27,16 @@ saved connections or replay journals under renumbered identifiers. Ten named
 saved pool slots remain separate from the two active routes. Unsupported active
 pool indices are rejected rather than silently discarding configuration.
 
+Gamma retains the 28-entry operating journal understood by Beta9 when the two
+authentication values match their original individual NVS keys. Both same-point
+and changed-point tuning writes are checked with the exact older decoder. An
+actual authentication change that differs from those keys uses the extended
+30-entry journal; Beta9 cannot read that format. Reverting both authentication
+values to their original baseline while on the new firmware restores the legacy
+format. A matching old application/web pair alone is not recovery for an extended
+journal; retain a unit-specific backup and use compatible firmware. Queued
+operating writes use the same atomic path from their first update.
+
 Both bases include the pinned October 2026 certificate-bundle change. The
 offline test checks its checksum, 118 roots, a positive control and rejection
 of the twelve published incident chains. Target builds also check that the
