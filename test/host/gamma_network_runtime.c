@@ -47,7 +47,9 @@ BaseType_t xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *
         return fail_mdns_task?0:pdPASS;
     }
     assert(fn==network_monitor_task && !strcmp(name,"network_status"));++tasks;
-    if(fail_task)return 0;*out=(void*)1;return pdPASS;
+    if (fail_task) return 0;
+    *out = (void *)1;
+    return pdPASS;
 }
 void xTaskNotifyGive(TaskHandle_t t) { assert(t==(void*)1);++notifications; }
 unsigned ulTaskNotifyTake(int clear,TickType_t wait) { (void)clear;(void)wait;assert(!"Infinite task must not run in host fixture");return 0; }

@@ -12,9 +12,11 @@
 - The production web build passes the enforced compressed payload budget: **626,986 bytes**, 11 assets, below the 876,628-byte project budget and within the 3 MiB WWW partition.
 - Actual LVGL9.5.0 native rendering and production `screen.c` runtime pass under ASan/UBSan: two executables, 36 framebuffer views, lifecycle/safety/rate/MUX checks and wired-only display assertions. These views use simulated data.
 
+The complete host runner also passes inside Ubuntu24.04 with **GCC13.3.0**, Python3.12.3 and Node24.14.0: all 18 entry points and 114 methods plus MUX assertions, followed by **10/10** additional driver runs. Captured compiler stderr is empty. This closes a GCC indentation warning in a test stub that macOS Clang accepted; a test callback now publishes its completion after the simulated receive operation finishes. Assertions and warning levels remain intact, and production firmware code is unchanged by these test corrections.
+
 The final target uses pinned **ESP-IDF6.0.2**, SDK source `7101770dc6db2667b3c477cc31365dd1acd6db4e`, ESP32-S3 and compiler toolchain `esp-15.2.0_20251204`. A dedicated local ARM64 container runs the mounted SDK/toolchains with network access disabled; its Linux host image is ESP-IDF5.5.3, not the SDK used to compile the firmware. Build receipts identify both separately. The actual SDKCONFIG confirms per-default-interface DNS, four mDNS interfaces and SPI interrupts in IRAM.
 
-## Final target and paired package
+## Initial target and paired package
 
 On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `4d3f665777681cdca294cadb37eef2c43cb5ad15`. The build directory began fresh with this exact SDK; the final same-SDK incremental reconfigure/rebuild incorporated the scan/AP lifecycle correction. No source changed during that final run. The manifest records the same commit for the firmware build and corresponding source archive; this later evidence-only documentation update does not relabel those files.
 

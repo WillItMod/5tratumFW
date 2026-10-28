@@ -169,10 +169,12 @@ bool esp_netif_is_netif_up(esp_netif_t *n) { return n->up; }
 esp_err_t esp_netif_get_ip_info(esp_netif_t *n, esp_netif_ip_info_t *ip) { *ip = n->ip; return ESP_OK; }
 esp_err_t esp_netif_receive(esp_netif_t *n, void *frame, size_t length, void *eb)
 {
-    assert(frame && length == 60 && eb == NULL); ++inputs;
+    assert(frame && length == 60 && eb == NULL);
+    const bool fail = input_failure;
     reenter_transmit(n);
     n->driver.driver_free_rx_buffer(n->driver.handle, frame); /* Also on simulated stack-input error. */
-    return input_failure ? ESP_FAIL : ESP_OK;
+    ++inputs; /* Publish completion only after reentry and frame ownership release. */
+    return fail ? ESP_FAIL : ESP_OK;
 }
 static void fresh_hardware(void)
 {
