@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdatomic.h>
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -21,6 +22,9 @@
 #include "global_state.h"
 #include "nvs_config.h"
 #include "esp_app_desc.h"
+#include "gamma_ethernet.h"
+#include "protocol_coordinator.h"
+#include "sdkconfig.h"
 
 // Maximum number of access points to scan
 #define MAX_AP_COUNT 20
@@ -64,9 +68,23 @@ static bool is_scanning = false;
 static uint16_t ap_number = 0;
 static wifi_ap_record_t ap_info[MAX_AP_COUNT];
 static int s_retry_num = 0;
-static int clients_connected_to_ap = 0;
-static bool mdns_initialized = false;
-static bool mdns_init_in_progress = false;
+static atomic_int clients_connected_to_ap;
+static atomic_bool mdns_initialized;
+static atomic_bool mdns_init_in_progress;
+static atomic_bool s_wifi_has_ip;
+static atomic_bool s_network_managed;
+static bool s_ethernet_enabled_at_boot;
+static esp_err_t s_ethernet_start_error = ESP_OK;
+static esp_netif_t *s_active_uplink;
+static uint32_t s_active_ip;
+static TaskHandle_t s_network_task;
+static TickType_t s_last_wifi_attempt;
+static esp_netif_t *s_mdns_ethernet;
+static bool s_mdns_ethernet_ip4, s_mdns_ethernet_ip6;
+static uint32_t s_mdns_ethernet_ip4_address;
+static void network_request_refresh(void);
+static void network_refresh(GlobalState *state);
+static void network_start_ethernet(GlobalState *state);
 
 static const char *get_wifi_reason_string(int reason);
 static void wifi_softap_on(void);
@@ -74,39 +92,25 @@ static void wifi_softap_off(void);
 
 esp_err_t wifi_apply_hostname(const char *hostname)
 {
-    if (hostname == NULL || hostname[0] == '\0') {
-        return ESP_ERR_INVALID_ARG;
+    if (!hostname || !hostname[0]) return ESP_ERR_INVALID_ARG;
+    esp_netif_t *interfaces[] = {
+        esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), gamma_ethernet_netif()
+    };
+    esp_err_t result = ESP_ERR_ESP_NETIF_IF_NOT_READY;
+    for (unsigned i = 0; i < sizeof(interfaces) / sizeof(interfaces[0]); ++i) {
+        esp_netif_t *netif = interfaces[i];
+        if (!netif) continue;
+        esp_err_t error = esp_netif_set_hostname(netif, hostname);
+        if (error != ESP_OK) return error;
+        result = ESP_OK;
+        // A down fallback interface sends its saved hostname when it reconnects.
+        if (!esp_netif_is_netif_up(netif)) continue;
+        error = esp_netif_dhcpc_stop(netif);
+        if (error != ESP_OK && error != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) return error;
+        error = esp_netif_dhcpc_start(netif);
+        if (error != ESP_OK && error != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) return error;
     }
-
-    esp_netif_t *esp_netif_sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (esp_netif_sta == NULL) {
-        ESP_LOGW(TAG, "STA netif not ready; hostname will apply on next Wi-Fi start");
-        return ESP_ERR_ESP_NETIF_IF_NOT_READY;
-    }
-
-    esp_err_t err = esp_netif_set_hostname(esp_netif_sta, hostname);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "esp_netif_set_hostname failed: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    ESP_LOGI(TAG, "Set Wi-Fi hostname to: %s", hostname);
-
-    // Bounce the DHCP client so the new hostname is sent in option 12 on the
-    // next DISCOVER/REQUEST. This keeps the Wi-Fi link up — no AP flap.
-    err = esp_netif_dhcpc_stop(esp_netif_sta);
-    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-        ESP_LOGW(TAG, "esp_netif_dhcpc_stop failed: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    err = esp_netif_dhcpc_start(esp_netif_sta);
-    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
-        ESP_LOGW(TAG, "esp_netif_dhcpc_start failed: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    return ESP_OK;
+    return result;
 }
 
 static void initialize_mdns_if_needed(GlobalState *GLOBAL_STATE);
@@ -121,10 +125,13 @@ static void mdns_init_task(void *pvParameters) {
 }
 
 static void spawn_mdns_init_if_needed(GlobalState *GLOBAL_STATE) {
-    if (mdns_initialized || mdns_init_in_progress) {
+    bool expected = false;
+    if (mdns_initialized || !atomic_compare_exchange_strong(&mdns_init_in_progress, &expected, true)) return;
+    // Initialization may have completed between the first read and the guard.
+    if (mdns_initialized) {
+        mdns_init_in_progress = false;
         return;
     }
-    mdns_init_in_progress = true;
     BaseType_t ret = xTaskCreate(mdns_init_task, "mdns_init", 4096, GLOBAL_STATE, 5, NULL);
     if (ret != pdPASS) {
         ESP_LOGW(TAG, "Failed to create mDNS init task");
@@ -151,10 +158,7 @@ static void initialize_mdns_if_needed(GlobalState *GLOBAL_STATE) {
 
         /* Get current IP */
         esp_netif_ip_info_t ip_info;
-        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (netif == NULL) {
-            netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-        }
+        esp_netif_t *netif = network_active_netif();
         char current_ip[16];
         if (netif == NULL || esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
             ESP_LOGW(TAG, "No active network interface for mDNS init, using 0.0.0.0");
@@ -257,10 +261,7 @@ esp_err_t update_mdns_hostname(const char *new_hostname, GlobalState *GLOBAL_STA
 
     /* Get current IP for conflict checking */
     esp_netif_ip_info_t ip_info;
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif == NULL) {
-        netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-    }
+    esp_netif_t *netif = network_active_netif();
     if (netif == NULL || esp_netif_get_ip_info(netif, &ip_info) != ESP_OK) {
         ESP_LOGW(TAG, "No active network interface for mDNS hostname update");
         ip_info.ip.addr = 0;
@@ -377,7 +378,7 @@ esp_err_t wifi_scan(wifi_ap_record_simple_t *ap_records, uint16_t *ap_count)
 static void ip_timeout_callback(TimerHandle_t xTimer)
 {
     GlobalState *GLOBAL_STATE = (GlobalState *)pvTimerGetTimerID(xTimer);
-    if (!GLOBAL_STATE->SYSTEM_MODULE.is_connected) {
+    if (!s_wifi_has_ip && !network_is_connected()) {
         ESP_LOGI(TAG, "Timeout waiting for IP address. Disconnecting...");
         strcpy(GLOBAL_STATE->SYSTEM_MODULE.wifi_status, "IP Acquire Timeout");
         esp_wifi_disconnect();
@@ -398,12 +399,18 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
             is_scanning = false;
         }
 
-        if (is_scanning) {
-            ESP_LOGI(TAG, "Still scanning, ignore wifi event.");
+        if (is_scanning && (event_id == WIFI_EVENT_STA_START ||
+                            event_id == WIFI_EVENT_STA_CONNECTED || event_id == WIFI_EVENT_STA_DISCONNECTED)) {
+            ESP_LOGI(TAG, "Scan in progress; ignoring station association event");
             return;
         }
 
         if (event_id == WIFI_EVENT_STA_START) {
+            // Ethernet owns the active uplink; retain saved Wi-Fi for fallback.
+            gamma_ethernet_status_t ethernet;
+            gamma_ethernet_get_status(&ethernet);
+            if (s_ethernet_enabled_at_boot && ethernet.has_ip && ethernet.link_up) return;
+            if (!GLOBAL_STATE->SYSTEM_MODULE.ssid || !GLOBAL_STATE->SYSTEM_MODULE.ssid[0]) return;
             ESP_LOGI(TAG, "Connecting...");
             strcpy(GLOBAL_STATE->SYSTEM_MODULE.wifi_status, "Connecting...");
             esp_wifi_connect();
@@ -425,6 +432,11 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
             wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
             if (event->reason == WIFI_REASON_ROAMING) {
                 ESP_LOGI(TAG, "We are roaming, nothing to do");
+                return;
+            }
+            s_wifi_has_ip = false;
+            if (s_network_managed) {
+                network_request_refresh();
                 return;
             }
 
@@ -461,6 +473,7 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
         if (event_id == WIFI_EVENT_AP_STOP) {
             ESP_LOGI(TAG, "Configuration Access Point disabled");
             GLOBAL_STATE->SYSTEM_MODULE.ap_enabled = false;
+            clients_connected_to_ap = 0;
         }
 
         if (event_id == WIFI_EVENT_AP_STACONNECTED) {
@@ -468,11 +481,24 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
         }
         
         if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-            clients_connected_to_ap -= 1;
+            if (clients_connected_to_ap > 0) clients_connected_to_ap -= 1;
         }
     }
 
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
+        s_wifi_has_ip = false;
+        if (s_network_managed) network_request_refresh();
+        else GLOBAL_STATE->SYSTEM_MODULE.is_connected = false;
+    }
+
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        s_wifi_has_ip = true;
+        if (s_network_managed) {
+            s_retry_num = 0;
+            if (ip_acquire_timer) xTimerStop(ip_acquire_timer, 0);
+            network_request_refresh();
+            return;
+        }
         ip_event_got_ip_t * event = (ip_event_got_ip_t *) event_data;
         snprintf(GLOBAL_STATE->SYSTEM_MODULE.ip_addr_str, IP4ADDR_STRLEN_MAX, IPSTR, IP2STR(&event->ip_info.ip));
 
@@ -502,7 +528,8 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
 
     if (event_base == IP_EVENT && event_id == IP_EVENT_GOT_IP6) {
         ip_event_got_ip6_t * event = (ip_event_got_ip6_t *) event_data;
-        
+        if (event->esp_netif != network_active_netif()) return;
+
         // Convert IPv6 address to string
         char ipv6_str[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &event->ip6_info.ip, ipv6_str, sizeof(ipv6_str));
@@ -716,14 +743,17 @@ esp_netif_t * wifi_init_sta(const char * wifi_ssid, const char * wifi_pass)
 
 void wifi_init(GlobalState * GLOBAL_STATE)
 {
+    s_network_managed = s_ethernet_enabled_at_boot;
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
     esp_event_handler_instance_t instance_got_ip6;
+    esp_event_handler_instance_t instance_lost_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, GLOBAL_STATE, &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, GLOBAL_STATE, &instance_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, &event_handler, GLOBAL_STATE, &instance_lost_ip));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_GOT_IP6, &event_handler, GLOBAL_STATE, &instance_got_ip6));
 
     /* Initialize Wi-Fi */
@@ -746,7 +776,7 @@ void wifi_init(GlobalState * GLOBAL_STATE)
 
         /* Disable power savings for best performance */
         ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-
+        network_start_ethernet(GLOBAL_STATE);
         return;
     } else {
 
@@ -755,6 +785,7 @@ void wifi_init(GlobalState * GLOBAL_STATE)
         /* Initialize STA */
         ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
         esp_netif_t * esp_netif_sta = wifi_init_sta(GLOBAL_STATE->SYSTEM_MODULE.ssid, wifi_pass);
+        if (s_ethernet_enabled_at_boot) esp_netif_set_route_prio(esp_netif_sta, 50);
 
         free(wifi_pass);
 
@@ -777,6 +808,7 @@ void wifi_init(GlobalState * GLOBAL_STATE)
         ESP_ERROR_CHECK(esp_wifi_start());
 
         ESP_LOGI(TAG, "wifi_init_sta finished.");
+        network_start_ethernet(GLOBAL_STATE);
     }
 }
 
@@ -862,4 +894,203 @@ bool wifi_is_connected(void)
 {
     wifi_ap_record_t ap_info;
     return (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+}
+
+
+bool network_ethernet_supported(const GlobalState *state)
+{
+    if (!state || !state->DEVICE_CONFIG.board_version || !state->DEVICE_CONFIG.family.asic.name) return false;
+    const char *board = state->DEVICE_CONFIG.board_version;
+    return (!strcmp(board, "601") || !strcmp(board, "602")) &&
+           !strcmp(state->DEVICE_CONFIG.family.asic.name, "BM1370");
+}
+
+void network_prepare_boot(const GlobalState *state)
+{
+    // Capture the opt-in even when self-test skips network initialization.
+    // The connected module still owns its accessory pins in that boot mode.
+    s_ethernet_enabled_at_boot = network_ethernet_supported(state) &&
+                                 nvs_config_get_bool(NVS_CONFIG_ETHERNET_ENABLED);
+}
+
+static bool ethernet_reserved_pin(int pin) { return pin >= 39 && pin <= 42; }
+
+bool network_ethernet_pins_available(const GlobalState *state)
+{
+    if (!network_ethernet_supported(state)) return false;
+    const DevicePins *pins = &state->DEVICE_CONFIG.pins;
+    if (pins->i80) return false;
+    if (pins->i2c && (ethernet_reserved_pin(pins->i2c->sda) || ethernet_reserved_pin(pins->i2c->scl))) return false;
+    if (ethernet_reserved_pin(CONFIG_GPIO_BUTTON_BOOT) || ethernet_reserved_pin(CONFIG_GPIO_ASIC_RESET) ||
+        (state->DEVICE_CONFIG.asic_enable && ethernet_reserved_pin(CONFIG_GPIO_ASIC_ENABLE)) ||
+        (state->DEVICE_CONFIG.plug_sense && ethernet_reserved_pin(CONFIG_GPIO_PLUG_SENSE))) return false;
+    // Gamma ASIC UART is fixed at GPIO17/18. BAP alone yields the shared port.
+    return true;
+}
+
+bool network_ethernet_uses_accessory_port(const GlobalState *state)
+{
+    const BapPins *bap = state ? state->DEVICE_CONFIG.pins.bap : NULL;
+    return s_ethernet_enabled_at_boot && bap &&
+           (ethernet_reserved_pin(bap->tx) || ethernet_reserved_pin(bap->rx));
+}
+
+static bool network_netif_usable(esp_netif_t *netif)
+{
+    esp_netif_ip_info_t address;
+    return netif && esp_netif_is_netif_up(netif) &&
+           esp_netif_get_ip_info(netif, &address) == ESP_OK && address.ip.addr != 0;
+}
+
+static esp_netif_t *network_uplink(void)
+{
+    gamma_ethernet_status_t ethernet;
+    gamma_ethernet_get_status(&ethernet);
+    esp_netif_t *wired = gamma_ethernet_netif();
+    if (s_ethernet_enabled_at_boot && ethernet.link_up && ethernet.has_ip && network_netif_usable(wired)) return wired;
+    esp_netif_t *wifi = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    return s_wifi_has_ip && wifi_is_connected() && network_netif_usable(wifi) ? wifi : NULL;
+}
+
+bool network_is_connected(void) { return network_uplink() != NULL; }
+
+esp_netif_t *network_active_netif(void)
+{
+    esp_netif_t *uplink = network_uplink();
+    return uplink ? uplink : esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+}
+
+void network_get_info(network_info_t *info)
+{
+    if (!info) return;
+    memset(info, 0, sizeof(*info));
+    info->ethernetEnabled = nvs_config_get_bool(NVS_CONFIG_ETHERNET_ENABLED);
+    info->ethernetDriverEnabled = s_ethernet_enabled_at_boot;
+    info->ethernetStatus = "disabled";
+    esp_netif_t *active = network_uplink();
+    info->activeNetwork = active ? (active == gamma_ethernet_netif() ? "ethernet" : "wifi") : "none";
+    if (!s_ethernet_enabled_at_boot) return;
+    gamma_ethernet_status_t ethernet;
+    gamma_ethernet_get_status(&ethernet);
+    if (s_ethernet_start_error != ESP_OK) {
+        info->ethernetStatus = (s_ethernet_start_error == ESP_ERR_NOT_FOUND)
+                                ? "not-detected" : "error";
+    } else if (!ethernet.started) info->ethernetStatus = ethernet.last_error != ESP_OK ? "error" : "starting";
+    else if (!ethernet.available) info->ethernetStatus = "not-detected";
+    else if (!ethernet.link_up) info->ethernetStatus = "link-down";
+    else if (!ethernet.has_ip || active != gamma_ethernet_netif()) info->ethernetStatus = "connecting";
+    else {
+        info->ethernetStatus = "connected";
+        snprintf(info->ethernetIP, sizeof(info->ethernetIP), IPSTR, IP2STR(&ethernet.ip));
+    }
+}
+
+static void network_sync_mdns(void)
+{
+    if (!mdns_initialized || !s_ethernet_enabled_at_boot) return;
+    esp_netif_t *ethernet = gamma_ethernet_netif();
+    if (ethernet && !s_mdns_ethernet && mdns_register_netif(ethernet) == ESP_OK) s_mdns_ethernet = ethernet;
+    if (!s_mdns_ethernet) return;
+    bool ip4 = s_active_uplink == s_mdns_ethernet;
+    if (ip4 != s_mdns_ethernet_ip4) {
+        if (mdns_netif_action(s_mdns_ethernet, ip4 ? MDNS_EVENT_ENABLE_IP4 : MDNS_EVENT_DISABLE_IP4) == ESP_OK) {
+            s_mdns_ethernet_ip4 = ip4;
+            s_mdns_ethernet_ip4_address = ip4 ? s_active_ip : 0;
+        }
+    }
+    // Custom netifs need an explicit announcement after a DHCP readdress.
+    // Keep the old value on failure so the management task retries next poll.
+    if (ip4 && s_mdns_ethernet_ip4 && s_mdns_ethernet_ip4_address != s_active_ip) {
+        if (mdns_netif_action(s_mdns_ethernet, MDNS_EVENT_ANNOUNCE_IP4) == ESP_OK)
+            s_mdns_ethernet_ip4_address = s_active_ip;
+    }
+    // IPv6 is enabled after its event has populated the selected interface.
+    esp_ip6_addr_t address;
+    bool ip6 = ip4 && esp_netif_get_ip6_linklocal(s_mdns_ethernet, &address) == ESP_OK;
+    if (ip6 != s_mdns_ethernet_ip6) {
+        if (mdns_netif_action(s_mdns_ethernet, ip6 ? MDNS_EVENT_ENABLE_IP6 : MDNS_EVENT_DISABLE_IP6) == ESP_OK)
+            s_mdns_ethernet_ip6 = ip6;
+    }
+}
+
+static void network_refresh(GlobalState *state)
+{
+    // Called only by the network management task. Wi-Fi callbacks never run
+    // route, DHCP, discovery, AP or reconnect transitions concurrently with it.
+    esp_netif_t *active = network_uplink();
+    esp_netif_ip_info_t address = {0};
+    if (active && (esp_netif_get_ip_info(active, &address) != ESP_OK || !address.ip.addr)) active = NULL;
+    state->SYSTEM_MODULE.is_connected = active != NULL;
+    if (active) snprintf(state->SYSTEM_MODULE.ip_addr_str, sizeof(state->SYSTEM_MODULE.ip_addr_str), IPSTR, IP2STR(&address.ip));
+    else state->SYSTEM_MODULE.ip_addr_str[0] = '\0';
+    if (active != s_active_uplink || (active && address.ip.addr != s_active_ip)) {
+        esp_netif_t *previous = s_active_uplink;
+        s_active_uplink = active;
+        s_active_ip = active ? address.ip.addr : 0;
+        if (active != previous) state->SYSTEM_MODULE.ipv6_addr_str[0] = '\0';
+        if (active) {
+            esp_netif_set_default_netif(active);
+            wifi_softap_off();
+            if (active != previous) esp_netif_create_ip6_linklocal(active);
+            spawn_mdns_init_if_needed(state);
+        } else {
+            wifi_softap_on();
+        }
+        if (previous) protocol_coordinator_request_network_reconnect();
+    }
+    if (active && active == gamma_ethernet_netif()) {
+        strlcpy(state->SYSTEM_MODULE.wifi_status, "Ethernet connected", sizeof(state->SYSTEM_MODULE.wifi_status));
+        if (wifi_is_connected()) {
+            // One usable uplink prevents two LAN addresses advertising one identity.
+            // Credentials/radio are retained; link loss starts Wi-Fi fallback.
+            esp_wifi_disconnect();
+        }
+    } else if (active) {
+        strlcpy(state->SYSTEM_MODULE.wifi_status, "Connected!", sizeof(state->SYSTEM_MODULE.wifi_status));
+    } else {
+        strlcpy(state->SYSTEM_MODULE.wifi_status, clients_connected_to_ap > 0 ? "Config AP connected!" : "Waiting for network", sizeof(state->SYSTEM_MODULE.wifi_status));
+        TickType_t now = xTaskGetTickCount();
+        if (clients_connected_to_ap == 0 && state->SYSTEM_MODULE.ssid && state->SYSTEM_MODULE.ssid[0] &&
+            (TickType_t)(now - s_last_wifi_attempt) >= pdMS_TO_TICKS(5000)) {
+            s_last_wifi_attempt = now;
+            esp_wifi_connect();
+        }
+    }
+    network_sync_mdns();
+}
+
+static void network_request_refresh(void)
+{
+    TaskHandle_t task = s_network_task;
+    if (task) xTaskNotifyGive(task);
+}
+
+static void network_monitor_task(void *argument)
+{
+    GlobalState *state = argument;
+    for (;;) {
+        network_refresh(state);
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));
+    }
+}
+
+static void network_start_ethernet(GlobalState *state)
+{
+    if (!s_ethernet_enabled_at_boot) return;
+    if (!network_ethernet_pins_available(state)) s_ethernet_start_error = ESP_ERR_INVALID_STATE;
+    else {
+        char *hostname = nvs_config_get_string(NVS_CONFIG_HOSTNAME);
+        s_ethernet_start_error = gamma_ethernet_start(hostname ? hostname : "bitaxe");
+        free(hostname);
+    }
+    if (s_ethernet_start_error != ESP_OK) ESP_LOGW(TAG, "W5500 unavailable; retaining Wi-Fi fallback (%s)", esp_err_to_name(s_ethernet_start_error));
+    if (xTaskCreate(network_monitor_task, "network_status", 4096, state, 3, &s_network_task) != pdPASS) {
+        gamma_ethernet_stop();
+        s_ethernet_start_error = ESP_ERR_NO_MEM;
+        s_network_managed = false;
+        // Replay readiness once after pending pre-task IP events. Future Wi-Fi
+        // callbacks use their legacy path; BAP's boot reservation is retained.
+        network_refresh(state);
+        ESP_LOGE(TAG, "Ethernet status task unavailable; retaining Wi-Fi fallback");
+    }
 }

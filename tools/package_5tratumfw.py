@@ -287,6 +287,7 @@ def package(root, build, idf_path=None):
                         'Ten on-device named pool slots with credential redaction and explicit Apply',
                         'Persistent weekly pool switch timepoints and coordinated primary hot reload',
                         'Saved tuning profile schedule with protected operating-point transitions',
+                        'Optional original W5500 Ethernet driver and saved enable checkbox; off by default, hardware unqualified',
                         'Embedded matching 5tratumFW web interface (ESP-Miner 2.15.4 base)'],
         'not_implemented': ['Automatic tuning', 'Dedicated per-chip multi-coin mining', 'Native authenticated MUX control'],
         'files': {p.name: {'bytes': p.stat().st_size, 'sha256': digest(p)} for p in

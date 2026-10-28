@@ -49,6 +49,8 @@ enum {NVS_CONFIG_DISPLAY_TIMEOUT, NVS_CONFIG_ASIC_FREQUENCY, NVS_CONFIG_ASIC_VOL
 typedef struct {bool connected, acknowledged, expired, fallback;} FiveTratumMuxSnapshot;
 extern int64_t host_now;
 extern bool host_applied, host_display_on;
+extern bool host_wifi_connected;
+extern unsigned host_rssi_reads;
 extern int host_lock_depth;
 extern int host_display_timeout;
 extern FiveTratumMuxSnapshot host_mux;
@@ -63,7 +65,8 @@ static inline int64_t esp_timer_get_time(void) { return host_now; }
 static inline int32_t nvs_config_get_i32(int key) { (void)key; return host_display_timeout; }
 static inline uint16_t nvs_config_get_u16(int key) { (void)key; return 1130; }
 static inline float nvs_config_get_float(int key) { (void)key; return 600; }
-static inline void get_wifi_current_rssi(int8_t *rssi) { *rssi=-58; }
+static inline bool wifi_is_connected(void) { return host_wifi_connected; }
+static inline void get_wifi_current_rssi(int8_t *rssi) { ++host_rssi_reads; *rssi=-58; }
 static inline bool mining_schedule_applied_paused(void) { return host_applied; }
 static inline FiveTratumMuxSnapshot mux_peer_status_snapshot(void) { return host_mux; }
 static inline HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *state, uint64_t now_us)

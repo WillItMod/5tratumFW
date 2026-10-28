@@ -675,8 +675,18 @@ static esp_err_t handle_options_request(httpd_req_t * req)
 bool check_settings_and_update(const cJSON * const root, char **redirect_url)
 {
     bool result = true;
+    if (!cJSON_IsObject(root)) return false;
+    unsigned ethernet_keys = 0;
+    const cJSON *field;
+    cJSON_ArrayForEach(field, root) {
+        if (field->string && !strcasecmp(field->string, "ethernetEnabled") &&
+            (strcmp(field->string, "ethernetEnabled") || ++ethernet_keys > 1)) return false;
+    }
     if (redirect_url) *redirect_url=NULL;
     if (cJSON_GetObjectItem(root,"pools") || cJSON_GetObjectItem(root,"primaryPoolIndex") || cJSON_GetObjectItem(root,"secondaryPoolIndex")) return false;
+    const cJSON *ethernet = cJSON_GetObjectItemCaseSensitive(root, "ethernetEnabled");
+    if (ethernet && (!cJSON_IsBool(ethernet) || !network_ethernet_supported(GLOBAL_STATE) ||
+        (cJSON_IsTrue(ethernet) && !network_ethernet_pins_available(GLOBAL_STATE)))) return false;
 
     for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) {
         Settings *setting = nvs_config_get_settings(key);
@@ -769,10 +779,12 @@ bool check_settings_and_update(const cJSON * const root, char **redirect_url)
     }
 
     if (result) {
+        // Save only the opt-in flag. Hardware ownership changes at next boot.
+        if (ethernet && nvs_config_set_ethernet_enabled(cJSON_IsTrue(ethernet)) != ESP_OK) return false;
         // update NVS (if result is okay) and clean up
         for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) {
             Settings *setting = nvs_config_get_settings(key);
-            if (!setting || !setting->rest_name) continue;
+            if (!setting || !setting->rest_name || key == NVS_CONFIG_ETHERNET_ENABLED) continue;
 
             cJSON * item = cJSON_GetObjectItem(root, setting->rest_name);
             if (!item) continue;

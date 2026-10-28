@@ -56,6 +56,8 @@ No autotuning, clock presets, authenticated native MUX management or independent
 
 ## Install and operate
 
+Development branch: [Gamma Beta11 W5500 Ethernet candidate](docs/gamma-ethernet.md), off by default and pending physical adapter qualification. This does not change the current public Beta10 release.
+
 Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` from the same build. These are OTA images, not a factory image. The compressed web payload and the full 3 MiB WWW partition image have different sizes.
 
 - [Installation: app BIN versus WWW BIN](docs/installation.md)

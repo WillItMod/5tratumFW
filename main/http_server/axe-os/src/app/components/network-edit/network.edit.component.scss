@@ -1,1 +1,5 @@
 :host { display: block; min-width: 0; }
+
+.routing-ethernet-option { display: flex; align-items: center; gap: .7rem; cursor: pointer; }
+.routing-ethernet-option input { width: 1.1rem; height: 1.1rem; flex-shrink: 0; accent-color: var(--primary-color); }
+.routing-ethernet-status { display: flex; flex-direction: column; gap: .5rem; overflow-wrap: anywhere; }

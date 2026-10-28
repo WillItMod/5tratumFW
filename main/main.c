@@ -130,6 +130,8 @@ void app_main(void)
         return;
     }
 
+    network_prepare_boot(&GLOBAL_STATE);
+
     // Init I2C
     if (GLOBAL_STATE.DEVICE_CONFIG.pins.i2c != NULL) {
         ESP_ERROR_CHECK(i2c_bitaxe_init(GLOBAL_STATE.DEVICE_CONFIG.pins.i2c->sda, GLOBAL_STATE.DEVICE_CONFIG.pins.i2c->scl));
@@ -207,7 +209,11 @@ void app_main(void)
     SYSTEM_init_partitions(&GLOBAL_STATE);
 
     // Initialize BAP interface
-    esp_err_t bap_ret = BAP_init(&GLOBAL_STATE);
+    // The explicit Ethernet option reserves the accessory SPI pins until reboot,
+    // even when a missing adapter falls back to Wi-Fi. Never attach UART too.
+    esp_err_t bap_ret = ESP_OK;
+    if (!network_ethernet_uses_accessory_port(&GLOBAL_STATE)) bap_ret = BAP_init(&GLOBAL_STATE);
+    else ESP_LOGI(TAG, "Accessory port reserved for enabled W5500 Ethernet; BAP not started");
     if (bap_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize BAP interface: %d", bap_ret);
         // Continue anyway, as BAP is not critical for core functionality

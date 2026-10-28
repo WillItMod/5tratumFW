@@ -106,6 +106,12 @@ static esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key) {
     if (!strcmp(key, "WIFI_STA_DEF")) return sta_available ? &sta : NULL;
     assert(!strcmp(key, "WIFI_AP_DEF")); return ap_available ? &ap : NULL;
 }
+// This existing fixture models the Wi-Fi-only network boundary. Ethernet
+// selection/fallback is exercised by the separate production policy harness.
+static esp_netif_t *network_active_netif(void) {
+    esp_netif_t *active = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    return active ? active : esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+}
 static esp_err_t esp_netif_get_ip_info(esp_netif_t *netif, esp_netif_ip_info_t *info) {
     assert(netif == &sta || netif == &ap); info->ip = own_ip; return ip_result;
 }

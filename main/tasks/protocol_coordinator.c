@@ -39,6 +39,7 @@ typedef enum {
     COORD_EVENT_V1_TASK_EXITED,
     COORD_EVENT_V2_TASK_EXITED,
     COORD_EVENT_CONFIG_RELOAD,
+    COORD_EVENT_NETWORK_RECONNECT,
 } coordinator_event_type_t;
 typedef struct { coordinator_event_type_t type; unsigned generation; } coordinator_event_t;
 
@@ -58,6 +59,8 @@ static atomic_bool s_v1_should_shutdown, s_v2_should_shutdown;
 static atomic_bool s_v1_active, s_v2_active;
 static atomic_uint s_running_generation, s_work_generation, s_reload_requested;
 static unsigned s_reload_applied;
+static atomic_uint s_network_reconnect_requested;
+static unsigned s_network_reconnect_applied;
 
 // Protocol tracking
 static stratum_protocol_t s_primary_protocol;
@@ -93,6 +96,12 @@ void protocol_coordinator_request_primary_reload(GlobalState *gs)
     (void)gs;
     atomic_fetch_add(&s_reload_requested, 1);
     coordinator_event_t event = {.type = COORD_EVENT_CONFIG_RELOAD};
+    if (s_event_queue) xQueueSend(s_event_queue, &event, 0);
+}
+void protocol_coordinator_request_network_reconnect(void)
+{
+    atomic_fetch_add(&s_network_reconnect_requested, 1);
+    coordinator_event_t event = {.type = COORD_EVENT_NETWORK_RECONNECT};
     if (s_event_queue) xQueueSend(s_event_queue, &event, 0);
 }
 unsigned protocol_coordinator_work_generation(void) { return atomic_load(&s_work_generation); }
@@ -304,7 +313,7 @@ static void do_heartbeat_probe(GlobalState *gs)
         return;
     }
 
-    if (!wifi_is_connected()) {
+    if (!network_is_connected()) {
         return;
     }
 
@@ -367,7 +376,7 @@ static void resume_on_pool(GlobalState *gs, bool use_fallback)
 // Resumes mining as soon as one is reachable.
 static void try_resume_from_paused(GlobalState *gs)
 {
-    if (!wifi_is_connected()) {
+    if (!network_is_connected()) {
         return;
     }
 
@@ -399,7 +408,12 @@ static void try_resume_from_paused(GlobalState *gs)
 // Handle an event from the event queue
 static void handle_event(GlobalState *gs, coordinator_event_t evt)
 {
-    if (evt.type == COORD_EVENT_CONFIG_RELOAD || evt.generation != atomic_load(&s_running_generation)) return;
+    if (evt.type == COORD_EVENT_CONFIG_RELOAD || evt.type == COORD_EVENT_NETWORK_RECONNECT ||
+        evt.generation != atomic_load(&s_running_generation)) return;
+    // A task exiting after an acknowledged-stop timeout still belongs to the
+    // requested route restart. Its late outcome must not count as pool failure
+    // or change the pool/pause policy before the pending restart is applied.
+    if (atomic_load(&s_network_reconnect_requested) != s_network_reconnect_applied) return;
     switch (evt.type) {
         case COORD_EVENT_PROTOCOL_FAILED: {
             if (s_state == COORD_STATE_PAUSED) {
@@ -450,6 +464,7 @@ static void handle_event(GlobalState *gs, coordinator_event_t evt)
             ESP_LOGI(TAG, "Task exited event received (evt=%d, state=%d)", evt.type, s_state);
             break;
         case COORD_EVENT_CONFIG_RELOAD:
+        case COORD_EVENT_NETWORK_RECONNECT:
             break;
     }
 }
@@ -481,6 +496,25 @@ static bool apply_primary_reload(GlobalState *gs)
     return error == ESP_OK;
 }
 
+static bool apply_network_reconnect(GlobalState *gs)
+{
+    unsigned requested = atomic_load(&s_network_reconnect_requested);
+    if (requested == s_network_reconnect_applied) return true;
+    bool running = s_state == COORD_STATE_RUNNING_PRIMARY || s_state == COORD_STATE_RUNNING_FALLBACK;
+    if (running) {
+        // A route change must not leave an existing TCP session on the old
+        // interface. Reuse the acknowledged shutdown before starting a task;
+        // a timeout keeps this request pending and cannot create a second task.
+        if (!stop_running_task(gs)) return false;
+        SYSTEM_clean_jobs_queue(gs);
+        start_protocol_task(gs, s_running_protocol);
+    }
+    // Idle startup will use the new route. A paused miner keeps its existing
+    // reachability probes and power policy; a route alone never unpauses it.
+    s_network_reconnect_applied = requested;
+    return true;
+}
+
 void protocol_coordinator_task(void *pvParameters)
 {
     GlobalState *gs = (GlobalState *)pvParameters;
@@ -495,6 +529,7 @@ void protocol_coordinator_task(void *pvParameters)
 
     // HTTP may apply a profile before the coordinator task starts.
     apply_primary_reload(gs);
+    apply_network_reconnect(gs);
 
     // Start initial protocol task
     if (gs->SYSTEM_MODULE.is_using_fallback) {
@@ -525,9 +560,11 @@ void protocol_coordinator_task(void *pvParameters)
     // Main non-blocking event loop
     while (1) {
         bool reload_ready = apply_primary_reload(gs);
+        bool network_ready = reload_ready && apply_network_reconnect(gs);
         coordinator_event_t evt;
         TickType_t wait;
-        if (!reload_ready || atomic_load(&s_reload_requested) != s_reload_applied) {
+        if (!network_ready || atomic_load(&s_reload_requested) != s_reload_applied ||
+            atomic_load(&s_network_reconnect_requested) != s_network_reconnect_applied) {
             wait = pdMS_TO_TICKS(5000);
         } else if (s_state == COORD_STATE_PAUSED) {
             wait = pdMS_TO_TICKS(RECOVERY_PROBE_INTERVAL_MS);
@@ -547,7 +584,7 @@ void protocol_coordinator_task(void *pvParameters)
                 heartbeat_initial_delay = true;
                 heartbeat_delay_start = esp_timer_get_time();
             }
-        } else if (!reload_ready) {
+        } else if (!network_ready) {
             continue;
         } else if (s_state == COORD_STATE_PAUSED) {
             // Recovery probe — try to bring a pool back online.
