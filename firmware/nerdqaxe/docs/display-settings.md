@@ -1,6 +1,7 @@
 # QAxe screen size and panel selection
 
-QAxe Beta7 adds a saved screen selector under **Miner controls → Display → Screen**.
+QAxe Beta8 carries forward the saved screen selector introduced in the unpublished
+Beta7 work, under **Miner controls → Display → Screen**.
 One QAxe application supports these choices:
 
 | Screen | Resolution | Panel settings |

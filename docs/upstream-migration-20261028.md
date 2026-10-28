@@ -37,6 +37,13 @@ format. A matching old application/web pair alone is not recovery for an extende
 journal; retain a unit-specific backup and use compatible firmware. Queued
 operating writes use the same atomic path from their first update.
 
+Gamma's imported discovery code now retains the configured hostname during
+name conflicts. A unique mDNS alias is kept at runtime and reported separately
+as `mdnsHostname`/`fullHostname`; it does not become a saved NVS setting. The
+normal HTTP settings action still saves an explicitly requested base hostname.
+Production-function regression tests cover startup, repeated boots, explicit
+updates, conflicts, errors and IPv6/network fallbacks.
+
 Both bases include the pinned October 2026 certificate-bundle change. The
 offline test checks its checksum, 118 roots, a positive control and rejection
 of the twelve published incident chains. Target builds also check that the

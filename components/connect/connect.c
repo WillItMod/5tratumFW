@@ -171,10 +171,9 @@ static void initialize_mdns_if_needed(GlobalState *GLOBAL_STATE) {
             return;
         }
 
-        /* If conflict resolution changed the hostname, persist to NVS */
+        /* Discovery conflicts select a runtime alias, not a saved setting. */
         if (strcmp(final_hostname, hostname) != 0) {
-            nvs_config_set_string(NVS_CONFIG_HOSTNAME, final_hostname);
-            ESP_LOGI(TAG, "Hostname conflict resolved, updated NVS to: %s", final_hostname);
+            ESP_LOGI(TAG, "Using runtime mDNS alias: %s; configured hostname retained", final_hostname);
         }
 
         /* Set mDNS hostname */
@@ -280,10 +279,10 @@ esp_err_t update_mdns_hostname(const char *new_hostname, GlobalState *GLOBAL_STA
         return ESP_ERR_NO_MEM;
     }
 
-    /* If the hostname was resolved to a different one, update NVS */
+    /* The HTTP settings handler saves an explicitly requested base name.
+     * Conflict resolution must only affect this runtime discovery alias. */
     if (strcmp(resolved_hostname, new_hostname) != 0) {
-        nvs_config_set_string(NVS_CONFIG_HOSTNAME, resolved_hostname);
-        ESP_LOGI(TAG, "Hostname conflict resolved, updated NVS to: %s", resolved_hostname);
+        ESP_LOGI(TAG, "Using runtime mDNS alias: %s; configured hostname retained", resolved_hostname);
     }
 
     esp_err_t err = mdns_hostname_set(resolved_hostname);
