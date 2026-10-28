@@ -1,0 +1,35 @@
+<section class="tuning-schedule" data-tuning-schedule>
+  <header class="panel-heading"><div><h2>Tuning profile schedule</h2><p>Change the whole miner's saved clock and voltage by time and day.</p></div><button type="button" (click)="load()" [disabled]="loading || busy">{{ saveError ? 'Check miner' : 'Refresh status' }}</button></header>
+  <p>Each time point selects a saved tuning slot until the next point. Changes use normal miner protections; pauses are preserved.</p>
+  <p *ngIf="loading && !schedule" role="status">Reading saved tuning schedule…</p>
+  <p *ngIf="readError" class="error" role="alert">{{ readError }}</p>
+  <p *ngIf="saveError" class="error" role="alert">{{ saveError }}</p>
+  <p *ngIf="report?.storageValid === false" class="error" role="alert">The stored tuning schedule is invalid. Review and save a replacement schedule to repair it.</p>
+  <p *ngIf="savedMessage && !hasUnsavedChanges && !saveError" class="success" role="status">{{ savedMessage }}</p>
+  <ng-container *ngIf="schedule as schedule">
+    <div class="schedule-controls">
+      <label class="fw-switch-row"><span>Enable tuning schedule</span><input type="checkbox" [(ngModel)]="schedule.enabled" [ngModelOptions]="{standalone:true}" [disabled]="busy || loading" /></label>
+      <label class="field"><span>Time zone (fixed offset)</span><select [(ngModel)]="schedule.utcOffsetMinutes" [ngModelOptions]="{standalone:true}" [disabled]="busy || loading"><option *ngFor="let offset of utcOffsets" [ngValue]="offset">{{ offsetText(offset) }}</option></select></label>
+    </div>
+    <p class="note">Fixed offsets do not adjust for daylight saving time. For example, use UTC for UK winter time and UTC+01:00 for UK summer time.</p>
+    <p *ngIf="!configuredProfiles.length" class="note">Save a tuning profile under Miner controls → Performance before adding time points.</p>
+    <p *ngIf="configuredProfiles.length && !schedule.events.length" class="note">For daily changes, add 09:00 → slot 1, 21:00 → slot 2 and 00:00 → slot 3, with every day selected.</p>
+    <div class="schedule-event" *ngFor="let event of schedule.events; let i=index" [attr.data-tuning-event]="i">
+      <div class="event-heading"><strong>Time point {{ i + 1 }}</strong><label class="event-enable"><input type="checkbox" [(ngModel)]="event.enabled" [ngModelOptions]="{standalone:true}" [disabled]="busy || loading" /> Enabled</label></div>
+      <div class="schedule-days" [attr.aria-label]="'Days for tuning time point '+(i+1)"><button type="button" *ngFor="let day of weekDays" [attr.aria-pressed]="hasDay(event,day.bit)" [class.selected]="hasDay(event,day.bit)" (click)="toggleDay(event,day.bit)" [disabled]="busy || loading">{{ day.label }}</button></div>
+      <div class="event-fields"><label class="field"><span>Time</span><input type="time" [value]="timeText(event.timeMinutes)" (change)="changeTime(event,$any($event.target).value)" [attr.aria-label]="'Time for tuning point '+(i+1)" [disabled]="busy || loading" /></label>
+        <label class="field"><span>Saved tuning profile</span><select [(ngModel)]="event.slot" [ngModelOptions]="{standalone:true}" [attr.aria-label]="'Profile for tuning point '+(i+1)" [disabled]="busy || loading"><option *ngFor="let profile of profiles?.tuning" [ngValue]="profile.slot" [disabled]="!profile.configured">{{ profile.slot+1 }} · {{ profile.name || 'Empty' }}{{ profile.configured ? ' · '+profile.frequencyMHz+' MHz / '+profile.coreVoltageMv+' mV' : '' }}</option></select></label>
+        <button type="button" (click)="removeEvent(i)" [attr.aria-label]="'Remove tuning time point '+(i+1)" [disabled]="busy || loading">Remove</button>
+      </div>
+    </div>
+    <p *ngIf="validationError" class="error" role="status">{{ validationError }}</p>
+    <div class="actions"><button type="button" (click)="addEvent()" [disabled]="busy || loading || schedule.events.length >= 16 || !configuredProfiles.length">Add tuning time point</button><button type="button" (click)="save()" [disabled]="busy || loading || !!readError || !!validationError || !hasUnsavedChanges">{{ busy ? 'Saving…' : 'Save tuning schedule' }}</button><span *ngIf="hasUnsavedChanges" class="note">Unsaved tuning schedule changes</span></div>
+  </ng-container>
+  <div *ngIf="report as report" class="runtime-status" role="status" aria-live="polite">
+    <strong>{{ statusText }}</strong>
+    <p>Selected by saved schedule: {{ profileLabel(report.selectedSlot) }} · Last activated profile: {{ profileLabel(report.appliedSlot) }}</p>
+    <p *ngIf="!report.clockValid">Waiting for network time. No scheduled tuning is activated until the clock is synchronized.</p>
+    <p *ngIf="report.error" class="error">Miner reported: {{ report.error }}</p>
+    <p class="note">Last activation confirms the miner accepted that scheduled profile. Later manual tuning is retained until the next time point. Hardware settings remain subject to thermal and power protections.</p>
+  </div>
+</section>

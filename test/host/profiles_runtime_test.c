@@ -12,8 +12,9 @@ static Entry store[100], pending;
 static size_t stored_count;
 static bool fail_set, fail_commit, authorized = true, reference_guard;
 static unsigned writes, commits, erases, reloads;
-static httpd_uri_t routes[3];
+static httpd_uri_t routes[5];
 static unsigned route_count;
+static GlobalState gs;
 static int fail_journal_allocation = -1, journal_allocations;
 void *profiles_test_malloc(size_t size) { if (fail_journal_allocation >= 0 && journal_allocations++ == fail_journal_allocation) return NULL; return malloc(size); }
 static int fail_json_allocation = -1, json_allocations;
@@ -44,15 +45,23 @@ esp_err_t nvs_commit(nvs_handle_t h){(void)h;commits++;if(fail_commit)return ESP
 QueueHandle_t xQueueCreate(unsigned count,unsigned size){(void)count;(void)size;return(void *)1;}
 BaseType_t xQueueReceive(QueueHandle_t q,void *v,unsigned t){(void)q;(void)v;(void)t;return 0;}
 BaseType_t xQueueSend(QueueHandle_t q,const void *v,unsigned t){(void)q;(void)v;(void)t;return pdPASS;}
+#ifdef TUNING_SCHEDULE_RUNTIME_TEST
+SemaphoreHandle_t xSemaphoreCreateMutex(void){pthread_mutex_t *mutex=malloc(sizeof(*mutex));assert(mutex);assert(!pthread_mutex_init(mutex,NULL));return mutex;}
+BaseType_t xSemaphoreTake(SemaphoreHandle_t s,unsigned t){(void)t;assert(!pthread_mutex_lock(s));return pdPASS;}
+BaseType_t xSemaphoreGive(SemaphoreHandle_t s){assert(!pthread_mutex_unlock(s));return pdPASS;}
+#else
 SemaphoreHandle_t xSemaphoreCreateMutex(void){return(void *)1;}
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s,unsigned t){(void)s;(void)t;return pdPASS;}
 BaseType_t xSemaphoreGive(SemaphoreHandle_t s){(void)s;return pdPASS;}
+#endif
 BaseType_t xTaskCreate(void(*fn)(void *),const char *name,unsigned size,void *arg,unsigned priority,TaskHandle_t *task){(void)fn;(void)name;(void)size;(void)arg;(void)priority;(void)task;return pdPASS;}
 const esp_app_desc_t *esp_app_get_description(void){static esp_app_desc_t descriptor={.version="5tratumFW-0.1.0-beta.2"};return &descriptor;}
 esp_err_t esp_read_mac(uint8_t *out,int kind){(void)kind;const uint8_t mac[]={2,0,0,0,0,1};memcpy(out,mac,6);return ESP_OK;}
 int mbedtls_sha256(const unsigned char *bytes,size_t size,unsigned char *out,int mode){assert(size==24 && !memcmp(bytes,"5tratum/device/v1\0",18));(void)mode;for(unsigned i=0;i<32;i++)out[i]=i+1;return 0;}
 void protocol_coordinator_request_primary_reload(GlobalState *global){assert(global);reloads++;}
+#ifndef TUNING_SCHEDULE_RUNTIME_TEST
 bool operating_profile_pool_referenced(unsigned slot){return reference_guard && slot==0;}
+#endif
 esp_err_t is_network_allowed(httpd_req_t *req){(void)req;return authorized?ESP_OK:ESP_FAIL;}
 esp_err_t set_cors_headers(httpd_req_t *req){(void)req;return ESP_OK;}
 esp_err_t httpd_resp_set_hdr(httpd_req_t *req,const char *name,const char *value){(void)req;(void)name;(void)value;return ESP_OK;}
@@ -62,14 +71,20 @@ esp_err_t httpd_resp_sendstr(httpd_req_t *req,const char *text){snprintf(req->re
 esp_err_t httpd_resp_send_err(httpd_req_t *req,int code,const char *text){req->code=code;return httpd_resp_sendstr(req,text);}
 void httpd_resp_send_500(httpd_req_t *req){req->code=500;}
 int httpd_req_recv(httpd_req_t *req,char *out,size_t size){size_t count=req->content_len-req->received;if(count>size)count=size;if(count>17)count=17;memcpy(out,req->body+req->received,count);req->received+=count;return count;}
-esp_err_t httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route){(void)server;assert(route_count<3);routes[route_count++]=*route;return ESP_OK;}
+esp_err_t httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route){(void)server;assert(route_count<5);routes[route_count++]=*route;return ESP_OK;}
 esp_err_t HTTP_send_json(httpd_req_t *req,const cJSON *root,int *prebuffer){(void)prebuffer;char *text=cJSON_PrintUnformatted(root);if(!text)return ESP_ERR_NO_MEM;esp_err_t error=httpd_resp_sendstr(req,text);free(text);return error;}
 static httpd_req_t request(unsigned route,const char *body){httpd_req_t req={.code=200,.body=body,.content_len=body?strlen(body):0};routes[route].handler(&req);return req;}
 static void assert_string(NvsConfigKey key,const char *value){char *actual=nvs_config_get_string(key);assert(actual&&!strcmp(actual,value));free(actual);}
 static bool deny_apply(void *context){(void)context;return false;}
 static esp_err_t observe_slots(void *context){(*(unsigned *)context)++;return ESP_OK;}
-static void bootstrap(void){put(1,"boardversion",1,"601",0);put(1,"asicfrequency_f",1,"625.125",0);put(1,"asicvoltage",3,NULL,1173);put(1,"stratumprot",1,"SV1",0);put(1,"stratumurl",1,"pool.fixture.invalid",0);put(1,"stratumport",3,NULL,3333);put(1,"stratumuser",1,"fixture.worker",0);put(1,"stratumpass",1,"fixture-pass-A",0);put(1,"fbstratumurl",1,"backup.fixture.invalid",0);put(1,"fbstratumport",3,NULL,4444);put(1,"fbstratumpass",1,"fixture-pass-B",0);assert(nvs_config_init()==ESP_OK);static GlobalState gs;assert(device_config_init(&gs)==ESP_OK);assert(operating_profiles_register(NULL,&gs)==ESP_OK);assert(!writes&&!commits&&!erases);}
+static void bootstrap(void){put(1,"boardversion",1,"601",0);put(1,"asicfrequency_f",1,"625.125",0);put(1,"asicvoltage",3,NULL,1173);put(1,"stratumprot",1,"SV1",0);put(1,"stratumurl",1,"pool.fixture.invalid",0);put(1,"stratumport",3,NULL,3333);put(1,"stratumuser",1,"fixture.worker",0);put(1,"stratumpass",1,"fixture-pass-A",0);put(1,"fbstratumurl",1,"backup.fixture.invalid",0);put(1,"fbstratumport",3,NULL,4444);put(1,"fbstratumpass",1,"fixture-pass-B",0);assert(nvs_config_init()==ESP_OK);assert(device_config_init(&gs)==ESP_OK);assert(operating_profiles_register(NULL,&gs)==ESP_OK);assert(!writes&&!commits&&!erases);}
+#ifdef TUNING_SCHEDULE_RUNTIME_TEST
+#include "tuning_schedule_runtime_cases.inc"
+#endif
 int main(int argc,char **argv){assert(argc==2);bootstrap();const char *scenario=argv[1];
+#ifdef TUNING_SCHEDULE_RUNTIME_TEST
+ if(!strncmp(scenario,"tuning-",7)){tuning_runtime_case(scenario);puts("PASS");return 0;}
+#endif
  if(!strcmp(scenario,"redaction")){httpd_req_t req=request(0,NULL);assert(req.code==200);assert(!strstr(req.reply,"fixture-pass"));cJSON *json=cJSON_Parse(req.reply);assert(json);assert(cJSON_GetArraySize(cJSON_GetObjectItem(json,"tuning"))==10);assert(cJSON_GetArraySize(cJSON_GetObjectItem(json,"pools"))==10);assert(cJSON_GetObjectItem(cJSON_GetObjectItem(json,"identity"),"deviceId"));assert(cJSON_GetObjectItem(cJSON_GetObjectItem(json,"current"),"frequencyMHz")->valuedouble==625.125);cJSON_Delete(json);assert(!writes);}
  else if(!strcmp(scenario,"auth")){authorized=false;for(unsigned i=0;i<3;i++){httpd_req_t req=request(i,"{\"type\":\"tuning\",\"frequencyMHz\":525,\"coreVoltageMv\":1150}");assert(req.code==401&&req.received==0);}assert(!writes);}
  else if(!strcmp(scenario,"point")){httpd_req_t req=request(2,"{\"type\":\"tuning\",\"frequencyMHz\":525.25,\"coreVoltageMv\":1151}");assert(req.code==200);assert(nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY)==525.25f);assert(nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE)==1151);assert_string(NVS_CONFIG_FALLBACK_STRATUM_PASS,"fixture-pass-B");assert(!erases);unsigned before=writes;assert(nvs_config_init()==ESP_OK);assert(writes==before);assert(nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY)==525.25f);assert(nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE)==1151);}

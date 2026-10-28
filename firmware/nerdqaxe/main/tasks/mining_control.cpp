@@ -102,7 +102,10 @@ public:
             return false;
         }
         // Keep work blocked until the final UART transmission has completed.
-        return SERIAL_wait_tx_idle(500);
+        if (!SERIAL_wait_tx_idle(500)) return false;
+        POWER_MANAGEMENT_MODULE.acknowledgeAsicSettings(
+            controlledBoard->getAsicFrequency(), controlledBoard->getAsicVoltageMillis());
+        return true;
     }
     const char *startError() override { return m_startError; }
     bool reconfigure() override {

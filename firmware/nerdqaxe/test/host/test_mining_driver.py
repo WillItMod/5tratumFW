@@ -25,7 +25,7 @@ SOURCE_FILES = (
     "components/bm1397/include/bm1370_capture.h", "components/bm1397/include/bm1370_capture_runtime.h",
     "main/boards/nerdqaxeplus.cpp", "main/boards/nerdqaxeplus2.cpp",
     "main/tasks/asic_jobs.h", "main/tasks/create_jobs_task.cpp",
-    "main/tasks/power_management_task.cpp", "main/tasks/mining_control.cpp",
+    "main/tasks/power_management_task.cpp", "main/tasks/power_management_task.h", "main/tasks/mining_control.cpp",
     "main/tasks/mining_control.h", "main/tasks/mining_control_state.h", "main/tasks/mining_board_policy.h",
     "main/tasks/mining_schedule.h", "main/main.cpp",
     "test/host/mining_driver_support.h", "test/host/mining_driver_harness.cpp",
@@ -95,8 +95,15 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     jobs = re.sub(r'^#include "[^"\n]+"\n', '', jobs, flags=re.M)
     (path / "asic_jobs_actual.h").write_text('#include "mining_driver_support.h"\n' + jobs)
     power = (ROOT / "main/tasks/power_management_task.cpp").read_text()
-    (path / "protection.cpp").write_text('#include "mining_driver_support.h"\n' +
-        method(power, "bool PowerManagementTask::refreshProtectionForMining("))
+    power_methods = '#include "mining_driver_support.h"\n#include "mining_control.h"\nstatic const char *TAG="power";\n'
+    for signature in ("bool PowerManagementTask::refreshProtectionForMining(",
+                      "void PowerManagementTask::acknowledgeAsicSettings(",
+                      "bool PowerManagementTask::checkCoreVoltageChanged(",
+                      "bool PowerManagementTask::checkAsicFrequencyChanged(",
+                      "void PowerManagementTask::checkVrFrequencyChanged(",
+                      "void PowerManagementTask::applyAsicSettings("):
+        power_methods += method(power, signature)
+    (path / "protection.cpp").write_text(power_methods)
     control = (ROOT / "main/tasks/mining_control.cpp").read_text()
     control = re.sub(r'^#include "[^"\n]+"\n', '', control, flags=re.M)
     (path / "control.cpp").write_text(platform_preamble + '#include "mining_control.h"\n#include "mining_board_policy.h"\n#include "mining_schedule.h"\n' + control)
@@ -123,7 +130,8 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     subprocess.run([str(binary)], check=True)
     power_cases = ("cold-standard", "cold-rev7", "wrong-chip-count", "voltage-mismatch", "voltage-nan",
                  "resume", "pause-during-ramp", "invalid-vr", "no-workers", "no-job-ack", "job-timer-create-failed", "job-timer-start-failed",
-                 "thermal-latch", "baud-failed", "live-ramp", "live-ramp-pause", "live-ramp-uart-failure", "live-ramp-thermal")
+                 "thermal-latch", "baud-failed", "live-ramp", "live-ramp-pause", "live-ramp-uart-failure", "live-ramp-thermal",
+                 "settings-down", "settings-up", "settings-down-pll-failure", "settings-down-pause", "settings-up-voltage-failure")
     for case in power_cases:
         subprocess.run([str(binary), case], check=True)
     # Execute the production backend and inherited ASIC/board bodies for both

@@ -69,7 +69,8 @@
     </section>
 
     <section class="config-section" [hidden]="section !== 'scheduler'">
-      <header class="section-heading"><div><h2>Mining and pools</h2><p>Power windows and pool switches saved on this miner.</p></div></header>
+      <header class="section-heading"><div><h2>Mining, tuning and pools</h2><p>Pause windows, tuning profiles and pool switches saved on this miner.</p></div></header>
+      <app-tuning-schedule *ngIf="section === 'scheduler'" [uri]="uri"></app-tuning-schedule>
       <div class="config-panel">
         <h3>Mining power</h3>
         <p class="section-note">Pause powers down the ASIC chain. The controller, network and cooling remain active.</p>

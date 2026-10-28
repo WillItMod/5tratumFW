@@ -20,6 +20,7 @@ static int prebuffer = 4096;
 // Serializes profile reads, writes and scheduled Apply against slot editing.
 static pthread_mutex_t profiles_mutex = PTHREAD_MUTEX_INITIALIZER;
 __attribute__((weak)) bool operating_profile_pool_referenced(unsigned slot) { (void)slot; return false; }
+__attribute__((weak)) bool operating_profile_tuning_referenced(unsigned slot) { (void)slot; return false; }
 
 static const char *pool_fields[] = {"protocol", "host", "port", "user", "password", "suggestedDifficulty", "extranonceSubscribe", "tls", "certificate", "channelType", "authorityPubkey", "decodeCoinbase"};
 static const NvsConfigKey pool_keys[] = {NVS_CONFIG_STRATUM_PROTOCOL, NVS_CONFIG_STRATUM_URL, NVS_CONFIG_STRATUM_PORT, NVS_CONFIG_STRATUM_USER, NVS_CONFIG_STRATUM_PASS, NVS_CONFIG_STRATUM_DIFFICULTY, NVS_CONFIG_STRATUM_EXTRANONCE_SUBSCRIBE, NVS_CONFIG_STRATUM_TLS, NVS_CONFIG_STRATUM_CERT, NVS_CONFIG_SV2_CHANNEL_TYPE, NVS_CONFIG_SV2_AUTHORITY_PUBKEY, NVS_CONFIG_STRATUM_DECODE_COINBASE_TX};
@@ -235,17 +236,46 @@ bool operating_profile_current_pool_hash(bool fallback, uint32_t *hash)
     bool available = profile && pool_hash(profile, hash);
     cJSON_Delete(profile); pthread_mutex_unlock(&profiles_mutex); return available;
 }
-esp_err_t operating_profiles_with_pool_slots(uint16_t slot_mask, esp_err_t (*commit)(void *), void *context)
+static esp_err_t with_slots(bool pool, uint16_t slot_mask, esp_err_t (*commit)(void *), void *context)
 {
     if (!commit || slot_mask & ~((1u << FIVE_PROFILE_SLOTS) - 1)) return ESP_ERR_INVALID_ARG;
     pthread_mutex_lock(&profiles_mutex); esp_err_t error = ESP_OK;
     for (unsigned slot = 0; slot < FIVE_PROFILE_SLOTS; slot++) if (slot_mask & (1u << slot)) {
-        cJSON *profile = NULL; error = read_slot(true, slot, &profile);
-        if (error == ESP_OK && !pool_valid(profile)) error = ESP_ERR_INVALID_ARG;
+        cJSON *profile = NULL; error = read_slot(pool, slot, &profile);
+        if (error == ESP_OK && !(pool ? pool_valid(profile) : text(cJSON_GetObjectItemCaseSensitive(profile,"name"),1,PROFILE_NAME_MAX) && tuning_valid(profile))) error = ESP_ERR_INVALID_ARG;
         cJSON_Delete(profile); if (error != ESP_OK) break;
     }
     if (error == ESP_OK) error = commit(context);
     pthread_mutex_unlock(&profiles_mutex); return error;
+}
+esp_err_t operating_profiles_with_pool_slots(uint16_t mask, esp_err_t (*commit)(void *), void *context)
+{
+    return with_slots(true, mask, commit, context);
+}
+esp_err_t operating_profiles_with_tuning_slots(uint16_t mask, esp_err_t (*commit)(void *), void *context)
+{
+    return with_slots(false, mask, commit, context);
+}
+static esp_err_t apply_tuning(const cJSON *profile)
+{
+    if (!tuning_valid(profile)) return ESP_ERR_INVALID_ARG;
+    NvsConfigMutation changes[] = {
+        {.key=NVS_CONFIG_ASIC_FREQUENCY,.type=TYPE_FLOAT,.value.f=cJSON_GetObjectItemCaseSensitive(profile,"frequencyMHz")->valuedouble},
+        {.key=NVS_CONFIG_ASIC_VOLTAGE,.type=TYPE_U16,.value.u16=cJSON_GetObjectItemCaseSensitive(profile,"coreVoltageMv")->valueint},
+        {.key=NVS_CONFIG_OVERCLOCK_ENABLED,.type=TYPE_BOOL,.value.b=true}
+    };
+    return nvs_config_apply_atomic(changes, 3);
+}
+esp_err_t operating_profile_apply_tuning_guarded(unsigned slot, bool (*allow)(void *), void *context)
+{
+    pthread_mutex_lock(&profiles_mutex);
+    cJSON *profile = NULL;
+    esp_err_t error = allow && !allow(context) ? ESP_ERR_INVALID_STATE : read_slot(false,slot,&profile);
+    if (error == ESP_OK && !text(cJSON_GetObjectItemCaseSensitive(profile,"name"),1,PROFILE_NAME_MAX)) error = ESP_ERR_INVALID_ARG;
+    if (error == ESP_OK) error = apply_tuning(profile);
+    cJSON_Delete(profile);
+    pthread_mutex_unlock(&profiles_mutex);
+    return error;
 }
 static esp_err_t apply_pool(const cJSON *profile, bool fallback)
 {
@@ -311,7 +341,7 @@ static esp_err_t post_handler(httpd_req_t *req)
     if (!valid) { cJSON_Delete(body); return error_response(req, "400 Bad Request", "invalid-profile"); }
     bool pool = !strcmp(type->valuestring, "pool"); unsigned slot = slot_json->valueint;
     pthread_mutex_lock(&profiles_mutex);
-    if (pool && operating_profile_pool_referenced(slot)) { pthread_mutex_unlock(&profiles_mutex); cJSON_Delete(body); return error_response(req, "409 Conflict", "profile-in-use"); }
+    if (pool ? operating_profile_pool_referenced(slot) : operating_profile_tuning_referenced(slot)) { pthread_mutex_unlock(&profiles_mutex); cJSON_Delete(body); return error_response(req, "409 Conflict", "profile-in-use"); }
     cJSON *clear = cJSON_GetObjectItemCaseSensitive(body, "clear"), *name = cJSON_GetObjectItemCaseSensitive(body, "name"), *capture = cJSON_GetObjectItemCaseSensitive(body, "captureCurrent");
     cJSON *profile = NULL;
     if (cJSON_IsTrue(clear) && !name && !capture && !cJSON_GetObjectItemCaseSensitive(body, "frequencyMHz") && !cJSON_GetObjectItemCaseSensitive(body, "coreVoltageMv") && cJSON_GetArraySize(body) == 3) profile = cJSON_CreateObject();
@@ -355,11 +385,7 @@ static esp_err_t apply_handler(httpd_req_t *req)
     if (err == ESP_OK && !cJSON_GetObjectItemCaseSensitive(profile, pool ? "host" : "frequencyMHz")) err = slot_json ? ESP_ERR_NVS_NOT_FOUND : ESP_ERR_INVALID_ARG;
     if (err == ESP_OK && pool) err = apply_pool(profile, !strcmp(target->valuestring, "fallback"));
     else if (err == ESP_OK) {
-        if (!tuning_valid(profile)) err = ESP_ERR_INVALID_ARG;
-        else {
-            NvsConfigMutation changes[] = {{.key = NVS_CONFIG_ASIC_FREQUENCY, .type = TYPE_FLOAT, .value.f = cJSON_GetObjectItemCaseSensitive(profile, "frequencyMHz")->valuedouble}, {.key = NVS_CONFIG_ASIC_VOLTAGE, .type = TYPE_U16, .value.u16 = cJSON_GetObjectItemCaseSensitive(profile, "coreVoltageMv")->valueint}, {.key = NVS_CONFIG_OVERCLOCK_ENABLED, .type = TYPE_BOOL, .value.b = true}};
-            err = nvs_config_apply_atomic(changes, 3);
-        }
+        err = apply_tuning(profile);
     }
     bool restart_required = pool && !strcmp(target->valuestring, "fallback");
     cJSON_Delete(profile); cJSON_Delete(body); pthread_mutex_unlock(&profiles_mutex);

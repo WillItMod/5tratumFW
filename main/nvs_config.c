@@ -819,6 +819,16 @@ float nvs_config_get_float(NvsConfigKey key)
     return result;
 }
 
+bool nvs_config_get_tuning_pair(uint16_t *voltage_mv, float *frequency_mhz)
+{
+    if (!voltage_mv || !frequency_mhz || !nvs_cache_mutex) return false;
+    xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+    *voltage_mv = settings[NVS_CONFIG_ASIC_VOLTAGE].value[0].u16;
+    *frequency_mhz = settings[NVS_CONFIG_ASIC_FREQUENCY].value[0].f;
+    xSemaphoreGive(nvs_cache_mutex);
+    return true;
+}
+
 void nvs_config_set_float(NvsConfigKey key, float value)
 {
     Settings *setting = nvs_config_get_settings(key);

@@ -381,10 +381,12 @@ describe('Pool connection options in the production template', () => {
         { provide: SystemService, useValue: {
           getSettingsV2: () => of(source), updateSettingsV2: update,
           getSystemV2: getSystem, restart,
-          getProfiles: () => of({ tuning: [], pools: Array.from({length:10},(_,slot)=>slot===2 ? {slot,configured:true,name:'Saved BTC',host:'saved.test',port:3333,user:'saved.worker',passwordConfigured:true} : {slot,configured:false,name:null}) }),
+          getProfiles: () => of({ schemaVersion:1, tuning: Array.from({length:10},(_,slot)=>({slot,configured:slot===0,name:slot===0?'Daytime':null,frequencyMHz:500,coreVoltageMv:1100})), pools: Array.from({length:10},(_,slot)=>slot===2 ? {slot,configured:true,name:'Saved BTC',host:'saved.test',port:3333,user:'saved.worker',passwordConfigured:true} : {slot,configured:false,name:null}) }),
           saveProfile, applyProfile,
           getPoolSchedule: () => of({ schemaVersion: 1, enabled: false, utcOffsetMinutes: 0, events: [] }),
           getPowerSchedule: () => of({ supported: false, schedule: { enabled: false, timezone: 'UTC', windows: [] } }),
+          getTuningSchedule: () => of({schemaVersion:1,supported:true,enabled:false,utcOffsetMinutes:0,events:[],clockValid:true,
+            timezoneMode:'fixed-utc-offset',selectedSlot:null,appliedSlot:null,status:'disabled',error:null,maxEvents:16}),
         } },
         { provide: NbToastrService, useValue: { success: () => {}, danger: () => {} } },
         { provide: LoadingService, useValue: { lockUIUntilComplete: () => (stream: any) => stream } },
@@ -417,6 +419,21 @@ describe('Pool connection options in the production template', () => {
     const select = fixture.nativeElement.querySelector('[data-display-profile]') as HTMLSelectElement;
     select.value=id;select.dispatchEvent(new Event('change',{bubbles:true}));fixture.detectChanges();
   }
+
+  it('keeps scheduled tuning separate from power and pool controls and protects unsaved tuning time points', fakeAsync(() => {
+    const component = render('NerdQAxe++','scheduler');
+    tick();fixture.detectChanges();
+    expect(component.hasUnsavedChanges).toBeFalse();
+    const panel = fixture.nativeElement.querySelector('[data-tuning-schedule]') as HTMLElement;
+    expect(panel).not.toBeNull();expect(panel.textContent).toContain('Tuning profile schedule');
+    const add = (Array.from(panel.querySelectorAll('button')) as HTMLButtonElement[]).find(button => button.textContent?.trim() === 'Add tuning time point')!;
+    add.click();fixture.detectChanges();tick();
+    expect(component.hasUnsavedChanges).toBeTrue();
+    expect(component.poolSchedule!.events.length).toBe(0);expect(component.powerSchedule!.windows.length).toBe(0);
+    expect(component.form.get('frequency')!.value).toBe(source.frequency);
+    expect(update).not.toHaveBeenCalled();expect(saveProfile).not.toHaveBeenCalled();expect(applyProfile).not.toHaveBeenCalled();expect(authorize).not.toHaveBeenCalled();
+    fixture.destroy();flush();
+  }));
 
   it('offers exactly the application-advertised QAxe screen choices without changing a setting on entry',()=>{
     const before=structuredClone(source),component=render('NerdQAxe++','display');

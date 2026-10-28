@@ -71,6 +71,17 @@ class MiningPowerTests(unittest.TestCase):
     def test_failed_resume_and_failed_cutoff_retry_cutoff(self):
         self.run_case("retry-cutoff")
 
+    def test_operating_point_changes_order_voltage_and_frequency_by_direction(self):
+        self.run_case("settings-down")
+        self.run_case("settings-up")
+
+    def test_failed_or_cancelled_pll_never_lowers_voltage_or_caches_success(self):
+        self.run_case("settings-down-pll-fail")
+        self.run_case("settings-down-pause")
+
+    def test_failed_voltage_raise_blocks_upclock_and_retries_the_pair(self):
+        self.run_case("settings-up-voltage-fail")
+
     def test_workers_gate_on_current_stop_reasons_before_uart_operations(self):
         self.run_case("worker-gates")
         jobs = (ROOT / "main/tasks/create_jobs_task.c").read_text()

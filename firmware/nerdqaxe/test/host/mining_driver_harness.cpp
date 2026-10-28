@@ -17,6 +17,7 @@ static bool failFinalBaud = false;
 unsigned simulatedChips = 4;
 int hostBaud = 115200;
 std::deque<std::vector<uint8_t>> serialFrames;
+std::vector<HostSettingEvent> hostSettingEvents;
 HostSystem SYSTEM_MODULE;
 PowerManagementTask POWER_MANAGEMENT_MODULE;
 HostHashrate HASHRATE_MONITOR;
@@ -90,6 +91,8 @@ bool SERIAL_wait_tx_idle(uint16_t) { return !serialShortWrite; }
 int SERIAL_send(uint8_t *bytes, int length) {
     ++transmittedPackets;
     transmittedBytes.emplace_back(bytes, bytes + length);
+    if (length >= 6 && bytes[2] == CMD_WRITE_ALL && bytes[5] == 0x08)
+        hostSettingEvents.push_back({'p', 0});
     if (failNextWrite) { serialShortWrite = true; failNextWrite = false; }
     if (serialShortWrite) return length - 1;
     if (length >= 6 && bytes[2] == CMD_READ_ALL && bytes[4] == 0 && bytes[5] == 0) {
@@ -130,6 +133,7 @@ static void resetFixture() {
     hostClockMs = lastProtectionMs = longestProtectionGap = 0;
     protectionPolls = transmittedPackets = rxCalls = 0; hostBaud = 115200;
     transmittedBytes.clear();
+    hostSettingEvents.clear();
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
     capturedJobs.clear(); capturedRetirements.clear();
 #endif
@@ -481,6 +485,57 @@ int main(int argc, char **argv) {
             assert(!miningWritesAllowed() && !board.m_isInitialized);
             SYSTEM_MODULE.error = Board::Error::NONE; updateControl();
             assert(!miningWritesAllowed() && !board.m_isInitialized);
+        }
+        if (test.rfind("settings-", 0) == 0) {
+            const bool raising = test == "settings-up" || test == "settings-up-voltage-failure";
+            const unsigned targetFrequency = savedFrequency + (raising ? 100 : -100);
+            const unsigned targetVoltage = savedVoltage + (raising ? 50 : -50);
+            assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == savedVoltage &&
+                   POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == savedFrequency);
+            board.m_asicFrequency = targetFrequency;
+            board.m_asicVoltageMillis = targetVoltage;
+            hostSettingEvents.clear();
+            if (test == "settings-down-pll-failure") failNextWrite = true;
+            if (test == "settings-down-pause") policyPauseAtMs = hostClockMs + 500;
+            if (test == "settings-up-voltage-failure") buck.voltageOkay = false;
+            POWER_MANAGEMENT_MODULE.applyAsicSettings();
+            const auto pll = std::find_if(hostSettingEvents.begin(), hostSettingEvents.end(),
+                [](const HostSettingEvent &event) { return event.kind == 'p'; });
+            const auto voltage = std::find_if(hostSettingEvents.begin(), hostSettingEvents.end(),
+                [](const HostSettingEvent &event) { return event.kind == 'v'; });
+            if (test == "settings-down-pll-failure" || test == "settings-down-pause") {
+                assert(pll != hostSettingEvents.end() && voltage == hostSettingEvents.end());
+                assert(!miningWritesAllowed() && !board.m_isInitialized);
+                assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == savedVoltage &&
+                       POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == savedFrequency);
+                if (test == "settings-down-pause") {
+                    policyPauseAtMs = std::numeric_limits<uint64_t>::max(); policyPause = false;
+                    updateControl();
+                    assert(miningWritesAllowed() && board.m_isInitialized);
+                    // Resume initializes the saved pair and resets both caches.
+                    assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == targetVoltage &&
+                           POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == targetFrequency);
+                    hostSettingEvents.clear(); POWER_MANAGEMENT_MODULE.applyAsicSettings();
+                    assert(hostSettingEvents.empty());
+                }
+            } else if (test == "settings-up-voltage-failure") {
+                assert(voltage != hostSettingEvents.end() && pll == hostSettingEvents.end());
+                assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == savedVoltage &&
+                       POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == savedFrequency);
+                buck.voltageOkay = true; hostSettingEvents.clear();
+                POWER_MANAGEMENT_MODULE.applyAsicSettings();
+                assert(hostSettingEvents.front().kind == 'v' && hostSettingEvents.back().kind == 'p');
+                assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == targetVoltage &&
+                       POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == targetFrequency);
+            } else {
+                assert(pll != hostSettingEvents.end() && voltage != hostSettingEvents.end());
+                if (raising) assert(voltage < pll);
+                else assert(voltage == hostSettingEvents.end() - 1 && pll < voltage);
+                assert(POWER_MANAGEMENT_MODULE.m_appliedCoreVoltage == targetVoltage &&
+                       POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency == targetFrequency);
+                hostSettingEvents.clear(); POWER_MANAGEMENT_MODULE.applyAsicSettings();
+                assert(hostSettingEvents.empty());
+            }
         }
         if (test == "live-ramp" || test == "live-ramp-pause" || test == "live-ramp-uart-failure" || test == "live-ramp-thermal") {
             const auto oldEpoch = workGeneration();

@@ -22,6 +22,10 @@ Manual Pause/Resume overrides an enabled schedule until its next effective bound
 
 The separate pool-switch scheduler uses up to sixteen weekly time points and a fixed UTC offset. It does not inherit the power scheduler's daylight-saving timezone. Switching a pool does not resume paused mining or change the saved operating point. See [pool and tuning profiles](miner-profiles-and-pool-schedule.md).
 
+QAxe Beta8 and the aligned OctAxe Beta5 candidate add a separate [tuning profile
+schedule](tuning-profile-schedule.md). It can select saved clock/voltage slots
+at daily or weekly times while retaining these pause and protection rules.
+
 ## API and persistence
 
 - `GET /api/system/mining/schedule` returns `schemaVersion:1`, identity/hardware/firmware binding, capability, schedule, named-zone limits and requested/applied status.

@@ -14,6 +14,7 @@
 #include "macros.h"
 #include "network_manager.h"
 #include "display_settings.h"
+#include "profile_store.h"
 
 static const char *TAG = "http_v2_settings";
 
@@ -210,6 +211,8 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
     const auto displayPatch = FiveTratumDisplay::validateDisplayProfilePatch(doc.as<JsonObjectConst>());
     if (displayPatch.error)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, displayPatch.error);
+    // Keep a settings request and the scheduled operating pair in one order.
+    FiveTratumProfiles::ProfileStoreGuard profileTransaction;
     if (displayPatch.id) {
         FactoryOTAUpdate::OtaStatus displayOtaStatus{};
         FACTORY_OTA_UPDATER.getStatus(&displayOtaStatus);
@@ -404,7 +407,7 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
 
     // Reload all subsystems
     Board *board = SYSTEM_MODULE.getBoard();
-    board->loadSettings();
+    { LockGuard<PowerManagementTask> hardware(POWER_MANAGEMENT_MODULE); board->loadSettings(); }
     POWER_MANAGEMENT_MODULE.getFanController().loadSettings();
     SYSTEM_MODULE.loadSettings();
     STRATUM_MANAGER->loadSettings();

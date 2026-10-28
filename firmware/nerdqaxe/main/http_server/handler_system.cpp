@@ -11,6 +11,7 @@
 #include "http_cors.h"
 #include "http_utils.h"
 #include "display_settings.h"
+#include "profile_store.h"
 
 #include "ping_task.h"
 
@@ -302,6 +303,7 @@ esp_err_t PATCH_update_settings(httpd_req_t *req)
     const auto displayPatch = FiveTratumDisplay::validateDisplayProfilePatch(doc.as<JsonObjectConst>());
     if (displayPatch.error)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, displayPatch.error);
+    FiveTratumProfiles::ProfileStoreGuard profileTransaction;
     if (displayPatch.id) {
         // The asynchronous factory worker can be flashing after its HTTP
         // trigger has returned. Do not change its display preconditions.
@@ -427,7 +429,7 @@ esp_err_t PATCH_update_settings(httpd_req_t *req)
 
     // Reload settings after update
     Board* board = SYSTEM_MODULE.getBoard();
-    board->loadSettings();
+    { LockGuard<PowerManagementTask> hardware(POWER_MANAGEMENT_MODULE); board->loadSettings(); }
 
     // Reload fan controller settings (picks up both ch0 and ch1 changes)
     POWER_MANAGEMENT_MODULE.getFanController().loadSettings();

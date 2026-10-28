@@ -27,6 +27,17 @@ describe('SystemService', () => {
     expect(service).toBeTruthy();
   });
 
+  it('reads and saves tuning schedules for the selected miner with its authentication header', () => {
+    const schedule = {schemaVersion:1 as const,enabled:true,utcOffsetMinutes:0,events:[{enabled:true,dayMask:127,timeMinutes:540,slot:0}]};
+    service.getTuningSchedule('/selected-miner').subscribe();
+    const read = httpMock.expectOne('/selected-miner/api/5tratum/tuning-schedule');
+    expect(read.request.method).toBe('GET');read.flush(schedule);
+    service.saveTuningSchedule('/selected-miner',schedule,'123456').subscribe();
+    const write = httpMock.expectOne('/selected-miner/api/5tratum/tuning-schedule');
+    expect(write.request.method).toBe('POST');expect(write.request.headers.get('X-TOTP')).toBe('123456');expect(write.request.body).toEqual(schedule);
+    write.flush({ok:true});httpMock.expectNone('/api/v2/settings');httpMock.expectNone('/api/5tratum/profiles/apply');
+  });
+
   it('reads display runtime metadata from the same selected miner without a settings write', () => {
     let result: any;
     service.getSystemV2('/selected-miner').subscribe(info => result = info);

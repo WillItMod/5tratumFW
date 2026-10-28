@@ -141,6 +141,8 @@ void nvs_config_set_i32(NvsConfigKey key, int32_t value);
 uint64_t nvs_config_get_u64(NvsConfigKey key);
 void nvs_config_set_u64(NvsConfigKey key, uint64_t value);
 float nvs_config_get_float(NvsConfigKey key);
+// One cache snapshot prevents a power transition mixing two tuning transactions.
+bool nvs_config_get_tuning_pair(uint16_t *voltage_mv, float *frequency_mhz);
 void nvs_config_set_float(NvsConfigKey key, float value);
 bool nvs_config_get_bool(NvsConfigKey key);
 void nvs_config_set_bool(NvsConfigKey key, bool value);

@@ -37,11 +37,13 @@ class PowerManagementTask {
     int64_t m_lastProtectionAtUs = -1;
     bool m_lastProtectionBuckReady = false;
     bool m_shutdown = false;
+    uint16_t m_appliedCoreVoltage = 0;
+    uint16_t m_appliedAsicFrequency = 0;
     FanController m_fanController;
     Board* m_board = nullptr;
 
-    void checkCoreVoltageChanged();
-    void checkAsicFrequencyChanged();
+    bool checkCoreVoltageChanged();
+    bool checkAsicFrequencyChanged();
     void checkVrFrequencyChanged();
     void readAndPublishPowerTelemetry();
     void pollProtection();
@@ -92,6 +94,9 @@ class PowerManagementTask {
         return m_temperatureSnapshot.get();
     }
     bool refreshProtectionForMining();
+    // Power-owner callback after successful initialization/readback and TX
+    // completion. Settings edited while paused become the new running baseline.
+    void acknowledgeAsicSettings(uint16_t frequency, uint16_t millivolts);
 
     uint16_t getFanRPM(int channel);
 

@@ -50,6 +50,33 @@ The seller's [replacement 3.5-inch screen](https://yysluping.com/products/the-re
 advertises the size but warns about firmware/screen compatibility. It supplies
 no controller ID or flash geometry that establishes a match to the owned QAxe.
 
+## Online firmware reference check — 28 October 2026
+
+The currently available open-source builds were checked again against the
+saved profiles. AguiMr's [published dual-screen release](https://github.com/AguiMr/nerdqaxeplus2-ethernet/releases/tag/v1.1.1-alpha3-ethernet.1)
+includes distinct 320×170 and 480×320 application images. Its
+[large-screen settings](https://github.com/AguiMr/nerdqaxeplus2-ethernet/blob/v1.1.1-alpha3-ethernet.1/main/displays/displayDriver.h#L45-L59)
+use 480×320, a 25,600-pixel draw buffer and a 12.288 MHz pixel clock.
+Its current source at `556832766551fb713d8abbddd1490bb58f2b90a8`
+[retains the large-panel mirror and offset correction](https://github.com/AguiMr/nerdqaxeplus2-ethernet/blob/556832766551fb713d8abbddd1490bb58f2b90a8/main/displays/displayDriver.cpp#L779-L803):
+swap X/Y, mirror neither axis normally (both for 180-degree rotation), and use
+zero panel gap. These values agree with our RGB profile. Brunneis's explicit
+[mirror fix](https://github.com/brunneis/nerdqaxeplus2-3.5-inches/commit/451d95af7953f6f5b1c94b7627db81d4bcbadcd9)
+and XTVDDICT's pinned BGR driver above remain unchanged references.
+
+This directly addresses the reported combination of a small image towards the
+upper-right, large unused margins and horizontally reversed text: the standard
+profile has the wrong viewport, a 35-pixel gap and one-axis mirroring for that
+panel. Size selection changes all three settings together. A 180-degree rotate
+option alone does not remove a reflection. Wrong colour order is handled by
+choosing the RGB or BGR profile, separately from orientation.
+
+Only display parameters are used as reference. Other forks' Ethernet support,
+flash drivers and partition tables are outside this change. Their photographs
+and release binaries do not identify tadets' particular display controller;
+the fitted panel still needs an actual display check. No reference binary is
+substituted for the matched 5tratumFW application and web image.
+
 ## Compile selection and restrictions
 
 A private target compilation requires `BOARD=NERDQAXEPLUS2`, a new isolated

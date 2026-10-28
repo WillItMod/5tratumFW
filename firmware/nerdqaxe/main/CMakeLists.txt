@@ -54,6 +54,8 @@ SRCS
     "./http_server/handler_profiles.cpp"
     "./http_server/pool_schedule.cpp"
     "./http_server/pool_schedule_runtime.cpp"
+    "./http_server/tuning_schedule.cpp"
+    "./http_server/tuning_schedule_runtime.cpp"
     "./http_server/handler_ota.cpp"
     "./http_server/handler_otp.cpp"
     "./http_server/handler_restart.cpp"

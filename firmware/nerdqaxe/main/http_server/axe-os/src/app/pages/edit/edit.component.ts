@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, Input, OnInit, OnDestroy, TemplateRef } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, TemplateRef, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { switchMap, startWith, tap, catchError, of, Observable, timer, Subscription, throwError, forkJoin, timeout } from 'rxjs';
 import { FiveTratumProfiles, ProfileSlot, PoolSchedule, PowerReport, PowerSchedule, PowerWindow } from '../../models/IFiveTratumProfiles';
@@ -14,6 +14,7 @@ import { ISettingsV2, ISettingsV2Fan } from '../../models/ISettingsV2';
 import { DisplayProfileId } from '../../models/IDisplaySettings';
 import { ISystemV2 } from '../../models/ISystemV2';
 import { sectionFields, changedFields, settingsPatch } from './settings-scope';
+import { TuningScheduleComponent } from '../../components/tuning-schedule/tuning-schedule.component';
 
 enum SupportLevel { Safe = 0, Advanced = 1, Pro = 2 }
 
@@ -23,6 +24,7 @@ enum SupportLevel { Safe = 0, Advanced = 1, Pro = 2 }
   styleUrls: ['./edit.component.scss']
 })
 export class EditComponent implements OnInit, OnDestroy {
+  @ViewChild(TuningScheduleComponent) tuningScheduler?: TuningScheduleComponent;
   public manualTuning = false;
   public saving = false;
   public restartPending = false;
@@ -204,7 +206,7 @@ export class EditComponent implements OnInit, OnDestroy {
     this.displayActiveProfile = this.displayProfileSupported ? system!.displayActiveProfile! : '320x170';
     this.displayProfileEditable = this.displayProfileSupported && this.displayProfileChoices.length > 1;
   }
-  get hasUnsavedChanges(): boolean {return !!this.form && Object.keys(this.baseline).some(k=>this.form.getRawValue()[k] !== this.baseline[k]) || !!this.poolSchedule && this.scheduleSnapshot() !== this.scheduleBaseline || !!this.powerSchedule && JSON.stringify(this.powerSchedule) !== this.powerBaseline;}
+  get hasUnsavedChanges(): boolean {return !!this.form && Object.keys(this.baseline).some(k=>this.form.getRawValue()[k] !== this.baseline[k]) || !!this.poolSchedule && this.scheduleSnapshot() !== this.scheduleBaseline || !!this.powerSchedule && JSON.stringify(this.powerSchedule) !== this.powerBaseline || !!this.tuningScheduler?.hasUnsavedChanges;}
   private scheduleSnapshot(): string {const s=this.poolSchedule;return s ? JSON.stringify({enabled:s.enabled,utcOffsetMinutes:s.utcOffsetMinutes,events:s.events}) : '';}
   refreshPoolSchedule(): void {
     this.systemService.getPoolSchedule(this.uri).subscribe({next: data => {this.poolSchedule=data;this.scheduleBaseline=this.scheduleSnapshot();this.scheduleError='';},error:()=>{this.poolSchedule=null;this.scheduleError='Pool scheduler is unavailable.';}});

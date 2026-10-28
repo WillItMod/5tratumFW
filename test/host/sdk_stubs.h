@@ -73,7 +73,7 @@ typedef struct {
     bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable, overheat_mode;
     char hardware_fault_msg[64];
 } SystemModule;
-typedef struct { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; } GlobalState;
+typedef struct { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; bool ASIC_initalized; struct { bool is_active; } SELF_TEST_MODULE; } GlobalState;
 #define STRATUM_V1 "SV1"
 #define STRATUM_V2 "SV2"
 #define SV2_CHANNEL_TYPE_STANDARD "standard"

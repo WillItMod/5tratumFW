@@ -68,6 +68,11 @@ Clear a slot:
 
 Clearing a pool referenced by any stored schedule event fails with `409 profile-in-use`; remove the timepoint first, including from disabled schedules. Slot storage failure returns `507 storage-unavailable`; a failed full-storage replacement retains the old slot.
 
+The Beta8 candidate also protects tuning slots referenced by the separate
+[tuning profile schedule](tuning-profile-schedule.md). That scheduler activates
+saved operating points by time; the pool scheduler below continues to change
+only pool connections.
+
 ## POST /api/5tratum/profiles/apply
 
 ```json

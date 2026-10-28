@@ -2,7 +2,7 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.7`. Its paired display-selector test build was compiled from clean source `223e00ba9678324a20f0c2409ee66b423363463f`; see [Beta7 validation and limits](validation-qa-beta7.md). It has not replaced the published, physically checked [Beta6 pair](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) also retains its separate historical evidence.
+The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.8`. It adds saved tuning-profile scheduling and retains the Beta7 screen selector. The earlier paired display-selector test build was compiled from clean source `223e00ba9678324a20f0c2409ee66b423363463f`; see [Beta7 validation and limits](validation-qa-beta7.md). Neither candidate inherits the installed-device evidence of the published, physically checked [Beta6 pair](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) also retains its separate historical evidence.
 
 Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. The default remains the original 320×170 screen. Beta7's QAxe image includes a [saved screen selector](display-settings.md) for two experimental 480×320 profiles. A fixed experimental compile-time default remains excluded from this release/package path.
 
@@ -63,7 +63,7 @@ These files contain no NVS partition and are not merged factory flash images. Us
 Check package hashes before installation:
 
 ```sh
-cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.7'
+cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.8'
 shasum -a 256 -c SHA256SUMS
 ```
 

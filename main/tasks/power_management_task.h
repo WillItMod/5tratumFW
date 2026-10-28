@@ -16,6 +16,7 @@ typedef struct
     float power;
     float current;
     float core_voltage;
+    uint16_t applied_core_voltage_mv; // Last successful VCORE command; zero after confirmed power-off.
 } PowerManagementModule;
 
 void POWER_MANAGEMENT_init_frequency(void * pvParameters);

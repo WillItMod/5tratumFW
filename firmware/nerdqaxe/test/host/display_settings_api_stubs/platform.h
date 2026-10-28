@@ -3,6 +3,7 @@
 // External services only. The PATCH bodies and display validator are production
 // source. Every mutating service records an event, even if it changes no value.
 #include "ArduinoJson.h"
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +32,18 @@ inline const esp_app_desc_t *esp_app_get_description() {
 extern std::vector<std::string> effects;
 extern std::string selectedProfile;
 inline void record(const char *name) { effects.emplace_back(name); }
+inline int profileLockDepth = 0, powerLockDepth = 0;
+namespace FiveTratumProfiles {
+struct ProfileStoreGuard {
+    ProfileStoreGuard() { assert(powerLockDepth == 0); ++profileLockDepth; }
+    ~ProfileStoreGuard() { --profileLockDepth; }
+};
+}
+template<class T> struct LockGuard {
+    T &object;
+    explicit LockGuard(T &value) : object(value) { object.lock(); }
+    ~LockGuard() { object.unlock(); }
+};
 
 struct httpd_req_t {
     std::string body, response;
@@ -165,7 +178,7 @@ CONFIG_GETTER(isAutoScreenOffEnabled)
 struct PidSettings { int targetTemp = 57, p = 120, i = 40, d = 10; };
 struct Board {
     enum class Error { NONE, COINBASE_VERIFY_FAULT };
-    void loadSettings() { record("Board::loadSettings"); }
+    void loadSettings() { assert(profileLockDepth > 0 && powerLockDepth > 0); record("Board::loadSettings"); }
     const char *getAsicModel() { return "BM1370"; }
     const char *getDeviceModel() {
 #if defined(NERDQAXEPLUS2)
@@ -213,8 +226,11 @@ struct System {
 struct FanController { void loadSettings() { record("FanController::loadSettings"); } };
 struct PowerManagement {
     FanController fans;
+    void lock() { assert(profileLockDepth > 0); ++powerLockDepth; }
+    void unlock() { --powerLockDepth; }
     FanController &getFanController() { return fans; }
 };
+using PowerManagementTask = PowerManagement;
 struct StratumManager {
     void saveSettings(JsonDocument &) { record("Stratum::saveSettings"); }
     void loadSettings() { record("Stratum::loadSettings"); }

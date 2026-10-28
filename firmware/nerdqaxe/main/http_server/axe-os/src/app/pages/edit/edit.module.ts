@@ -7,9 +7,10 @@ import { AdvancedToggleModule } from '../../components/advanced-toggle/advanced-
 import { FormsModule } from '@angular/forms';
 import { TranslateModule } from '@ngx-translate/core';
 import { AlertBannerModule } from 'src/app/components/alert-banner/alert-banner.module';
+import { TuningScheduleComponent } from '../../components/tuning-schedule/tuning-schedule.component';
 
 @NgModule({
-  declarations: [EditComponent],
+  declarations: [EditComponent, TuningScheduleComponent],
   imports: [
     CommonModule,
     ReactiveFormsModule,

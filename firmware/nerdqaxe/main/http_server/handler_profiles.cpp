@@ -1,6 +1,8 @@
 #include "handler_profiles.h"
 #include "profile_store.h"
 #include "pool_schedule.h"
+#include "tuning_schedule.h"
+#include "global_state.h"
 #include "handler_capabilities.h"
 #include "esp_app_desc.h"
 #include "sntp.h"
@@ -86,7 +88,9 @@ esp_err_t POST_five_tratum_profiles(httpd_req_t *req) {
     PSRAMAllocator allocator;JsonDocument input(&allocator),old(&allocator),captured(&allocator),record(&allocator);Request request;
     if (!loadRequest(req,input,request,false)) return ESP_FAIL;
     if (request.clear) {
+        ProfileStoreGuard transaction;
         if(request.kind==Kind::Pool) {JsonDocument schedule(&allocator);if(!readPoolSchedule(schedule)) return result(req,"503 Service Unavailable","storage-unavailable");if(scheduleReferences(schedule.as<JsonObjectConst>(),request.slot)) return result(req,"409 Conflict","profile-in-use");}
+        else {JsonDocument schedule(&allocator);if(!readTuningSchedule(schedule)) return result(req,"503 Service Unavailable","storage-unavailable");if(tuningScheduleReferences(schedule.as<JsonObjectConst>(),request.slot)) return result(req,"409 Conflict","profile-in-use");}
         return clearSlot(request.kind,request.slot)==StoreResult::Ok?result(req,"200 OK"):result(req,"507 Insufficient Storage","storage-unavailable");
     }
     Board *board=SYSTEM_MODULE.getBoard();if (!board) return result(req,"503 Service Unavailable","storage-unavailable");
@@ -103,6 +107,8 @@ esp_err_t POST_five_tratum_profiles_apply(httpd_req_t *req) {
     if (getJsonData(req,input)!=ESP_OK) return ESP_FAIL;
     if (!input["asicIndex"].isNull() || !input["coreIndex"].isNull() || (!input["poolTarget"].isNull() && strcmp(input["poolTarget"] | "","primary")!=0 && strcmp(input["poolTarget"] | "","fallback")!=0)) return result(req,"409 Conflict","unsupported-target");
     if (!parseRequest(input.as<JsonObjectConst>(),true,request)) return result(req,"400 Bad Request","invalid-profile");
+    // Serialize manual profile commits with the scheduled pair and slot edits.
+    ProfileStoreGuard transaction;
     if (request.directTuning) {record["frequencyMHz"]=input["frequencyMHz"];record["coreVoltageMv"]=input["coreVoltageMv"];}
     auto status=request.directTuning?StoreResult::Ok:readSlot(request.kind,request.slot,record);
     if (status==StoreResult::Empty) return result(req,"409 Conflict","empty-slot");
@@ -111,7 +117,7 @@ esp_err_t POST_five_tratum_profiles_apply(httpd_req_t *req) {
     if (request.kind==Kind::Tuning && !validTuning(record.as<JsonObjectConst>(),boardLimits(board))) return result(req,"400 Bad Request","invalid-profile");
     buildActivePatch(patch.to<JsonObject>(),request.kind,record.as<JsonObjectConst>(),request.targetPool);
     if (patch.overflowed() || !Config::cfgApplyPatchPersisted(patch.as<JsonObjectConst>())) return result(req,"507 Insufficient Storage","storage-unavailable");
-    if (request.kind==Kind::Tuning) board->loadSettings();
+    if (request.kind==Kind::Tuning) { LockGuard<PowerManagementTask> hardware(POWER_MANAGEMENT_MODULE); board->loadSettings(); }
     else if (STRATUM_MANAGER) STRATUM_MANAGER->loadSettings();
     return result(req,"200 OK");
 }
@@ -134,4 +140,25 @@ esp_err_t POST_five_tratum_pool_schedule(httpd_req_t *req) {
     if(!validPoolSchedule(doc.as<JsonObjectConst>()))return result(req,"400 Bad Request","invalid-profile");
     for(JsonObjectConst e:doc["events"].as<JsonArrayConst>()) if(readSlot(Kind::Pool,e["slot"].as<unsigned>(),record)!=StoreResult::Ok)return result(req,"409 Conflict","empty-slot");
     return savePoolSchedule(doc.as<JsonObjectConst>())?result(req,"200 OK"):result(req,"507 Insufficient Storage","storage-unavailable");
+}
+
+esp_err_t GET_five_tratum_tuning_schedule(httpd_req_t *req) {
+    ConGuard guard(http_server,req);if(!prepare(req,false))return ESP_FAIL;
+    PSRAMAllocator allocator;JsonDocument doc(&allocator);
+    // Compute status from the exact stored schema before adding response metadata.
+    if(!readTuningSchedule(doc) || !writeTuningScheduleStatus(doc,doc.as<JsonObjectConst>()) || !addIdentity(doc,SYSTEM_MODULE.getBoard())) return result(req,"503 Service Unavailable","storage-unavailable");
+    return sendJsonResponse(req,doc);
+}
+esp_err_t POST_five_tratum_tuning_schedule(httpd_req_t *req) {
+    ConGuard guard(http_server,req);if(!prepare(req,true))return ESP_FAIL;
+    if(!req->content_len || req->content_len>MAX_REQUEST_BYTES)return result(req,"400 Bad Request","invalid-profile");
+    PSRAMAllocator allocator;JsonDocument doc(&allocator),record(&allocator);if(getJsonData(req,doc)!=ESP_OK)return ESP_FAIL;
+    if(!validTuningSchedule(doc.as<JsonObjectConst>()))return result(req,"400 Bad Request","invalid-profile");
+    ProfileStoreGuard transaction;
+    for(JsonObjectConst event:doc["events"].as<JsonArrayConst>()) {
+        const auto read=readSlot(Kind::Tuning,event["slot"].as<unsigned>(),record);
+        if(read==StoreResult::Empty)return result(req,"409 Conflict","empty-slot");
+        if(read!=StoreResult::Ok)return result(req,"503 Service Unavailable","storage-unavailable");
+    }
+    return saveTuningSchedule(doc.as<JsonObjectConst>())?result(req,"200 OK"):result(req,"507 Insufficient Storage","storage-unavailable");
 }

@@ -18,9 +18,11 @@ class ProfileTests(unittest.TestCase):
             executable=temp/'profile-tests'
             subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main/http_server'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'test/host/profile_harness.cpp'),'-o',str(executable)],check=True)
             subprocess.run([str(executable)],check=True)
-            for stub in (ROOT/'test/host/profile_api_stubs').iterdir(): shutil.copy(stub,temp/stub.name)
+            shutil.copytree(ROOT/'test/host/profile_api_stubs',temp,dirs_exist_ok=True)
+            shutil.copytree(ROOT/'test/host/tuning_schedule_stubs',temp,dirs_exist_ok=True)
             shutil.copy(ROOT/'main/http_server/handler_profiles.cpp',temp/'handler_profiles.cpp')
+            shutil.copy(ROOT/'main/http_server/tuning_schedule_runtime.cpp',temp/'tuning_schedule_runtime.cpp')
             api=temp/'profile-api-tests'
-            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'main'),str(temp/'handler_profiles.cpp'),str(ROOT/'main/http_server/profile_store.cpp'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'main/http_server/pool_schedule.cpp'),str(ROOT/'test/host/profile_api_harness.cpp'),'-o',str(api)],check=True)
+            subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(temp),'-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'main'),str(temp/'handler_profiles.cpp'),str(temp/'tuning_schedule_runtime.cpp'),str(ROOT/'main/http_server/profile_store.cpp'),str(ROOT/'main/http_server/profile_schema.cpp'),str(ROOT/'main/http_server/pool_schedule.cpp'),str(ROOT/'main/http_server/tuning_schedule.cpp'),str(ROOT/'test/host/profile_api_harness.cpp'),'-o',str(api)],check=True)
             subprocess.run([str(api)],check=True)
 if __name__=='__main__': unittest.main(verbosity=2)

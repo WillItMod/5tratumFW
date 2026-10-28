@@ -13,6 +13,7 @@
 #include "protocol_coordinator.h"
 #include "operating_profiles.h"
 #include "pool_schedule.h"
+#include "tuning_schedule.h"
 #include "i2c_bitaxe.h"
 #include "adc.h"
 #include "nvs_config.h"
@@ -98,6 +99,10 @@ void app_main(void)
     operating_profiles_init(&GLOBAL_STATE);
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && pool_schedule_init(&GLOBAL_STATE) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize pool schedule; keeping ASIC reset asserted");
+        return;
+    }
+    if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && tuning_schedule_init(&GLOBAL_STATE) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize tuning schedule; keeping ASIC reset asserted");
         return;
     }
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && mining_schedule_init(&GLOBAL_STATE) != ESP_OK) {
@@ -189,6 +194,7 @@ void app_main(void)
 
     protocol_coordinator_init(&GLOBAL_STATE);
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) pool_schedule_start();
+    if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active) tuning_schedule_start();
     if (xTaskCreate(protocol_coordinator_task, "protocol coord", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating protocol coordinator task");
         POWER_MANAGEMENT_stop_for_fault(&GLOBAL_STATE, "Protocol coordinator task could not start");

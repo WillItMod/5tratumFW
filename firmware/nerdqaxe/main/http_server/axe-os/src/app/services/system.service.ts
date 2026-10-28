@@ -16,6 +16,7 @@ import { IInfluxDB } from '../models/IInfluxDB';
 import { IUpdateStatus } from '../models/IUpdateStatus';
 import { HttpHeaders } from '@angular/common/http';
 import { FiveTratumProfiles, PoolSchedule, FiveTratumMiningStatus, PowerReport, PowerSchedule } from '../models/IFiveTratumProfiles';
+import { TuningSchedule, TuningScheduleReport } from '../models/ITuningSchedule';
 
 export type UpdateDeviceIdentity = Pick<ISystemInfo, 'deviceModel' | 'version'>;
 
@@ -251,6 +252,10 @@ export class SystemService {
     return this.httpClient.post<{ok: boolean; restartRequired: boolean}>(`${uri}/api/5tratum/profiles/apply`, payload, { headers: totp ? new HttpHeaders().set('X-TOTP', totp) : new HttpHeaders() });
   }
   public getPoolSchedule(uri = '') { return this.httpClient.get<PoolSchedule>(`${uri}/api/5tratum/pool-schedule`); }
+  public getTuningSchedule(uri = '') { return this.httpClient.get<TuningScheduleReport>(`${uri}/api/5tratum/tuning-schedule`); }
+  public saveTuningSchedule(uri: string, schedule: TuningSchedule, totp?: string) {
+    return this.httpClient.post<{ok:boolean}>(`${uri}/api/5tratum/tuning-schedule`, schedule, {headers:totp ? new HttpHeaders().set('X-TOTP',totp) : new HttpHeaders()});
+  }
   public savePoolSchedule(uri: string, schedule: PoolSchedule, totp?: string) {
     return this.httpClient.post(`${uri}/api/5tratum/pool-schedule`, schedule, { headers: totp ? new HttpHeaders().set('X-TOTP', totp) : new HttpHeaders() });
   }
