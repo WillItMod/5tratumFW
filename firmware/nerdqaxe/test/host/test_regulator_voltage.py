@@ -35,7 +35,7 @@ class RegulatorVoltageTests(unittest.TestCase):
         bodies += method(six, "TPS53667::TPS53667()")
         harness = r'''
 #include <cassert>
-#include <cmath>
+#include <math.h>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
