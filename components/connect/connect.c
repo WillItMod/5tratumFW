@@ -399,8 +399,9 @@ static void event_handler(void * arg, esp_event_base_t event_base, int32_t event
             is_scanning = false;
         }
 
-        if (is_scanning) {
-            ESP_LOGI(TAG, "Still scanning, ignore wifi event.");
+        if (is_scanning && (event_id == WIFI_EVENT_STA_START ||
+                            event_id == WIFI_EVENT_STA_CONNECTED || event_id == WIFI_EVENT_STA_DISCONNECTED)) {
+            ESP_LOGI(TAG, "Scan in progress; ignoring station association event");
             return;
         }
 

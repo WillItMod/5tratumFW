@@ -165,6 +165,16 @@ int main(int argc,char **argv)
         event_handler(owner,WIFI_EVENT,WIFI_EVENT_AP_STOP,NULL);assert(clients_connected_to_ap==0);
         event_handler(owner,WIFI_EVENT,WIFI_EVENT_AP_STADISCONNECTED,NULL);assert(clients_connected_to_ap==0);
         network_refresh(owner);assert(connects==1);
+    } else if(!strcmp(scenario,"scan-ap-stop")) {
+        managed();event_handler(owner,WIFI_EVENT,WIFI_EVENT_AP_STACONNECTED,NULL);
+        assert(clients_connected_to_ap==1 && owner->SYSTEM_MODULE.ap_enabled);
+        is_scanning=true;
+        event_handler(owner,WIFI_EVENT,WIFI_EVENT_AP_STOP,NULL);
+        assert(clients_connected_to_ap==0 && !owner->SYSTEM_MODULE.ap_enabled && is_scanning);
+        // A late client event during the same scan cannot resurrect the count.
+        event_handler(owner,WIFI_EVENT,WIFI_EVENT_AP_STADISCONNECTED,NULL);
+        assert(clients_connected_to_ap==0);
+        network_refresh(owner);assert(connects==1);
     } else if(!strcmp(scenario,"roaming")) {
         wifi_ready();owner->SYSTEM_MODULE.is_connected=true;disconnected(WIFI_REASON_ROAMING);
         assert(s_wifi_has_ip && owner->SYSTEM_MODULE.is_connected && !notifications && !delays && !ap_on && !connects);

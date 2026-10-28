@@ -41,7 +41,7 @@ class GammaNetworkRuntimeTests(unittest.TestCase):
 
     def test_actual_policy_and_event_timelines(self):
         for scenario in ('off','self-test-reservation','pins','absent','empty-ssid','retire-wifi','recovery','readdress','readiness','stale-eth-status',
-                         'task-failure','ap-client','ap-stop-client','roaming','events','mdns','mdns-start-guard','saved-and-diagnostic'):
+                         'task-failure','ap-client','ap-stop-client','scan-ap-stop','roaming','events','mdns','mdns-start-guard','saved-and-diagnostic'):
             with self.subTest(scenario=scenario): self.run_case(self.binary,scenario)
 
     def test_reserved_hardware_overrides_reject_accessory_spi(self):
