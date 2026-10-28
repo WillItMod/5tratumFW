@@ -28,4 +28,12 @@ describe('GithubUpdateService', () => {
       { id: 4, draft: false }
     ]);
   });
+  it('keeps NerdQAxe and OctAxe image families out of the branded Gamma update channel', () => {
+    service.getReleases().subscribe(releases => expect(releases.map(release => release.id)).toEqual([1]));
+    http.expectOne('https://api.github.com/repos/WillItMod/5tratumFW/releases').flush([
+      {id:1,draft:false,tag_name:'v0.1.0-beta.10',assets:[{name:'esp-miner.bin'},{name:'www.bin'}]},
+      {id:2,draft:false,tag_name:'qaxe-v0.1.0-beta.8',assets:[{name:'esp-miner-NerdQAxe++.bin'},{name:'www.bin'}]},
+      {id:3,draft:false,tag_name:'octaxe-v0.1.0-beta.5',assets:[{name:'esp-miner-NerdOCTAXE-Gamma.bin'},{name:'www.bin'}]},
+    ]);
+  });
 });

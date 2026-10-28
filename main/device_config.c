@@ -10,13 +10,12 @@
 
 static const char * TAG = "device_config";
 
-esp_err_t device_config_init(void * pvParameters)
+esp_err_t device_config_init(GlobalState * GLOBAL_STATE)
 {
-    GlobalState * GLOBAL_STATE = (GlobalState *) pvParameters;
-
     // TODO: Read board version from eFuse
 
     char * board_version = nvs_config_get_string(NVS_CONFIG_BOARD_VERSION);
+    bool found_default = false;
 
     if (board_version == NULL) {
         return ESP_ERR_NO_MEM;
@@ -35,11 +34,11 @@ esp_err_t device_config_init(void * pvParameters)
             ESP_LOGI(TAG, "Board Version: %s", GLOBAL_STATE->DEVICE_CONFIG.board_version);
             ESP_LOGI(TAG, "ASIC: %dx %s (%d cores)", GLOBAL_STATE->DEVICE_CONFIG.family.asic_count, GLOBAL_STATE->DEVICE_CONFIG.family.asic.name, GLOBAL_STATE->DEVICE_CONFIG.family.asic.core_count);
 
-            free(board_version);
-            return ESP_OK;
+            found_default = true;
+            break;
         }
     }
 
     free(board_version);
-    return ESP_ERR_NOT_SUPPORTED;
+    return found_default ? device_pins_init(&GLOBAL_STATE->DEVICE_CONFIG.pins) : ESP_ERR_NOT_SUPPORTED;
 }

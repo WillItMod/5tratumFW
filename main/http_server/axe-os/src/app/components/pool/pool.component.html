@@ -111,6 +111,8 @@
                                     rows="2" class="routing-monospace" placeholder="Optional base58 authority key" spellcheck="false"></textarea>
                                 <small *ngIf="form.get(pool + 'V2AuthorityPubkey')?.errors?.['invalidBase58']" class="routing-error">Use base58 characters only (no 0, O, I or l).</small>
                                 <small *ngIf="form.get(pool + 'V2AuthorityPubkey')?.errors?.['invalidBase58Length']" class="routing-error">Invalid length. Authority keys are typically 51–52 characters.</small>
+                                <label class="fw-switch-row"><span>Require Stratum V2 authentication</span><input type="checkbox" [formControlName]="pool + 'V2RequireAuth'" /></label>
+                                <small *ngIf="!authRequirementSupported[pool]">This option requires a matching application update.</small>
                             </div>
                         </ng-container>
 

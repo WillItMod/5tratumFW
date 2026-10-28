@@ -205,9 +205,9 @@ static void initialize_requested_frequency(GlobalState *GLOBAL_STATE, float freq
     ESP_LOGI(TAG, "ASIC Frequency: %g MHz, Expected hashrate: %sH/s", frequency, expected_hashrate_str);
 }
 
-void POWER_MANAGEMENT_init_frequency(void *pvParameters)
+void POWER_MANAGEMENT_init_frequency(GlobalState *state)
 {
-    initialize_requested_frequency((GlobalState *)pvParameters, nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY));
+    initialize_requested_frequency(state, nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY));
 }
 
 void POWER_MANAGEMENT_task(void * pvParameters)

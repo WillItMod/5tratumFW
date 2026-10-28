@@ -5,7 +5,7 @@ import { environment } from 'src/environments/environment';
 import { TuningSchedule, TuningScheduleReport } from 'src/models/ITuningSchedule';
 
 export interface TuningSlot { slot: number; configured: boolean; name: string | null; frequencyMHz?: number; coreVoltageMv?: number; }
-export interface PoolSlot { slot: number; configured: boolean; name: string | null; host?: string; port?: number; user?: string; protocol?: string; passwordConfigured?: boolean; }
+export interface PoolSlot { slot: number; configured: boolean; name: string | null; host?: string; port?: number; user?: string; protocol?: string; passwordConfigured?: boolean; sv2RequireAuth?: boolean; }
 export interface Profiles { schemaVersion: number; tuning: TuningSlot[]; pools: PoolSlot[]; limits: { frequency: { min: number; max: number; step: number; quantization: string }; coreVoltage: { min: number; max: number; step: number } }; current: { frequencyMHz: number; coreVoltageMv: number; overclockEnabled?: boolean }; }
 export interface ProfileResult { ok: boolean; restartRequired: boolean; }
 export interface PoolEvent { enabled: boolean; dayMask: number; timeMinutes: number; slot: number; }

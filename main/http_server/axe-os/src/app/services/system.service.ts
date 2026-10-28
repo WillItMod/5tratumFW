@@ -1,6 +1,7 @@
 import { HttpClient, HttpEvent } from '@angular/common/http';
 import { Injectable, Optional } from '@angular/core';
 import { delay, Observable, of, timeout, from } from 'rxjs';
+import { SystemUpdateResponse } from 'src/models/ISystemUpdateResponse';
 import { eChartLabel } from 'src/models/enum/eChartLabel';
 import { chartLabelKey } from 'src/models/enum/eChartLabel';
 import { chartLabelValue } from 'src/models/enum/eChartLabel';
@@ -66,7 +67,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.downloadSystemLogs, {}) as Promise<Blob>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.get(`${uri}/api/system/logs`, { responseType: 'blob' });
     }
 
@@ -78,7 +79,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.getSystemInfo, {})).pipe(timeout(API_TIMEOUT));
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.get<ISystemInfo>(`${uri}/api/system/info`).pipe(timeout(API_TIMEOUT));
     }
 
@@ -104,6 +105,8 @@ export class SystemApiService {
         freeHeap: 200504,
         freeHeapInternal: 200504,
         freeHeapSpiram: 200504,
+        minFreeHeap: 180000,
+        maxAllocHeap: 90000,
         coreVoltage: 1200,
         coreVoltageActual: 1200,
         hostname: "Bitaxe",
@@ -116,6 +119,11 @@ export class SystemApiService {
         wifiRSSI: -32,
         apEnabled: 0,
         sharesAccepted: 1,
+        sharesPending: 0,
+        totalUptimeSeconds: 38,
+        totalHashes: 0,
+        totalLog2Work: 0,
+        workReceived: 0,
         sharesRejected: 10,
         sharesRejectedReasons: [
           { message: "Above target", count: 8 },
@@ -134,6 +142,7 @@ export class SystemApiService {
         stratumCert: "",
         stratumV2AuthorityPubkey: "",
         stratumV2ChannelType: "extended" as const,
+        stratumV2RequireAuth: false,
         stratumDecodeCoinbase: true,
         fallbackStratumProtocol: "SV1" as const,
         fallbackStratumURL: "test.public-pool.io",
@@ -146,6 +155,7 @@ export class SystemApiService {
         fallbackStratumDecodeCoinbase: true,
         fallbackStratumV2AuthorityPubkey: "",
         fallbackStratumV2ChannelType: "extended" as const,
+        fallbackStratumV2RequireAuth: false,
         poolDifficulty: 1000,
         responseTime: 10,
         responseShareBatch: 1,
@@ -155,7 +165,7 @@ export class SystemApiService {
         actualFrequency: 485,
         version: DEVELOPMENT_FIRMWARE_VERSION,
         axeOSVersion: DEVELOPMENT_FIRMWARE_VERSION,
-        idfVersion: "v5.5.1",
+        idfVersion: "v6.0.2",
         resetReason: "Power-on reset",
         boardVersion: "602",
         display: "SSD1306 (128x32)",
@@ -166,6 +176,8 @@ export class SystemApiService {
         isPSRAMAvailable: 1,
         overclockEnabled: 1,
         runningPartition: "factory",
+        useCustomWWW: 0 as const,
+        partitions: [{label:'ota_0',version:DEVELOPMENT_FIRMWARE_VERSION,isCurrent:true,isFactory:false}],
         minFanSpeed: 25,
         fanspeed: 50,
         manualFanSpeed: 70,
@@ -211,8 +223,12 @@ export class SystemApiService {
       columnList.push(y2);
     }
 
-    if (environment.production && this.api) {
+    if (environment.production && this.api && !uri) {
       return from(this.api.invoke(functions.getSystemStatistics, { columns: columnList })).pipe(timeout(API_TIMEOUT));
+    }
+
+    if (environment.production || uri) {
+      return this.httpClient.get<ISystemStatistics>(`${uri}/api/system/statistics`, {params:{columns:columnList}}).pipe(timeout(API_TIMEOUT));
     }
 
     const hashrateData = [0,413.4903744405481,410.7764830376959,440.100549473198,430.5816012914026,452.5464981767163,414.9564271189586,498.7294609150379,411.1671601439723,491.327834852684];
@@ -305,7 +321,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.restartSystem, {}) as Promise<GenericResponse>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.post<GenericResponse>(`${uri}/api/system/restart`, {});
     }
 
@@ -317,7 +333,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.dismissBlockFound, {}) as Promise<GenericResponse>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.post<GenericResponse>(`${uri}/api/system/blockFound/dismiss`, {});
     }
 
@@ -329,7 +345,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.pauseMining, {}) as Promise<GenericResponse>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.post<GenericResponse>(`${uri}/api/system/pause`, {});
     }
 
@@ -341,7 +357,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.resumeMining, {}) as Promise<GenericResponse>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.post<GenericResponse>(`${uri}/api/system/resume`, {});
     }
 
@@ -353,20 +369,20 @@ export class SystemApiService {
       return from(this.api.invoke(functions.identifySystem, {}) as Promise<GenericResponse>);
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.post<GenericResponse>(`${uri}/api/system/identify`, {});
     }
 
     return of({ message: 'Device identified (mock)' });
   }
 
-  public updateSystem(uri: string = '', update: any): Observable<void> {
+  public updateSystem(uri: string = '', update: any): Observable<SystemUpdateResponse | void> {
     if (environment.production && this.api && !uri) {
-      return from(this.api.invoke(functions.updateSystemSettings, { body: update as Settings }) as Promise<void>);
+      return from(this.api.invoke(functions.updateSystemSettings, { body: update as Settings }) as Promise<SystemUpdateResponse>);
     }
 
-    if (environment.production && uri) {
-      return this.httpClient.patch<void>(`${uri}/api/system`, update);
+    if (environment.production || uri) {
+      return this.httpClient.patch<SystemUpdateResponse>(`${uri}/api/system`, update);
     }
 
     return of(undefined);
@@ -415,7 +431,7 @@ export class SystemApiService {
       return from(this.api.invoke(functions.getAsicSettings, {})).pipe(timeout(API_TIMEOUT));
     }
 
-    if (environment.production && uri) {
+    if (environment.production || uri) {
       return this.httpClient.get<ISystemASIC>(`${uri}/api/system/asic`).pipe(timeout(API_TIMEOUT));
     }
 

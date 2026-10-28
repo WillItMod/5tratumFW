@@ -17,6 +17,8 @@ The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](fir
 
 The current pairs are Gamma `5tratumFW-0.1.0-beta.9`, QAxe `5tratumFW-qa-0.1.0-beta.6` and OctAxe `5tratumFW-oct-0.1.0-beta.4`, compiled from clean source `689b2c8fcd01c4b507be102bb1caed22f4552738`. Full pinned builds, package checks and exact-source CI passed. All four owned miners completed paired OTA and exported-settings checks on 14 October 2026, with normal physical screens/fans confirmed by the owner. Six randomized animated donut candidate celebrations are included; their graphics and lifecycle were tested in native fixtures without fabricated live blocks. See the [release index](docs/releases/README.md) for scoped evidence. The 480×320 QAxe profiles remain experimental and have no public download or automatic-update path.
 
+The development candidates are Gamma Beta10 on ESP-Miner v2.15.4, QAxe Beta8 and OctAxe Beta5 on shufps v1.1.1-rc1. They add saved tuning-profile schedules; QAxe includes the experimental larger-screen selector. They have separate build evidence and still need installed-device checks. See the [aligned update](docs/aligned-tuning-update.md) and [upstream migration](docs/upstream-migration-20261028.md).
+
 Pool routing now places Primary and Secondary connection editors above the ten named slots. **Save pool settings** saves that connection; **Save to slot** captures its saved configuration into the selected named slot. Each configured slot has explicit **Apply to Primary** and **Apply to Secondary** actions. Opening the page or selecting a slot does not apply it. Invalid, missing or ambiguous acknowledgments leave the operation unconfirmed, with no automatic write retry. Clocks, voltage, cooling, network, credentials and schedules are not changed by this layout update.
 
 QAxe's native A/B MUX connections have independently configured routes and fresh per-session coin/job information. They use the shared-chain job selector; this does not establish independent physical-chip ownership.
@@ -26,7 +28,7 @@ QAxe's native A/B MUX connections have independently configured routes and fresh
 **Gamma BETA — root-source images accept Gamma 601/602 only. The current qualified pair is `5tratumFW-0.1.0-beta.9`. Earlier pairs retain their own validation records.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
-A GPLv3 derivative of [Bitaxe ESP-Miner v2.14.2](https://github.com/bitaxeorg/ESP-Miner/tree/v2.14.2), maintained by [WillItMod](https://github.com/WillItMod).
+A GPLv3 derivative of [Bitaxe ESP-Miner v2.15.4](https://github.com/bitaxeorg/ESP-Miner/tree/v2.15.4), maintained by [WillItMod](https://github.com/WillItMod).
 
 ## Compatibility
 
@@ -79,7 +81,7 @@ cd 5tratumFW
 bash tools/build_5tratumfw.sh
 ```
 
-The build pins ESP-IDF v5.5.3 by container digest, runs the checks described in the build guide and packages paired OTA files, checksums, a manifest and corresponding source under `artifacts/<version>/`. It does not flash a miner.
+The Gamma build pins ESP-IDF v6.0.2 by container digest, runs the checks described in the build guide and packages paired OTA files, checksums, a manifest and corresponding source under `artifacts/<version>/`. It does not flash a miner.
 
 ## License
 

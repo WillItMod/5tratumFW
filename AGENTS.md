@@ -11,7 +11,7 @@ This repository has separate BETA firmware families: the root builds Bitaxe Gamm
 
 ## Build and checks
 
-Use Node 24.14.0, Python 3, a native C compiler, CMake, Pillow, Chrome/Chromium and Docker. Initialize submodules, then run `bash tools/build_5tratumfw.sh`. See `docs/build.md` for the pinned ESP-IDF 5.5.3 digest and environment setup.
+Use Node 24.14.0, Python 3, a native C compiler, CMake, Pillow, Chrome/Chromium and Docker. Initialize submodules, then run `bash tools/build_5tratumfw.sh`. Gamma v2.15.4 builds use pinned ESP-IDF 6.0.2; the Nerd RC1 families retain pinned ESP-IDF 5.5.3. See `docs/build.md` and the family build guides for exact image digests and environment setup. Use fresh build directories across SDK changes.
 
 When changing `main/http_server/openapi.yaml`, regenerate the TypeScript API client (`npm run generate:api`) and keep development mocks in `system.service.ts` consistent. Generated clients are ignored; frontend build and test commands regenerate them.
 

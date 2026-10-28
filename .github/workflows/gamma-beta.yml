@@ -20,7 +20,8 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  IDF_IMAGE: espressif/idf:v5.5.3@sha256:8ccd4d2ce413889c6c2bba57e986c670302094efb91c913c6091152e317a7805
+  IDF_IMAGE: espressif/idf:v6.0.2@sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67
+  FW_BUILD_DIR: build/gamma-public
 
 jobs:
   gamma:
@@ -32,6 +33,16 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Reserve hosted runner space for the pinned SDK
+        run: |
+          # This job uses a fresh GitHub-hosted VM. These unrelated SDKs are
+          # rebuildable runner image contents; no Docker images are removed.
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          df -h /
+          available_kib=$(df -Pk / | awk 'NR==2 {print $4}')
+          test "$available_kib" -ge 25165824
 
       - name: Set up pinned Node
         uses: actions/setup-node@v6
@@ -59,20 +70,35 @@ jobs:
           npm run test:ci
 
       - name: Run Gamma host regression tests
-        run: python3 tools/test_gamma_host.py
+        run: |
+          python3 tools/test_gamma_host.py
+          python3 tools/test_ca_bundle.py
 
       - name: Check actual compressed web payload
         run: python3 tools/check_web_budget.py --report artifacts/web-budget.json
 
       - name: Compile ESP32-S3 application and WWW partition
         run: |
-          mkdir -p build
-          git rev-parse HEAD > build/build-source-commit.txt
-          docker run --rm -e GITHUB_ACTIONS=true \
+          test ! -e "$FW_BUILD_DIR"
+          mkdir -p "$FW_BUILD_DIR"
+          cp artifacts/web-budget.json "$FW_BUILD_DIR/web-budget.json"
+          git rev-parse HEAD > "$FW_BUILD_DIR/build-source-commit.txt"
+          docker run --rm -i -e GITHUB_ACTIONS=true -e FW_BUILD_DIR -e FW_IDF_IMAGE="$IDF_IMAGE" \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/project" -w /project \
-            "$IDF_IMAGE" \
-            bash -c 'git config --global --add safe.directory /project
-          idf.py -D IDF_TARGET=esp32s3 build'
+            "$IDF_IMAGE" bash -eu <<'BUILD'
+          git config --global --add safe.directory /project
+          test "$(idf.py --version)" = "ESP-IDF v6.0.2"
+          idf.py -B "$FW_BUILD_DIR" -D SDKCONFIG="/project/$FW_BUILD_DIR/sdkconfig" -D IDF_TARGET=esp32s3 build
+          python tools/test_ca_bundle.py --build-dir "$FW_BUILD_DIR"
+          python - "$FW_BUILD_DIR" <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          receipt = {"idf_version": "v6.0.2", "container_image": os.environ["FW_IDF_IMAGE"],
+                     "idf_source": {"repository": "https://github.com/espressif/esp-idf",
+                                    "commit": subprocess.check_output(["git", "-C", os.environ["IDF_PATH"], "rev-parse", "HEAD"], text=True).strip()}}
+          (Path(sys.argv[1]) / "build-toolchain.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          PY
+          BUILD
 
       - name: Render production OLED layout with native LVGL
         run: |
@@ -80,7 +106,7 @@ jobs:
           python3 test/host/render_oled_native.py
 
       - name: Verify and package paired OTA BETA images and source
-        run: python3 tools/package_5tratumfw.py
+        run: python3 tools/package_5tratumfw.py --build-dir "$FW_BUILD_DIR"
 
       - name: Save verified BETA package
         uses: actions/upload-artifact@v4

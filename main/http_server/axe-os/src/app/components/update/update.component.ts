@@ -1,5 +1,5 @@
-import { Component, ViewChild } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Component, OnDestroy, ViewChild } from '@angular/core';
+import { Observable, Subject, map, takeUntil } from 'rxjs';
 import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { FileUploadHandlerEvent, FileUpload } from 'primeng/fileupload';
@@ -18,7 +18,9 @@ const IGNORE_RELEASE_CHECK_WARNING = 'IGNORE_RELEASE_CHECK_WARNING';
   templateUrl: './update.component.html',
   styleUrls: ['./update.component.scss']
 })
-export class UpdateComponent {
+export class UpdateComponent implements OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private deviceInfo: SystemInfo | null = null;
 
   public firmwareUpdateProgress: number = 0;
   public websiteUpdateProgress: number = 0;
@@ -51,10 +53,20 @@ export class UpdateComponent {
     }));
 
     this.info$ = this.liveDataService.info$;
+    this.info$.pipe(takeUntil(this.destroy$)).subscribe(info => this.deviceInfo = info);
+  }
+
+  ngOnDestroy(): void { this.destroy$.next();this.destroy$.complete(); }
+  get canUpdate(): boolean {
+    return !!this.deviceInfo && this.deviceInfo.ASICModel === 'BM1370' && ['601','602'].includes(String(this.deviceInfo.boardVersion))
+      && typeof this.deviceInfo.version === 'string' && !!this.deviceInfo.version.trim()
+      && this.liveDataService.lastUpdateAt > 0 && Date.now() - this.liveDataService.lastUpdateAt <= 15000;
   }
 
   otaUpdate(event: FileUploadHandlerEvent) {
+    if (!this.canUpdate) {this.toastrService.error('A fresh Gamma 601/602 device identity is required before uploading.');return;}
     const file = event.files[0];
+    if (!file) return;
     this.firmwareUpload.clear(); // clear the file upload component
 
     if (file.name != 'esp-miner.bin') {
@@ -76,9 +88,8 @@ export class UpdateComponent {
             this.firmwareUpdateProgress = Math.round((event.loaded / (event.total as number)) * 100);
           } else if (event.type === HttpEventType.Response) {
             if (event.ok) {
-              this.toastrService.success('Device restarted');
               this.updateStatus = 'success';
-              this.updateMessage = 'Firmware updated. Device has been successfully restarted.';
+              this.updateMessage = 'Application uploaded. Wait for the miner to restart and reconnect.';
             } else {
               this.updateStatus = 'error';
               this.updateMessage = event.statusText || 'An unknown error occurred.';
@@ -101,7 +112,9 @@ export class UpdateComponent {
   }
 
   otaWWWUpdate(event: FileUploadHandlerEvent) {
+    if (!this.canUpdate) {this.toastrService.error('A fresh Gamma 601/602 device identity is required before uploading.');return;}
     const file = event.files[0];
+    if (!file) return;
     this.websiteUpload.clear(); // clear the file upload component
 
     if (file.name != 'www.bin') {

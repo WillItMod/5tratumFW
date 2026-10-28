@@ -16,6 +16,9 @@ class HashrateDisplayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="5tratumfw-hashrate-") as temporary:
             directory = Path(temporary)
             (directory / "esp_err.h").write_text("typedef int esp_err_t;\n")
+            (directory / "freertos").mkdir()
+            for name in ("FreeRTOS.h", "task.h"):
+                (directory / "freertos" / name).write_text("#pragma once\n")
             for name in ("esp_heap_caps.h", "esp_log.h", "esp_timer.h", "asic.h", "utils.h"):
                 (directory / name).write_text('#include "hashrate_runtime_stubs.h"\n')
             binary = directory / "hashrate-test"

@@ -19,12 +19,21 @@ SRCS
     "work_queue.c"
     "lv_font_portfolio-6x8.c"
     "logo.c"
+    "images/generated/bitaxe_background.c"
+    "images/generated/bitaxe_logo_large.c"
+    "images/fonts/ui_font_DigitalNumbers16.c"
+    "images/fonts/ui_font_DigitalNumbers28.c"
+    "images/fonts/ui_font_OpenSansBold13.c"
+    "images/fonts/ui_font_OpenSansBold14.c"
+    "images/fonts/ui_font_AngelWish40.c"
     "./bap/bap.c"
     "./bap/bap_protocol.c"
     "./bap/bap_uart.c"
     "./bap/bap_handlers.c"
     "./bap/bap_subscription.c"
+    "device_pins.c"
     "device_config.c"
+    "setup_ble.c"
     "task_monitor.c"
     "./http_server/http_server.c"
     "./http_server/mining_schedule_api.c"
@@ -64,6 +73,7 @@ SRCS
     "./power/vcore.c"
     "./power/asic_reset.c"
     "./power/asic_init.c"
+    "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
 
 INCLUDE_DIRS
     "."
@@ -72,33 +82,38 @@ INCLUDE_DIRS
     "http_server/axe-os/api/system"
     "self_test"
     "bap"
-    "../components/asic/include"
-    "../components/connect/include"
-    "../components/dns_server/include"
-    "../components/stratum/include"
     "thermal"
     "power"
+    "${CMAKE_CURRENT_BINARY_DIR}"
+
+REQUIRES
+    "asic"
+    "connect"
+    "dns_server"
+    "stratum"
+    "stratum_v2"
 
 PRIV_REQUIRES
     "app_update"
-    "driver"
     "esp_adc"
     "esp_app_format"
+    "esp_driver_gpio"
     "esp_event"
     "esp_http_server"
+    "esp_lcd"
     "esp_netif"
     "esp_psram"
     "esp_timer"
     "esp_wifi"
-    "json"
     "mbedtls"
     "nvs_flash"
     "spiffs"
     "vfs"
     "esp_driver_i2c"
+    "esp_driver_uart"
     "tcp_transport"
-    "stratum_v2"
     "esp_mm"
+    "bt"
 
 EMBED_FILES "http_server/recovery_page.html"
 )
@@ -107,11 +122,28 @@ idf_build_set_property(COMPILE_OPTIONS "-DLV_CONF_INCLUDE_SIMPLE=1" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-DLV_CONF_PATH=\"${CMAKE_SOURCE_DIR}/main/lv_conf.h\"" APPEND)
 
 set(WEB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/http_server/axe-os")
+file(GLOB_RECURSE WEB_EMBED_PAYLOADS CONFIGURE_DEPENDS
+    "${WEB_SRC_DIR}/dist/axe-os/*")
 
 if("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
     message(STATUS "Running on GitHub Actions. Web ui will be prebuilt.")
 
-    spiffs_create_partition_image(www ${WEB_SRC_DIR}/dist/axe-os FLASH_IN_PROJECT)
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c" "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        COMMAND ${PYTHON} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+                "${WEB_SRC_DIR}/dist/axe-os"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        DEPENDS "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py" ${WEB_EMBED_PAYLOADS}
+        COMMENT "Generating embedded Web UI source files (CI)"
+        VERBATIM
+    )
+
+    # Make the binary compile depend on the generated source file in CI
+    add_custom_target(web_ui_gen DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c")
+    add_dependencies(${COMPONENT_LIB} web_ui_gen)
+
+
 else()
     find_program(NPM_EXECUTABLE npm)
     if(NOT NPM_EXECUTABLE AND NOT EXISTS ${WEB_SRC_DIR}/dist)
@@ -134,10 +166,11 @@ else()
         USES_TERMINAL
     )
 
-    # Collect all frontend source files to track dependencies
+    # Collect all frontend source files to track dependencies (excluding auto-generated code)
     file(GLOB_RECURSE WEB_UI_SOURCES
         "${WEB_SRC_DIR}/src/*.*"
     )
+    list(FILTER WEB_UI_SOURCES EXCLUDE REGEX "/generated/")
 
     # Also track build configuration files
     list(APPEND WEB_UI_SOURCES
@@ -153,8 +186,8 @@ else()
 
     # Use a stamp file to track when the build was last done
     set(WEB_UI_STAMP "${CMAKE_BINARY_DIR}/web_ui_build.stamp")
-    # Track version.txt which is generated last and doesn't get deleted
-    set(WEB_UI_OUTPUT "${WEB_SRC_DIR}/dist/axe-os/version.txt")
+    # Track index.html.gz which is generated as part of the build
+    set(WEB_UI_OUTPUT "${WEB_SRC_DIR}/dist/axe-os/index.html.gz")
 
     # Custom command that only runs when source files change
     add_custom_command(
@@ -176,5 +209,25 @@ else()
 
     add_dependencies(${COMPONENT_LIB} web_ui_dist)
 
-    spiffs_create_partition_image(www ${WEB_SRC_DIR}/dist/axe-os FLASH_IN_PROJECT DEPENDS web_ui_dist)
+    # Generate embedded C files from the build output directory
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c" "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        COMMAND ${PYTHON} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+                "${WEB_SRC_DIR}/dist/axe-os"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        DEPENDS ${WEB_UI_STAMP} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py" ${WEB_EMBED_PAYLOADS}
+        COMMENT "Generating embedded Web UI source files"
+        VERBATIM
+    )
+
+    # In local build, make the component depend on the generated file too
+    add_custom_target(web_ui_gen DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c")
+    add_dependencies(${COMPONENT_LIB} web_ui_gen)
+
+
 endif()
+
+# Retain the existing matched WWW OTA image and partition geometry while the
+# v2.15 base also embeds the same 5tratumFW payload in the application.
+spiffs_create_partition_image(www ${WEB_SRC_DIR}/dist/axe-os FLASH_IN_PROJECT)

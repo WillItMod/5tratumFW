@@ -18,7 +18,10 @@ typedef unsigned TickType_t;
 #define taskEXIT_CRITICAL(lock) ((void)(lock))
 typedef struct { unsigned marker; } sv2_conn_t;
 typedef struct { unsigned count; char message[64]; } PoolTestRejectedReason;
+typedef struct {char *url,*user,*pass,*cert,*sv2_authority_pubkey;uint16_t port,tls,difficulty,sv2_channel_type;stratum_protocol_t protocol;bool extranonce_subscribe,decode_coinbase_tx,sv2_require_auth;} PoolConfig;
 typedef struct {
+    PoolConfig pools[8];
+    uint16_t primary_pool_index,secondary_pool_index;
     char *pool_url, *pool_user, *pool_pass, *pool_cert;
     char *fallback_pool_url, *fallback_pool_user, *fallback_pool_pass, *fallback_pool_cert;
     uint16_t pool_port, pool_tls, pool_difficulty, fallback_pool_port, fallback_pool_tls, fallback_pool_protocol;
@@ -30,7 +33,7 @@ typedef struct {
     unsigned rejected_reason_stats_count;
     PoolTestRejectedReason rejected_reason_stats[10];
 } SystemModule;
-typedef struct {
+typedef struct GlobalState {
     DeviceConfig DEVICE_CONFIG;
     SystemModule SYSTEM_MODULE;
     stratum_protocol_t stratum_protocol;

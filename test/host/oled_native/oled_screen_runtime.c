@@ -11,6 +11,9 @@ uint64_t host_rate_sample_us=9000000;
 uint32_t host_random_calls;
 /* The legacy image declarations link, but compact runtime uses established new mark. */
 const lv_img_dsc_t osmu_logo={0}, identify_text={0};
+const lv_img_dsc_t bitaxe_logo={0}, bitaxe_logo_large={0}, bitaxe_background={0};
+const lv_font_t ui_font_DigitalNumbers16={0}, ui_font_DigitalNumbers28={0};
+const lv_font_t ui_font_OpenSansBold13={0}, ui_font_OpenSansBold14={0}, ui_font_AngelWish40={0};
 #include "../../../main/screen.c"
 static uint8_t buffer[128*32/8+8];
 static void flush(lv_display_t *display,const lv_area_t *area,uint8_t *pixels)

@@ -68,6 +68,7 @@ export class PoolComponent implements OnInit, OnDestroy {
   public selectedPool: PoolType = 'stratum';
   public showPassword = { 'stratum': false, 'fallbackStratum': false };
   public showAdvancedOptions = { 'stratum': false, 'fallbackStratum': false };
+  public authRequirementSupported = { 'stratum': false, 'fallbackStratum': false };
 
   public tlsOptions: ITlsOption[] = [
     { value: 0, label: 'No TLS' },
@@ -107,6 +108,8 @@ export class PoolComponent implements OnInit, OnDestroy {
         // A telemetry update must never replace an edited connection draft.
         if (this.form) return;
         this.asicModel = info.ASICModel || '';
+        this.authRequirementSupported.stratum = typeof info.stratumV2RequireAuth === 'boolean';
+        this.authRequirementSupported.fallbackStratum = typeof info.fallbackStratumV2RequireAuth === 'boolean';
         this.form = this.fb.group({
           stratumURL: [info.stratumURL, [
             Validators.required,
@@ -120,6 +123,7 @@ export class PoolComponent implements OnInit, OnDestroy {
           ]],
           stratumProtocol: [info.stratumProtocol || 'SV1'],
           stratumV2AuthorityPubkey: [info.stratumV2AuthorityPubkey || '', [this.base58Validator()]],
+          stratumV2RequireAuth: [{value:info.stratumV2RequireAuth ?? false,disabled:!this.authRequirementSupported.stratum}],
           stratumExtranonceSubscribe: [info.stratumExtranonceSubscribe == true, [Validators.required]],
           stratumSuggestedDifficulty: [info.stratumSuggestedDifficulty, [Validators.required]],
           stratumUser: [info.stratumUser, [Validators.required]],
@@ -145,6 +149,7 @@ export class PoolComponent implements OnInit, OnDestroy {
           fallbackStratumPassword: ['*****', [Validators.required]],
           fallbackStratumProtocol: [info.fallbackStratumProtocol || 'SV1'],
           fallbackStratumV2AuthorityPubkey: [info.fallbackStratumV2AuthorityPubkey || '', [this.base58Validator()]],
+          fallbackStratumV2RequireAuth: [{value:info.fallbackStratumV2RequireAuth ?? false,disabled:!this.authRequirementSupported.fallbackStratum}],
           stratumV2ChannelType: [info.stratumV2ChannelType || 'standard'],
           fallbackStratumV2ChannelType: [info.fallbackStratumV2ChannelType || 'standard']
         });
@@ -335,7 +340,8 @@ export class PoolComponent implements OnInit, OnDestroy {
     if (isMux && !this.reviewedPatch) return;
     if (!isMux && (!this.selectedRouteDirty || this.selectedRouteInvalid)) return;
     const submittedValues = this.form.getRawValue();
-    const patch = isMux ? { ...this.reviewedPatch! } : Object.fromEntries(Object.entries(submittedValues).filter(([key]) => key.startsWith(this.selectedPool)));
+    const patch = isMux ? { ...this.reviewedPatch! } : Object.fromEntries(Object.entries(submittedValues).filter(([key,value]) => key.startsWith(this.selectedPool)
+      && (!key.endsWith('V2RequireAuth') || this.authRequirementSupported[this.selectedPool] && value !== this.connectionBaseline[key])));
     if (patch['stratumPassword'] === '*****') delete patch['stratumPassword'];
     if (patch['fallbackStratumPassword'] === '*****') delete patch['fallbackStratumPassword'];
     const savedMuxTarget = isMux ? { ...this.muxConnection } : undefined;

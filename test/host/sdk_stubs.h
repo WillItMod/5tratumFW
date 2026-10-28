@@ -69,11 +69,11 @@ typedef void *httpd_handle_t;
 // Avoid the unrelated networking/mining graph while retaining actual board profiles.
 #define GLOBAL_STATE_H_
 #include "device_config.h"
-typedef struct {
+typedef struct SystemModule {
     bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable, overheat_mode;
     char hardware_fault_msg[64];
 } SystemModule;
-typedef struct { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; bool ASIC_initalized; struct { bool is_active; } SELF_TEST_MODULE; } GlobalState;
+typedef struct GlobalState { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; bool ASIC_initalized; struct { bool is_active; } SELF_TEST_MODULE; } GlobalState;
 #define STRATUM_V1 "SV1"
 #define STRATUM_V2 "SV2"
 #define SV2_CHANNEL_TYPE_STANDARD "standard"
@@ -98,5 +98,18 @@ typedef struct { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; bool AS
 #define CONFIG_FALLBACK_STRATUM_CERT ""
 #define CONFIG_ASIC_FREQUENCY 525
 #define CONFIG_ASIC_VOLTAGE 1150
+
+
+__attribute__((weak)) const BapPins DEFAULT_BAP_PINS={0};
+__attribute__((weak)) const I2cPins DEFAULT_I2C_PINS={0};
+__attribute__((weak)) const I2cPins BITAXE_COLOR_I2C_PINS={0};
+__attribute__((weak)) const I80Pins ST7789_I80_PINS={0};
+__attribute__((weak)) esp_err_t device_pins_init(DevicePins *pins){return pins?ESP_OK:ESP_ERR_INVALID_ARG;}
+#include "../../main/power/TPS546.h"
+__attribute__((weak)) const TPS546_CONFIG TPS546_CONFIG_DEFAULT={0};
+__attribute__((weak)) const TPS546_CONFIG TPS546_CONFIG_HEX={0};
+__attribute__((weak)) const TPS546_CONFIG TPS546_CONFIG_GAMMA_TURBO={0};
+__attribute__((weak)) const TPS546_CONFIG TPS546_CONFIG_NAJA_DUO={0};
+__attribute__((weak)) const TPS546_CONFIG TPS546_CONFIG_GAMMA_HEX={0};
 
 #endif

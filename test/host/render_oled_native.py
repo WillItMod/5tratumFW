@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Build and render production OLED layout with actual LVGL9.3, without ESP/hardware."""
+"""Build and render production OLED layout with actual LVGL9, without ESP/hardware."""
 from pathlib import Path
 import json
 import os
 import subprocess
 import shutil
+import re
 from PIL import Image, ImageDraw
 
 ROOT=Path(__file__).resolve().parents[2]
-BUILD=ROOT/".cache/oled-native"
+BUILD=Path(os.environ.get("FIVETRATUM_OLED_BUILD", str(ROOT/".cache/oled-native"))).resolve()
+LVGL_SOURCE=Path(os.environ.get("FIVETRATUM_OLED_LVGL_SOURCE", str(ROOT/"managed_components/lvgl__lvgl"))).resolve()
+LVGL_VERSION_HEADER=(LVGL_SOURCE/"lv_version.h").read_text()
+LVGL_VERSION=".".join(re.search(rf"^#define LVGL_VERSION_{part}\s+(\d+)", LVGL_VERSION_HEADER, re.M).group(1)
+                      for part in ("MAJOR", "MINOR", "PATCH"))
 OUT=BUILD/"output"
 OUT.mkdir(parents=True,exist_ok=True)
 cmake = shutil.which("cmake")
@@ -16,7 +21,7 @@ if not cmake:
     raise SystemExit("CMake is required on PATH")
 env=dict(os.environ,ASAN_OPTIONS="detect_leaks=0:halt_on_error=1",UBSAN_OPTIONS="halt_on_error=1")
 subprocess.run([cmake,"-S",str(ROOT/"test/host/oled_native"),"-B",str(BUILD),
-                "-DCMAKE_BUILD_TYPE=Debug"],check=True,env=env)
+                "-DCMAKE_BUILD_TYPE=Debug",f"-DFIVETRATUM_OLED_LVGL_SOURCE={LVGL_SOURCE}"],check=True,env=env)
 subprocess.run([cmake,"--build",str(BUILD),"-j","8"],check=True,env=env)
 result=subprocess.run([str(BUILD/"oled_native"),str(OUT)],check=True,capture_output=True,text=True,env=env)
 print(result.stdout)
@@ -51,7 +56,8 @@ for index in range(6):
     donuts.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(x,y+22))
 donuts.save(OUT/"oled-candidate-contact-sheet.png")
 (OUT/"oled-native-report.json").write_text(json.dumps({
-    "fixtureOnly":True,"hardwareCalls":False,"runtimeDependencies":"Managed LVGL9.3 and production portfolio font",
+    "fixtureOnly":True,"hardwareCalls":False,"runtimeDependencies":"Actual LVGL9 and production portfolio font",
+    "lvglVersion":LVGL_VERSION,
     "targetConfiguration":"main/lv_conf.h; host only substitutes OS NONE and libc allocator",
     "sanitizers":["ASan","UBSan"],"views":images,"stdout":result.stdout+runtime.stdout,
 },indent=2)+"\n")

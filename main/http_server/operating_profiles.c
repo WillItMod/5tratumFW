@@ -4,7 +4,7 @@
 #include "protocol_coordinator.h"
 #include "esp_app_desc.h"
 #include "esp_mac.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 #include "nvs.h"
 #include <math.h>
 #include <stdlib.h>
@@ -22,9 +22,10 @@ static pthread_mutex_t profiles_mutex = PTHREAD_MUTEX_INITIALIZER;
 __attribute__((weak)) bool operating_profile_pool_referenced(unsigned slot) { (void)slot; return false; }
 __attribute__((weak)) bool operating_profile_tuning_referenced(unsigned slot) { (void)slot; return false; }
 
-static const char *pool_fields[] = {"protocol", "host", "port", "user", "password", "suggestedDifficulty", "extranonceSubscribe", "tls", "certificate", "channelType", "authorityPubkey", "decodeCoinbase"};
-static const NvsConfigKey pool_keys[] = {NVS_CONFIG_STRATUM_PROTOCOL, NVS_CONFIG_STRATUM_URL, NVS_CONFIG_STRATUM_PORT, NVS_CONFIG_STRATUM_USER, NVS_CONFIG_STRATUM_PASS, NVS_CONFIG_STRATUM_DIFFICULTY, NVS_CONFIG_STRATUM_EXTRANONCE_SUBSCRIBE, NVS_CONFIG_STRATUM_TLS, NVS_CONFIG_STRATUM_CERT, NVS_CONFIG_SV2_CHANNEL_TYPE, NVS_CONFIG_SV2_AUTHORITY_PUBKEY, NVS_CONFIG_STRATUM_DECODE_COINBASE_TX};
-static const NvsConfigKey fallback_keys[] = {NVS_CONFIG_FALLBACK_STRATUM_PROTOCOL, NVS_CONFIG_FALLBACK_STRATUM_URL, NVS_CONFIG_FALLBACK_STRATUM_PORT, NVS_CONFIG_FALLBACK_STRATUM_USER, NVS_CONFIG_FALLBACK_STRATUM_PASS, NVS_CONFIG_FALLBACK_STRATUM_DIFFICULTY, NVS_CONFIG_FALLBACK_STRATUM_EXTRANONCE_SUBSCRIBE, NVS_CONFIG_FALLBACK_STRATUM_TLS, NVS_CONFIG_FALLBACK_STRATUM_CERT, NVS_CONFIG_FALLBACK_SV2_CHANNEL_TYPE, NVS_CONFIG_FALLBACK_SV2_AUTHORITY_PUBKEY, NVS_CONFIG_FALLBACK_STRATUM_DECODE_COINBASE_TX};
+static const char *pool_fields[] = {"protocol", "host", "port", "user", "password", "suggestedDifficulty", "extranonceSubscribe", "tls", "certificate", "channelType", "authorityPubkey", "decodeCoinbase", "sv2RequireAuth"};
+static const NvsConfigKey pool_keys[] = {NVS_CONFIG_STRATUM_PROTOCOL, NVS_CONFIG_STRATUM_URL, NVS_CONFIG_STRATUM_PORT, NVS_CONFIG_STRATUM_USER, NVS_CONFIG_STRATUM_PASS, NVS_CONFIG_STRATUM_DIFFICULTY, NVS_CONFIG_STRATUM_EXTRANONCE_SUBSCRIBE, NVS_CONFIG_STRATUM_TLS, NVS_CONFIG_STRATUM_CERT, NVS_CONFIG_SV2_CHANNEL_TYPE, NVS_CONFIG_SV2_AUTHORITY_PUBKEY, NVS_CONFIG_STRATUM_DECODE_COINBASE_TX, NVS_CONFIG_SV2_REQUIRE_AUTH};
+static const NvsConfigKey fallback_keys[] = {NVS_CONFIG_FALLBACK_STRATUM_PROTOCOL, NVS_CONFIG_FALLBACK_STRATUM_URL, NVS_CONFIG_FALLBACK_STRATUM_PORT, NVS_CONFIG_FALLBACK_STRATUM_USER, NVS_CONFIG_FALLBACK_STRATUM_PASS, NVS_CONFIG_FALLBACK_STRATUM_DIFFICULTY, NVS_CONFIG_FALLBACK_STRATUM_EXTRANONCE_SUBSCRIBE, NVS_CONFIG_FALLBACK_STRATUM_TLS, NVS_CONFIG_FALLBACK_STRATUM_CERT, NVS_CONFIG_FALLBACK_SV2_CHANNEL_TYPE, NVS_CONFIG_FALLBACK_SV2_AUTHORITY_PUBKEY, NVS_CONFIG_FALLBACK_STRATUM_DECODE_COINBASE_TX, NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH};
+#define POOL_FIELD_COUNT (sizeof(pool_fields) / sizeof(pool_fields[0]))
 
 static bool text(const cJSON *item, size_t min, size_t max)
 {
@@ -80,7 +81,9 @@ static bool pool_valid(const cJSON *profile)
         !cJSON_IsString(certificate) || strlen(certificate->valuestring) > 2048 ||
         !integer(cJSON_GetObjectItemCaseSensitive(profile, "port"), 1, UINT16_MAX) || !integer(cJSON_GetObjectItemCaseSensitive(profile, "suggestedDifficulty"), 0, UINT16_MAX) ||
         !integer(cJSON_GetObjectItemCaseSensitive(profile, "tls"), 0, 2)) return false;
-    return cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(profile, "extranonceSubscribe")) && cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(profile, "decodeCoinbase"));
+    const cJSON *require_auth = cJSON_GetObjectItemCaseSensitive(profile, "sv2RequireAuth");
+    return cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(profile, "extranonceSubscribe")) && cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(profile, "decodeCoinbase")) &&
+        (!require_auth || cJSON_IsBool(require_auth));
 }
 static void slot_key(bool pool, unsigned slot, char key[8]) { snprintf(key, 8, "%c%u", pool ? 'p' : 't', slot); }
 static esp_err_t read_slot(bool pool, unsigned slot, cJSON **profile)
@@ -147,7 +150,11 @@ cJSON *operating_profiles_binding(void)
     unsigned char bytes[sizeof(prefix) + 6]; memcpy(bytes, prefix, sizeof(prefix));
     if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) { cJSON_Delete(root); return NULL; }
     memcpy(bytes + sizeof(prefix), mac, 6);
-    if (mbedtls_sha256(bytes, sizeof(bytes), digest, 0) != 0) { cJSON_Delete(root); return NULL; }
+    size_t digest_length=0;
+    // Keep binding independent of protocol startup. PSA initialization is
+    // idempotent and must succeed before reading the identity digest.
+    if(psa_crypto_init()!=PSA_SUCCESS) { cJSON_Delete(root); return NULL; }
+    if (psa_hash_compute(PSA_ALG_SHA_256,bytes,sizeof(bytes),digest,sizeof(digest),&digest_length)!=PSA_SUCCESS || digest_length!=sizeof(digest)) { cJSON_Delete(root); return NULL; }
     for (int i = 0; i < 16; i++) snprintf(id + 5 + i * 2, 3, "%02x", digest[i]);
     cJSON *identity = cJSON_AddObjectToObject(root, "identity"), *hardware = cJSON_AddObjectToObject(root, "hardware"), *firmware = cJSON_AddObjectToObject(root, "firmware");
     char *board = nvs_config_get_string(NVS_CONFIG_BOARD_VERSION); char model[32];
@@ -176,10 +183,12 @@ static cJSON *get_profiles(void)
         if (!view || !cJSON_AddNumberToObject(view, "slot", slot) || !cJSON_AddBoolToObject(view, "configured", configured)) { cJSON_Delete(view); cJSON_Delete(profile); goto failed; }
         if (configured) {
             const char *const tuning_fields[] = {"name", "frequencyMHz", "coreVoltageMv"};
-            for (size_t field = 0; field < (type == 1 ? 13 : 3); field++) {
-                const char *key = type == 1 ? field == 12 ? "name" : pool_fields[field] : tuning_fields[field];
+            for (size_t field = 0; field < (type == 1 ? POOL_FIELD_COUNT + 1 : 3); field++) {
+                const char *key = type == 1 ? field == POOL_FIELD_COUNT ? "name" : pool_fields[field] : tuning_fields[field];
                 if (!strcmp(key, "password")) continue;
-                cJSON *copy = cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(profile, key), true);
+                const cJSON *value = cJSON_GetObjectItemCaseSensitive(profile, key);
+                if (!value && !strcmp(key, "sv2RequireAuth")) continue; // Legacy slot; absence preserves destination auth.
+                cJSON *copy = cJSON_Duplicate(value, true);
                 if (!copy || !cJSON_AddItemToObject(view, key, copy)) { cJSON_Delete(copy); cJSON_Delete(view); cJSON_Delete(profile); goto failed; }
             }
             if (type == 1 && !cJSON_AddBoolToObject(view, "passwordConfigured", cJSON_GetObjectItemCaseSensitive(profile, "password")->valuestring[0] != 0)) { cJSON_Delete(view); cJSON_Delete(profile); goto failed; }
@@ -216,8 +225,10 @@ static bool pool_hash(const cJSON *profile, uint32_t *hash)
     if (!hash || !pool_valid(profile)) return false;
     cJSON *normalized = cJSON_CreateObject();
     if (!normalized) return false;
-    for (size_t i = 0; i < 12; i++) {
-        cJSON *copy = cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(profile, pool_fields[i]), true);
+    for (size_t i = 0; i < POOL_FIELD_COUNT; i++) {
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(profile, pool_fields[i]);
+        if (!value && !strcmp(pool_fields[i], "sv2RequireAuth")) continue;
+        cJSON *copy = cJSON_Duplicate(value, true);
         if (!copy || !cJSON_AddItemToObject(normalized, pool_fields[i], copy)) { cJSON_Delete(copy); cJSON_Delete(normalized); return false; }
     }
     char *serialized = cJSON_PrintUnformatted(normalized); cJSON_Delete(normalized);
@@ -235,6 +246,22 @@ bool operating_profile_current_pool_hash(bool fallback, uint32_t *hash)
     pthread_mutex_lock(&profiles_mutex); cJSON *profile = capture_pool(fallback);
     bool available = profile && pool_hash(profile, hash);
     cJSON_Delete(profile); pthread_mutex_unlock(&profiles_mutex); return available;
+}
+bool operating_profile_pool_matches(unsigned slot, bool fallback, bool *matches)
+{
+    if (!matches) return false;
+    pthread_mutex_lock(&profiles_mutex);
+    cJSON *profile = NULL, *current = NULL;
+    bool available = read_slot(true, slot, &profile) == ESP_OK && pool_valid(profile);
+    if (available) current = capture_pool(fallback);
+    if (current && !cJSON_GetObjectItemCaseSensitive(profile, "sv2RequireAuth"))
+        cJSON_DeleteItemFromObjectCaseSensitive(current, "sv2RequireAuth");
+    uint32_t desired_hash, current_hash;
+    available = available && current && pool_hash(profile, &desired_hash) && pool_hash(current, &current_hash);
+    if (available) *matches = desired_hash == current_hash;
+    cJSON_Delete(profile); cJSON_Delete(current);
+    pthread_mutex_unlock(&profiles_mutex);
+    return available;
 }
 static esp_err_t with_slots(bool pool, uint16_t slot_mask, esp_err_t (*commit)(void *), void *context)
 {
@@ -280,15 +307,18 @@ esp_err_t operating_profile_apply_tuning_guarded(unsigned slot, bool (*allow)(vo
 static esp_err_t apply_pool(const cJSON *profile, bool fallback)
 {
     if (!pool_valid(profile)) return ESP_ERR_INVALID_ARG;
-    NvsConfigMutation changes[12];
-    for (size_t i = 0; i < 12; i++) {
-        changes[i].key = fallback ? fallback_keys[i] : pool_keys[i]; changes[i].type = nvs_config_get_settings(changes[i].key)->type;
+    NvsConfigMutation changes[POOL_FIELD_COUNT];
+    size_t count = 0;
+    for (size_t i = 0; i < POOL_FIELD_COUNT; i++) {
         cJSON *value = cJSON_GetObjectItemCaseSensitive(profile, pool_fields[i]);
-        if (changes[i].type == TYPE_STR) changes[i].value.str = value->valuestring;
-        else if (changes[i].type == TYPE_BOOL) changes[i].value.b = cJSON_IsTrue(value);
-        else changes[i].value.u16 = value->valueint;
+        if (!value && !strcmp(pool_fields[i], "sv2RequireAuth")) continue;
+        changes[count].key = fallback ? fallback_keys[i] : pool_keys[i]; changes[count].type = nvs_config_get_settings(changes[count].key)->type;
+        if (changes[count].type == TYPE_STR) changes[count].value.str = value->valuestring;
+        else if (changes[count].type == TYPE_BOOL) changes[count].value.b = cJSON_IsTrue(value);
+        else changes[count].value.u16 = value->valueint;
+        count++;
     }
-    esp_err_t error = nvs_config_apply_atomic(changes, 12);
+    esp_err_t error = nvs_config_apply_atomic(changes, count);
     if (error == ESP_OK && !fallback) protocol_coordinator_request_primary_reload(state);
     return error;
 }
@@ -335,7 +365,7 @@ static esp_err_t post_handler(httpd_req_t *req)
 {
     if (!allowed(req)) return ESP_OK;
     cJSON *body = read_body(req); if (!body) return ESP_OK;
-    static const char *const fields[] = {"type", "slot", "name", "clear", "captureCurrent", "frequencyMHz", "coreVoltageMv", "protocol", "host", "port", "user", "password", "suggestedDifficulty", "extranonceSubscribe", "tls", "certificate", "channelType", "authorityPubkey", "decodeCoinbase"};
+    static const char *const fields[] = {"type", "slot", "name", "clear", "captureCurrent", "frequencyMHz", "coreVoltageMv", "protocol", "host", "port", "user", "password", "suggestedDifficulty", "extranonceSubscribe", "tls", "certificate", "channelType", "authorityPubkey", "decodeCoinbase", "sv2RequireAuth"};
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(body, "type"), *slot_json = cJSON_GetObjectItemCaseSensitive(body, "slot");
     bool valid = exact_fields(body, fields, sizeof(fields) / sizeof(fields[0])) && text(type, 4, 6) && (!strcmp(type->valuestring, "pool") || !strcmp(type->valuestring, "tuning")) && integer(slot_json, 0, 9);
     if (!valid) { cJSON_Delete(body); return error_response(req, "400 Bad Request", "invalid-profile"); }
@@ -353,7 +383,7 @@ static esp_err_t post_handler(httpd_req_t *req)
                 esp_err_t old = read_slot(true, slot, &profile);
                 if (old == ESP_ERR_NVS_NOT_FOUND) profile = cJSON_CreateObject();
             }
-            if (profile) for (size_t i = 0; i < (pool ? 12 : 2); i++) {
+            if (profile) for (size_t i = 0; i < (pool ? POOL_FIELD_COUNT : 2); i++) {
                 const char *field = pool ? pool_fields[i] : i == 0 ? "frequencyMHz" : "coreVoltageMv";
                 cJSON *value = cJSON_GetObjectItemCaseSensitive(body, field);
                 if (value) { cJSON_DeleteItemFromObjectCaseSensitive(profile, field); cJSON *copy = cJSON_Duplicate(value, true); if (!copy || !cJSON_AddItemToObject(profile, field, copy)) { cJSON_Delete(copy); cJSON_Delete(profile); profile = NULL; break; } }

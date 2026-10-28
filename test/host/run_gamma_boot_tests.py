@@ -103,12 +103,12 @@ class GammaBootTests(unittest.TestCase):
         nvs_guard = source.index("if (nvs_config_init() != ESP_OK)")
         board_guard = source.index("if (device_config_init(&GLOBAL_STATE) != ESP_OK)")
         self.assertLess(nvs_guard, board_guard)
-        for hardware in ("i2c_bitaxe_init()", "asic_hold_reset_low()", "ADC_init()",
+        for hardware in ("i2c_bitaxe_init(", "asic_hold_reset_low()", "ADC_init()",
                          "self_test_init(&GLOBAL_STATE)", "SYSTEM_init_peripherals(&GLOBAL_STATE)",
                          "asic_initialize(&GLOBAL_STATE, ASIC_INIT_COLD_BOOT, 0)"):
             with self.subTest(hardware=hardware):
                 self.assertLess(board_guard, source.index(hardware))
-        guarded_block = source[board_guard:source.index("i2c_bitaxe_init()")]
+        guarded_block = source[board_guard:source.index("i2c_bitaxe_init(")]
         self.assertIn("return;", guarded_block)
 
 

@@ -23,6 +23,7 @@ export class NetworkEditComponent implements OnInit {
   public form!: FormGroup;
   public savedChanges: boolean = false;
   public scanning: boolean = false;
+  public savedHostnameUrl: string | null = null;
 
   @Input() uri = '';
 
@@ -38,7 +39,7 @@ export class NetworkEditComponent implements OnInit {
 
   }
   ngOnInit(): void {
-    this.liveDataService.info$
+    (this.uri ? this.systemService.getInfo(this.uri) : this.liveDataService.info$)
       .pipe(first(), this.loadingService.lockUIUntilComplete())
       .subscribe(info => {
         this.form = this.fb.group({
@@ -72,11 +73,12 @@ export class NetworkEditComponent implements OnInit {
     this.systemService.updateSystem(this.uri, form)
       .pipe(this.loadingService.lockUIUntilComplete())
       .subscribe({
-        next: () => {
+        next: response => {
           if (restartRequired) {
             this.toastr.warning('You must restart this device after saving for changes to take effect.');
           }
           this.toastr.success('Saved network settings');
+          this.savedHostnameUrl = this.hostnameUrl(response?.redirect?.url, form.hostname);
           this.savedChanges = restartAlreadyPending || restartRequired;
           this.form.markAsPristine();
         },
@@ -87,6 +89,15 @@ export class NetworkEditComponent implements OnInit {
       });
   }
 
+  private hostnameUrl(value: unknown, hostname: unknown): string | null {
+    if (typeof value !== 'string' || typeof hostname !== 'string' || !/^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/i.test(hostname)) return null;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' && url.hostname.toLowerCase() === `${hostname}.local`.toLowerCase()
+        && !url.username && !url.password && !url.port && url.pathname === '/' && !url.search && !url.hash ? url.href : null;
+    } catch { return null; }
+  }
+
   showWifiPassword: boolean = false;
   toggleWifiPasswordVisibility() {
     this.showWifiPassword = !this.showWifiPassword;
@@ -94,7 +105,7 @@ export class NetworkEditComponent implements OnInit {
 
   public scanWifi() {
     this.scanning = true;
-    this.http.get<{networks: WifiNetwork[]}>('/api/system/wifi/scan')
+    this.http.get<{networks: WifiNetwork[]}>(`${this.uri}/api/system/wifi/scan`)
       .pipe(
         finalize(() => this.scanning = false)
       )
@@ -140,7 +151,7 @@ export class NetworkEditComponent implements OnInit {
   }
 
   public restart() {
-    this.systemService.restart()
+    this.systemService.restart(this.uri)
       .pipe(this.loadingService.lockUIUntilComplete())
       .subscribe({
         next: () => {

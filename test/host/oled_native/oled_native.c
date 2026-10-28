@@ -6,6 +6,12 @@
 
 static uint8_t framebuffer[128*32];
 static uint8_t draw_buffer[128*32/8+8];
+static int32_t text_width(const char *text)
+{
+    lv_point_t size;
+    lv_text_get_size(&size,text,&lv_font_portfolio_6x8,0,0,LV_COORD_MAX,LV_TEXT_FLAG_NONE);
+    return size.x;
+}
 static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *map)
 {
     /* LVGL I1 palettes precede the row-aligned 1-bit pixels. */
@@ -31,7 +37,7 @@ static void save(const char *directory, const char *name, FiveTratumOledView *vi
         for (unsigned i=0;i<4;++i) {
             lv_obj_t *label=i ? view->rows[i-1] : view->title;
             const char *text=lv_label_get_text(label);
-            assert(lv_text_get_width(text,(uint32_t)strlen(text),&lv_font_portfolio_6x8,0)<=96);
+            assert(text_width(text)<=96);
             assert(lv_obj_get_y(label)+lv_obj_get_height(label)<=32);
         }
     }
@@ -69,7 +75,7 @@ static void data_tests(void)
         assert(oled_donut_variants[i].header.w==26 && oled_donut_variants[i].header.h==26);
         assert(oled_donut_variants[i].header.cf==LV_COLOR_FORMAT_I1 && oled_donut_variants[i].header.stride==4);
         assert(oled_donut_variants[i].data_size==112);
-        assert(lv_text_get_width(oled_candidate_heading(i),(uint32_t)strlen(oled_candidate_heading(i)),&lv_font_portfolio_6x8,0)<=96);
+        assert(text_width(oled_candidate_heading(i))<=96);
     }
     FiveTratumOledData d={.initialized=true,.runtime_ready=true,.rate_fresh=true,.rate_gh=1200,.power_w=18.4};
     assert(oled_rate_available(&d));

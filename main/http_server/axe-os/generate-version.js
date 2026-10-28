@@ -11,7 +11,7 @@ if (!version || Buffer.byteLength(version, 'utf8') > 31) {
 const outputPath = path.join(__dirname, 'dist', 'axe-os', 'version.txt');
 fs.writeFileSync(outputPath, version);
 fs.writeFileSync(path.join(__dirname, 'dist', 'axe-os', 'build-info.json'), JSON.stringify({
-  product: '5tratumFW', version, nodeVersion: process.versions.node, upstream: 'v2.14.2'
+  product: '5tratumFW', version, nodeVersion: process.versions.node, upstream: 'v2.15.4'
 }) + '\n');
 
 console.log(`Generated ${outputPath} with version ${version}`);

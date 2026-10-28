@@ -40,7 +40,7 @@ class PoolScheduleTests(unittest.TestCase):
             function(v2, "static void stratum_v2_release_state("),
             function(v2, "void stratum_v2_close_connection("))))
         for name in ("esp_err.h", "esp_log.h", "esp_http_server.h", "esp_netif_sntp.h", "nvs.h",
-                     "esp_timer.h", "esp_transport.h", "esp_transport_tcp.h", "connect.h",
+                     "esp_timer.h", "esp_transport.h", "esp_transport_tcp.h", "connect.h", "stratum_api.h",
                      "freertos/FreeRTOS.h", "freertos/task.h", "freertos/queue.h"):
             p = temp / name
             p.parent.mkdir(parents=True, exist_ok=True)

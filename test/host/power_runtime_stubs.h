@@ -4,13 +4,13 @@
 #include "sdk_stubs.h"
 #undef GlobalState
 #include "tasks/power_management_task.h"
-typedef struct {
+struct GlobalState {
     DeviceConfig DEVICE_CONFIG;
     SystemModule SYSTEM_MODULE;
     PowerManagementModule POWER_MANAGEMENT_MODULE;
     struct { bool is_active, is_finished; } SELF_TEST_MODULE;
     bool ASIC_initalized;
-} GlobalState;
+};
 #define portTICK_PERIOD_MS 1
 #define UART_NUM_1 1
 typedef enum { ASIC_INIT_COLD_BOOT, ASIC_INIT_RECOVERY } asic_init_mode_t;

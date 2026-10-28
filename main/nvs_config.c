@@ -16,6 +16,31 @@
 #include "theme_api.h"
 #include "scoreboard.h"
 #include "5tratumfw.h"
+#ifndef DEFAULT_COLORS
+#define DEFAULT_COLORS "{ "\
+        "\"--primary-color\":\"#F80421\", "\
+        "\"--primary-color-text\":\"#ffffff\", "\
+        "\"--highlight-bg\":\"#F80421\", "\
+        "\"--highlight-text-color\":\"#ffffff\", "\
+        "\"--focus-ring\":\"0 0 0 0.2rem rgba(248,4,33,0.2)\", "\
+        "\"--slider-bg\":\"#dee2e6\", "\
+        "\"--slider-range-bg\":\"#F80421\", "\
+        "\"--slider-handle-bg\":\"#F80421\", "\
+        "\"--progressbar-bg\":\"#dee2e6\", "\
+        "\"--progressbar-value-bg\":\"#F80421\", "\
+        "\"--checkbox-border\":\"#F80421\", "\
+        "\"--checkbox-bg\":\"#F80421\", "\
+        "\"--checkbox-hover-bg\":\"#df031d\", "\
+        "\"--button-bg\":\"#F80421\", "\
+        "\"--button-hover-bg\":\"#df031d\", "\
+        "\"--button-focus-shadow\":\"0 0 0 2px #ffffff, 0 0 0 4px #F80421\", "\
+        "\"--togglebutton-bg\":\"#F80421\", "\
+        "\"--togglebutton-border\":\"1px solid #F80421\", "\
+        "\"--togglebutton-hover-bg\":\"#df031d\", "\
+        "\"--togglebutton-hover-border\":\"1px solid #df031d\", "\
+        "\"--togglebutton-text-color\":\"#ffffff\" "\
+        "}"
+#endif
 
 #define NVS_CONFIG_NAMESPACE "main"
 #define NVS_STR_LIMIT (4000 - 1) // See nvs_set_str
@@ -125,6 +150,33 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_SELF_TEST_TEMP_WARMUP]                 = {.nvs_key_name = "selftest_warm",   .type = TYPE_U16,   .default_value = {.u16 = 55}},
     [NVS_CONFIG_SELF_TEST_TEMP_MAX]                    = {.nvs_key_name = "selftest_max",    .type = TYPE_U16,   .default_value = {.u16 = 70}},
     [NVS_CONFIG_MINING_SCHEDULE]                       = {.nvs_key_name = "mining_schedule", .type = TYPE_STR,   .default_value = {.str = "{\"enabled\":false,\"timezone\":\"UTC\",\"windows\":[]}"}},
+    [NVS_CONFIG_POOL]                                  = {.nvs_key_name = "pool",            .type = TYPE_STR,   .default_value = {.str = ""},                                          .rest_name = "pools",                              .min = 0,  .max = NVS_STR_LIMIT, .array_size = 8},
+    [NVS_CONFIG_PRIMARY_POOL_INDEX]                    = {.nvs_key_name = "prim_idx",        .type = TYPE_U16,   .default_value = {.u16 = 0},                                           .rest_name = "primaryPoolIndex",                   .min = 0,  .max = 8 - 1},
+    [NVS_CONFIG_SECONDARY_POOL_INDEX]                  = {.nvs_key_name = "sec_idx",         .type = TYPE_U16,   .default_value = {.u16 = 1},                                           .rest_name = "secondaryPoolIndex",                 .min = 0,  .max = 8 - 1},
+    [NVS_CONFIG_USE_CUSTOM_WWW]                        = {.nvs_key_name = "use_custom_www",  .type = TYPE_BOOL,  .default_value = {.b = false},                                         .rest_name = "useCustomWWW",                       .min = 0, .max = 1},
+    [NVS_CONFIG_LAST_FW_FINGERPRINT]                   = {.nvs_key_name = "last_fw_fp",      .type = TYPE_STR,   .default_value = {.str = ""}},
+    [NVS_CONFIG_THEME_COLOR]                           = {.nvs_key_name = "themecolor",      .type = TYPE_STR,   .default_value = {.str = DEFAULT_COLOR}},
+    [NVS_CONFIG_TOTAL_UPTIME]                          = {.nvs_key_name = "total_uptime",    .type = TYPE_U64},
+    [NVS_CONFIG_CUMULATIVE_HASHES_HIGH]                = {.nvs_key_name = "cum_hashes_hi",   .type = TYPE_U64},
+    [NVS_CONFIG_CUMULATIVE_HASHES_LOW]                 = {.nvs_key_name = "cum_hashes_lo",   .type = TYPE_U64},
+    [NVS_CONFIG_SELF_TEST_FAN_SPEED]                   = {.nvs_key_name = "selftest_fan",    .type = TYPE_U16,   .default_value = {.u16 = 1000}},
+    [NVS_CONFIG_TPS546_PHASE]                          = {.nvs_key_name = "tps546_phase",    .type = TYPE_U16},
+    [NVS_CONFIG_TPS546_VIN_ON]                         = {.nvs_key_name = "tps546_vin_on",   .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VIN_OFF]                        = {.nvs_key_name = "tps546_vin_off",  .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VIN_UV_WARN]                    = {.nvs_key_name = "tps546_vin_uvw",  .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VIN_OV_FAULT]                   = {.nvs_key_name = "tps546_vin_ovf",  .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_SCALE_LOOP]                     = {.nvs_key_name = "tps546_scale",    .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VOUT_MIN]                       = {.nvs_key_name = "tps546_vout_min", .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VOUT_MAX]                       = {.nvs_key_name = "tps546_vout_max", .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_VOUT_COMMAND]                   = {.nvs_key_name = "tps546_vout_cmd", .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_IOUT_OC_WARN]                   = {.nvs_key_name = "tps546_oc_warn",  .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_IOUT_OC_FAULT]                  = {.nvs_key_name = "tps546_oc_fault", .type = TYPE_FLOAT},
+    [NVS_CONFIG_TPS546_STACK_CONFIG]                   = {.nvs_key_name = "tps546_stack",   .type = TYPE_U16},
+    [NVS_CONFIG_TPS546_SYNC_CONFIG]                    = {.nvs_key_name = "tps546_sync",    .type = TYPE_U16},
+    [NVS_CONFIG_TPS546_FREQUENCY]                      = {.nvs_key_name = "tps546_freq",    .type = TYPE_U16},
+    [NVS_CONFIG_NOMINAL_VOLTAGE]                       = {.nvs_key_name = "nominal_voltage", .type = TYPE_U16},
+    [NVS_CONFIG_SV2_REQUIRE_AUTH] = {.nvs_key_name="sv2reqauth",.type=TYPE_BOOL,.rest_name="stratumV2RequireAuth",.min=0,.max=1},
+    [NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH] = {.nvs_key_name="fbsv2reqauth",.type=TYPE_BOOL,.rest_name="fallbackStratumV2RequireAuth",.min=0,.max=1},
 };
 
 Settings *nvs_config_get_settings(NvsConfigKey key)
@@ -195,13 +247,15 @@ static bool nvs_config_load_legacy(NvsConfigKey key, const Settings *setting, Co
 // once activated; original legacy keys remain intact for recovery/downgrade.
 #define OPERATING_JOURNAL_KEY "5fw_operating"
 #define OPERATING_JOURNAL_MAX 32768
-#define OPERATING_JOURNAL_COUNT (NVS_CONFIG_USE_FALLBACK_STRATUM - NVS_CONFIG_STRATUM_PROTOCOL + 4)
+#define OPERATING_JOURNAL_LEGACY_COUNT (NVS_CONFIG_USE_FALLBACK_STRATUM - NVS_CONFIG_STRATUM_PROTOCOL + 4)
+#define OPERATING_JOURNAL_COUNT (OPERATING_JOURNAL_LEGACY_COUNT + 2)
 static bool operating_journal_active;
 
 static bool operating_key(NvsConfigKey key)
 {
     return (key >= NVS_CONFIG_STRATUM_PROTOCOL && key <= NVS_CONFIG_USE_FALLBACK_STRATUM) ||
-           key == NVS_CONFIG_ASIC_FREQUENCY || key == NVS_CONFIG_ASIC_VOLTAGE || key == NVS_CONFIG_OVERCLOCK_ENABLED;
+           key == NVS_CONFIG_ASIC_FREQUENCY || key == NVS_CONFIG_ASIC_VOLTAGE || key == NVS_CONFIG_OVERCLOCK_ENABLED ||
+           key == NVS_CONFIG_SV2_REQUIRE_AUTH || key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH;
 }
 
 static void put16(uint8_t *p, uint16_t n) { p[0] = n; p[1] = n >> 8; }
@@ -258,14 +312,16 @@ static void mutations_free(NvsConfigMutation *entries, size_t count)
     for (size_t i = 0; i < count; i++) if (entries[i].type == TYPE_STR) free(entries[i].value.str);
 }
 
-static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutation *entries)
+static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutation *entries, size_t *count)
 {
     if (size < 12 || size > OPERATING_JOURNAL_MAX || memcmp(blob, "5FWJ", 4) || blob[4] != 1 ||
-        blob[5] != OPERATING_JOURNAL_COUNT || get16(blob + 6) != size || get32(blob + 8) != journal_checksum(blob + 12, size - 12)) return ESP_ERR_INVALID_STATE;
+        (blob[5] != OPERATING_JOURNAL_LEGACY_COUNT && blob[5] != OPERATING_JOURNAL_COUNT) ||
+        get16(blob + 6) != size || get32(blob + 8) != journal_checksum(blob + 12, size - 12)) return ESP_ERR_INVALID_STATE;
+    *count = blob[5];
     memset(entries, 0, sizeof(*entries) * OPERATING_JOURNAL_COUNT);
     bool seen[NVS_CONFIG_COUNT] = {0}; size_t offset = 12, read = 0;
     esp_err_t error = ESP_ERR_INVALID_STATE;
-    while (read < OPERATING_JOURNAL_COUNT) {
+    while (read < *count) {
         if (offset + 5 > size) goto failed;
         NvsConfigMutation *entry = &entries[read];
         entry->key = get16(blob + offset); entry->type = blob[offset + 2];
@@ -287,15 +343,21 @@ static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutat
         if (!mutation_valid(entry)) goto failed;
     }
     if (offset != size) goto failed;
+    // Legacy v1 snapshots contain every original key and leave the newly
+    // appended authentication settings untouched. Never rewrite them on load.
+    for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) if (operating_key(key)) {
+        bool extension = key == NVS_CONFIG_SV2_REQUIRE_AUTH || key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH;
+        if (seen[key] != (!extension || *count == OPERATING_JOURNAL_COUNT)) goto failed;
+    }
     return ESP_OK;
 failed:
-    mutations_free(entries, read + (read < OPERATING_JOURNAL_COUNT && entries[read].type == TYPE_STR && entries[read].value.str ? 1 : 0));
+    mutations_free(entries, read + (read < *count && entries[read].type == TYPE_STR && entries[read].value.str ? 1 : 0));
     return error;
 }
 
-static void journal_install(NvsConfigMutation *entries)
+static void journal_install(NvsConfigMutation *entries, size_t count)
 {
-    for (size_t i = 0; i < OPERATING_JOURNAL_COUNT; i++) {
+    for (size_t i = 0; i < count; i++) {
         Settings *setting = &settings[entries[i].key];
         if (setting->type == TYPE_STR) free(setting->value[0].str);
         setting->value[0] = entries[i].value;
@@ -312,9 +374,10 @@ static esp_err_t journal_load(void)
     if (!blob) return ESP_ERR_NO_MEM;
     error = nvs_get_blob(handle, OPERATING_JOURNAL_KEY, blob, &size);
     NvsConfigMutation entries[OPERATING_JOURNAL_COUNT];
-    if (error == ESP_OK) error = journal_decode(blob, size, entries);
+    size_t count = 0;
+    if (error == ESP_OK) error = journal_decode(blob, size, entries, &count);
     free(blob);
-    if (error == ESP_OK) { journal_install(entries); operating_journal_active = true; }
+    if (error == ESP_OK) { journal_install(entries, count); operating_journal_active = true; }
     return error;
 }
 
@@ -338,7 +401,8 @@ esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count
     uint8_t *old_blob = journal_encode(before, index, &old_size), *new_blob = journal_encode(after, index, &new_size);
     esp_err_t error = ESP_ERR_NO_MEM;
     bool prepared = false;
-    if (old_blob && new_blob) { error = journal_decode(new_blob, new_size, decoded); prepared = error == ESP_OK; }
+    size_t decoded_count = 0;
+    if (old_blob && new_blob) { error = journal_decode(new_blob, new_size, decoded, &decoded_count); prepared = error == ESP_OK; }
     nvs_handle_t writer;
     if (prepared) {
         error = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &writer);
@@ -355,8 +419,8 @@ esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count
             nvs_close(writer);
         }
     }
-    if (error == ESP_OK) { journal_install(decoded); operating_journal_active = true; }
-    else if (prepared) mutations_free(decoded, OPERATING_JOURNAL_COUNT);
+    if (error == ESP_OK) { journal_install(decoded, decoded_count); operating_journal_active = true; }
+    else if (prepared) mutations_free(decoded, decoded_count);
     free(old_blob); free(new_blob);
     xSemaphoreGive(nvs_cache_mutex);
     return error;
@@ -517,6 +581,7 @@ esp_err_t nvs_config_init(void)
         for (int idx = 0; idx < count; idx++) {
             char nvs_key[NVS_KEY_NAME_MAX_SIZE];
             get_nvs_key_name(setting, idx, nvs_key);
+            if (nvs_find_key(handle,nvs_key,NULL)==ESP_OK) setting->is_set=true;
 
             if (idx == 0 && nvs_config_load_legacy(key, setting, &setting->value[idx])) {
                 continue;
@@ -862,4 +927,10 @@ void nvs_config_set_bool(NvsConfigKey key, bool value)
 
     ConfigUpdate update = { .key = key, .type = TYPE_BOOL, .value.b = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
+}
+
+bool nvs_config_has_key(NvsConfigKey key)
+{
+    Settings *setting=nvs_config_get_settings(key);
+    return setting && setting->is_set;
 }

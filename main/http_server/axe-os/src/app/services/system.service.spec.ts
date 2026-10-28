@@ -52,6 +52,16 @@ describe('SystemApiService', () => {
   it('should be created', () => {
     expect(service).toBeTruthy();
   });
+  it('keeps selected-device discovery and authentication failures on the real API without mock fallback', () => {
+    let status=0;
+    service.getInfo('http://selected-miner.local').subscribe({error:error => status=error.status});
+    const discovery=http.expectOne('http://selected-miner.local/api/system/info');
+    expect(discovery.request.method).toBe('GET');discovery.flush({error:'unauthorized'},{status:401,statusText:'Unauthorized'});
+    expect(status).toBe(401);http.expectNone('/api/system/info');
+    service.updateSystem('http://selected-miner.local',{hostname:'new-name'}).subscribe();
+    const save=http.expectOne('http://selected-miner.local/api/system');expect(save.request.method).toBe('PATCH');
+    save.flush({status:'success',redirect:{url:'http://new-name.local',delay:2000}});
+  });
 
   it('keeps development status unknown, detached and consistent with info', fakeAsync(() => {
     let first!: FiveTratumStatusSnapshot;

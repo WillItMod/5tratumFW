@@ -4,6 +4,15 @@ This update brings the same saved tuning-profile schedule to the three existing
 firmware families. Each family retains a separate application/web pair and
 hardware qualification. No settings or schedules are installed automatically.
 
+The QAxe and OctAxe candidates migrate the Nerd derivative to shufps
+[`v1.1.1-rc1`](https://github.com/shufps/ESP-Miner-NerdQAxePlus/releases/tag/v1.1.1-rc1),
+exact commit `bfd07393918ce1b464faf1b7bd1ecd11343197f4`. This imports the
+upstream source changes, including the pinned certificate bundle, while
+retaining 5tratumFW's settings, controls, routing extensions and displays.
+Gamma migrates its separate Bitaxe ESP-Miner base to
+[`v2.15.4`](https://github.com/bitaxeorg/ESP-Miner/releases/tag/v2.15.4).
+The shufps release is not a Gamma base or a reason to interchange firmware files.
+
 | Family | Candidate | Application | Display scope |
 | --- | --- | --- | --- |
 | Bitaxe Gamma PCB 601/602 | `5tratumFW-0.1.0-beta.10` | `esp-miner.bin` | Existing 128×32 OLED |
