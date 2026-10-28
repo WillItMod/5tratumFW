@@ -10,6 +10,7 @@
 
 static const char *HR_TAG = "hashrate_monitor";
 static constexpr uint8_t REG_NONCE_TOTAL_CNT = 0x90;
+static constexpr uint8_t REG_HW_ERROR_CNT    = 0x4C;
 
 HashrateMonitor::HashrateMonitor()
 {}
@@ -29,7 +30,10 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
     std::unique_ptr<int64_t[]> times(new (std::nothrow) int64_t[count]());
     std::unique_ptr<uint32_t[]> counters(new (std::nothrow) uint32_t[count]());
     std::unique_ptr<bool[]> available(new (std::nothrow) bool[count]());
-    if (!rates || !times || !counters || !available) {
+    std::unique_ptr<float[]> errors(new (std::nothrow) float[count]());
+    std::unique_ptr<int64_t[]> errorTimes(new (std::nothrow) int64_t[count]());
+    std::unique_ptr<uint32_t[]> errorCounters(new (std::nothrow) uint32_t[count]());
+    if (!rates || !times || !counters || !available || !errors || !errorTimes || !errorCounters) {
         ESP_LOGE(HR_TAG, "start(): sample allocation failed");
         return false;
     }
@@ -47,6 +51,9 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
         m_prevResponse = times.release();
         m_prevCounter = counters.release();
         m_chipSampleAvailable = available.release();
+        m_chipErrorRate = errors.release();
+        m_prevErrorResponse = errorTimes.release();
+        m_prevErrorCounter = errorCounters.release();
         m_asicCount = count;
         if (xTaskCreatePSRAM(&HashrateMonitor::taskWrapper, "hr_monitor", 4096,
                             this, 10, nullptr) != pdPASS) {
@@ -55,10 +62,16 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
             delete[] m_prevResponse;
             delete[] m_prevCounter;
             delete[] m_chipSampleAvailable;
+            delete[] m_chipErrorRate;
+            delete[] m_prevErrorResponse;
+            delete[] m_prevErrorCounter;
             m_chipHashrate = nullptr;
             m_prevResponse = nullptr;
             m_prevCounter = nullptr;
             m_chipSampleAvailable = nullptr;
+            m_chipErrorRate = nullptr;
+            m_prevErrorResponse = nullptr;
+            m_prevErrorCounter = nullptr;
             m_board = nullptr;
             m_asic = nullptr;
             ESP_LOGE(HR_TAG, "start(): task creation failed");
@@ -82,6 +95,21 @@ float HashrateMonitor::getChipHashrate(int nr) {
         return 0.0f;
     }
     return m_chipHashrate[nr];
+}
+
+void HashrateMonitor::setChipErrorRate(int nr, float ghs) {
+    if (nr < 0 || nr >= m_asicCount) {
+        return;
+    }
+    m_chipErrorRate[nr] = ghs;
+}
+
+float HashrateMonitor::getChipErrorRate(int nr) {
+    PThreadGuard lock(m_mutex);
+    if (nr < 0 || nr >= m_asicCount) {
+        return 0.0f;
+    }
+    return m_chipErrorRate[nr];
 }
 
 float HashrateMonitor::getTotalChipHashrate() {
@@ -158,10 +186,13 @@ void HashrateMonitor::taskLoop()
             counterGeneration = operation.generation();
         }
 
-        // read the counters
+        // Keep READ_ALL bursts separate: an overlapping burst can truncate
+        // the first set of chip replies. Both reads retain one power lease.
         m_asic->readCounter(REG_NONCE_TOTAL_CNT);
+        vTaskDelay(pdMS_TO_TICKS(500));
 
-        // responses normally take 20-30ms, so this is safe
+        if (!operation.isCurrent()) continue;
+        m_asic->readCounter(REG_HW_ERROR_CNT);
         vTaskDelay(pdMS_TO_TICKS(500));
 
         if (!operation.isCurrent()) continue;
@@ -188,6 +219,9 @@ void HashrateMonitor::resetAfterPowerCycle() {
         m_prevResponse[i] = 0;
         m_prevCounter[i] = 0;
         m_chipSampleAvailable[i] = false;
+        m_chipErrorRate[i] = 0;
+        m_prevErrorResponse[i] = 0;
+        m_prevErrorCounter[i] = 0;
     }
     m_hashrate = m_smoothedHashrate = 0;
     m_median = Median<5>{};
@@ -225,4 +259,39 @@ void HashrateMonitor::onRegisterReply(uint8_t asic_idx, uint32_t counterNow)
 
     m_prevCounter[asic_idx] = counterNow;
     m_prevResponse[asic_idx] = now;
+}
+
+void HashrateMonitor::onErrorReply(uint8_t asic_idx, uint32_t counterNow)
+{
+    PThreadGuard lock(m_mutex);
+    if (asic_idx >= m_asicCount) {
+        ESP_LOGE(HR_TAG, "error response for invalid asic %d", (int) asic_idx);
+        return;
+    }
+
+    int64_t now = esp_timer_get_time();
+
+    // first response: establish baseline (the 0x4C error counter is cumulative
+    // and not reset, so the first delta is taken from here on)
+    if (!m_prevErrorResponse[asic_idx]) {
+        m_prevErrorResponse[asic_idx] = now;
+        m_prevErrorCounter[asic_idx] = counterNow;
+        return;
+    }
+
+    int64_t timeDelta = now - m_prevErrorResponse[asic_idx];       // microseconds
+    if (timeDelta <= 0) return;
+    uint32_t counterDelta = counterNow - m_prevErrorCounter[asic_idx]; // wraparound-safe
+
+    // The 0x4C error counter increments in the same 2^32-hashes-per-count unit
+    // as the 0x90 nonce counter, so we convert it to a hashrate with the exact
+    // same formula used for the valid hashrate. The result is the real "error
+    // hashrate" in GH/s, comparable to getChipHashrate(): total = valid + error.
+    double err_ghs = (timeDelta > 0)
+        ? ((double) counterDelta * (double) 0x100000000uLL / (double) timeDelta / 1000.0)
+        : 0.0;
+    setChipErrorRate(asic_idx, (float) err_ghs);
+
+    m_prevErrorCounter[asic_idx] = counterNow;
+    m_prevErrorResponse[asic_idx] = now;
 }

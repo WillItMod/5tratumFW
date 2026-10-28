@@ -125,6 +125,8 @@ CONFIG_SETTER(setSV2AuthorityPubkey)
 CONFIG_SETTER(setFallbackSV2AuthorityPubkey)
 CONFIG_SETTER(setSV2ChannelType)
 CONFIG_SETTER(setFallbackSV2ChannelType)
+CONFIG_SETTER(setSV2RequireAuth)
+CONFIG_SETTER(setFallbackSV2RequireAuth)
 CONFIG_SETTER(setCoinbaseVerifyMode)
 CONFIG_SETTER(setCoinbaseMaxFee)
 CONFIG_SETTER(setCoinbaseVerifyForce)
@@ -166,6 +168,8 @@ CONFIG_GETTER(isStratumFallbackEnonceSubscribe)
 CONFIG_GETTER(isStratumFallbackTLS)
 CONFIG_GETTER(getFallbackStratumProtocol)
 CONFIG_GETTER(getFallbackSV2ChannelType)
+CONFIG_GETTER(isSV2RequireAuth)
+CONFIG_GETTER(isFallbackSV2RequireAuth)
 CONFIG_GETTER(getFanMode)
 CONFIG_GETTER(getFanManualSpeed)
 CONFIG_GETTER(getFanOverheatTemp)
@@ -208,6 +212,7 @@ struct Board {
     std::vector<uint32_t> getVoltageOptions() { return {1100, 1150}; }
     int getNumFans() { return 2; }
     const char *getFanLabel(int) { return "fixture-fan"; }
+    uint16_t getFanMode(int) { return 1; }
     PidSettings *getPidSettings(int) { static PidSettings pid; return &pid; }
 };
 struct System {

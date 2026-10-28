@@ -34,6 +34,7 @@ bool savePoolSchedule(JsonObjectConst s){if(failWrite)return false;schedule.set(
 }
 int main(){
     assert(!deserializeJson(active,R"({"asicfrequency":500,"asicvoltage":1130,"stratumurl":"mux.test","stratumport":7331,"stratumuser":"fixture.worker","stratumpass":"original-secret","stratumtls":1,"stratumesub":1,"sv2_proto":1,"sv2_auth_pk":"fixturekey","sv2_chtype":1,"cb_verify_mode":2,"cb_max_fee":32,"cb_vfy_force":1,"fbstratumurl":"other.test","fan1speed":71,"overheat_temp":72,"pool_mode":1,"pool_balance":37,"vr_frequency":25011})"));
+    active[NVS_CONFIG_SV2_REQUIRE_AUTH]=1;active[NVS_CONFIG_FB_SV2_REQUIRE_AUTH]=0;
     assert(!deserializeJson(schedule,R"({"schemaVersion":1,"enabled":false,"utcOffsetMinutes":0,"events":[]})"));
     auto call=[&](auto fn,const char *json="",bool authorized=true,bool otp=true){httpd_req_t r;r.body=json;r.content_len=r.body.size();r.authorized=authorized;r.otp=otp;fn(&r);return r;};
     auto get=call(GET_five_tratum_profiles);JsonDocument response;assert(!deserializeJson(response,get.response));assert(response["tuning"].size()==10 && response["pools"].size()==10 && writes==0);assert(response["identity"]["deviceId"]=="5tfw:0102030405060708090a0b0c0d0e0f10");
@@ -41,6 +42,7 @@ int main(){
     denied=call(POST_five_tratum_profiles,R"({"type":"pool","slot":0,"name":"BTC","captureCurrent":"primary"})",false);assert(denied.status=="401" && writes==0);
     auto saved=call(POST_five_tratum_profiles,R"({"type":"pool","slot":0,"name":"DGB","captureCurrent":"primary"})");assert(saved.status=="200 OK" && writes==1 && manager.loads==0);
     const std::string original=flash["p00"];assert(original.find("original-secret")!=std::string::npos);
+    assert(original.find("\"sv2RequireAuth\":true")!=std::string::npos);
     get=call(GET_five_tratum_profiles);assert(get.response.find("original-secret")==std::string::npos && get.response.find("passwordConfigured")!=std::string::npos);
     failWrite=true;saved=call(POST_five_tratum_profiles,R"({"type":"pool","slot":0,"name":"Replacement","host":"replacement.test","password":"replace"})");assert(saved.status=="507 Insufficient Storage" && flash["p00"]==original);
     auto applied=call(POST_five_tratum_profiles_apply,R"({"type":"tuning","frequencyMHz":577,"coreVoltageMv":1137})");assert(applied.status=="507 Insufficient Storage" && active["asicfrequency"]==500 && SYSTEM_MODULE.board.loads==0);
@@ -48,6 +50,7 @@ int main(){
     applied=call(POST_five_tratum_profiles_apply,R"({"type":"pool","slot":0,"poolTarget":"primary","asicIndex":0})");assert(applied.status=="409 Conflict" && manager.loads==0);
     applied=call(POST_five_tratum_profiles_apply,R"({"type":"pool","slot":9,"poolTarget":"primary"})");assert(applied.status=="409 Conflict");
     applied=call(POST_five_tratum_profiles_apply,R"({"type":"pool","slot":0,"poolTarget":"primary"})");assert(applied.status=="200 OK" && manager.loads==1 && active["stratumpass"]=="original-secret" && active["fbstratumurl"]=="other.test" && active["pool_mode"]==1 && active["pool_balance"]==37 && active["vr_frequency"]==25011);
+    assert(active[NVS_CONFIG_SV2_REQUIRE_AUTH]==1 && active[NVS_CONFIG_FB_SV2_REQUIRE_AUTH]==0);
     auto bad=call(POST_five_tratum_pool_schedule,R"({"schemaVersion":1,"enabled":true,"utcOffsetMinutes":0,"events":[{"enabled":true,"dayMask":127,"timeMinutes":720,"slot":9}]})");assert(bad.status=="409 Conflict");
     auto good=call(POST_five_tratum_pool_schedule,R"({"schemaVersion":1,"enabled":true,"utcOffsetMinutes":0,"events":[{"enabled":true,"dayMask":127,"timeMinutes":720,"slot":0}]})");assert(good.status=="200 OK");
     auto clear=call(POST_five_tratum_profiles,R"({"type":"pool","slot":0,"clear":true})");assert(clear.status=="409 Conflict" && flash["p00"]==original);

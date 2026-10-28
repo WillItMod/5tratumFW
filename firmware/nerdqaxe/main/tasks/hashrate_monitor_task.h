@@ -74,6 +74,11 @@ class HashrateMonitor {
     uint32_t *m_prevCounter = nullptr;
     bool *m_chipSampleAvailable = nullptr;
 
+    // per-chip hardware error hashrate (GH/s), same delta mechanism as hashrate
+    float *m_chipErrorRate = nullptr;
+    int64_t *m_prevErrorResponse = nullptr;
+    uint32_t *m_prevErrorCounter = nullptr;
+
     // Task plumbing
     static void taskWrapper(void *pv);
     void taskLoop();
@@ -86,7 +91,7 @@ class HashrateMonitor {
     Asic *m_asic = nullptr;
 
     void setChipHashrate(int nr, float temp);
-    float getChipHashrate(int nr);
+    void setChipErrorRate(int nr, float ghs);
     float getTotalChipHashrate();
 
   public:
@@ -103,6 +108,10 @@ class HashrateMonitor {
 
     // Copy under the RX/reader mutex; no UART request or ASIC setting change.
     FiveTratumTelemetry::ChipHashrateSample getChipHashrateSample(int nr);
+    // Called from RX dispatcher for each 0x4C hardware-error-count reply.
+    void onErrorReply(uint8_t asic_idx, uint32_t counterNow);
+    float getChipHashrate(int nr);
+    float getChipErrorRate(int nr);
 
     float getSmoothedTotalChipHashrate() {
       return m_smoothedHashrate;

@@ -24,9 +24,9 @@ function settingsFixture(): ISettingsV2 {
     poolMode: 1, poolBalance: 37, stratumKeep: 1, jobInterval: 333, stratumDifficulty: 16384,
     pools: [
       { url: 'mux.test', port: 7331, user: 'fixture.worker1', enonceSubscribe: 1, tls: 0, protocol: 0,
-        sv2AuthorityPubkey: '', sv2ChannelType: 0, coinbaseVerifyMode: 0, coinbaseMaxFee: 3.25, coinbaseVerifyForce: false },
+        sv2AuthorityPubkey: '', sv2ChannelType: 0, sv2RequireAuth:false, coinbaseVerifyMode: 0, coinbaseMaxFee: 3.25, coinbaseVerifyForce: false },
       { url: 'pool.test', port: 4444, user: 'fixture.worker2', enonceSubscribe: 0, tls: 1, protocol: 1,
-        sv2AuthorityPubkey: 'fixture-authority', sv2ChannelType: 1, coinbaseVerifyMode: 2, coinbaseMaxFee: 4.5, coinbaseVerifyForce: true },
+        sv2AuthorityPubkey: 'fixture-authority', sv2ChannelType: 1, sv2RequireAuth:true, coinbaseVerifyMode: 2, coinbaseMaxFee: 4.5, coinbaseVerifyForce: true },
     ],
     fans: [
       { label: 'ASIC fan', mode: 2, manualSpeed: 83, overheatTemp: 72, pid: { targetTemp: 53, p: 5.1, i: .15, d: 9.5 } },
@@ -100,6 +100,15 @@ describe('Nerd settings payload preservation', () => {
     expect(savePower.calls.mostRecent().args).toEqual(['', {enabled:true,timezone:'Europe/London',windows:[{days:62,start:'22:00',end:'06:00'}]}, '123456']);
     expect(update).not.toHaveBeenCalled(); expect(applyProfile).not.toHaveBeenCalled();
     expect(component.form.get('frequency')?.value).toBe(577);
+  });
+
+  it('retains RC1 per-pool authentication and submits only its explicitly changed route field', () => {
+    expect(component.form.get('sv2RequireAuth')!.value).toBeFalse();expect(component.form.get('fallbackSv2RequireAuth')!.value).toBeTrue();
+    component.section='network';component.form.get('hostname')!.setValue('changed-host');component.updateSystem().subscribe();
+    expect(update.calls.mostRecent().args[1]).toEqual({hostname:'changed-host'});
+    component.section='pool';component.form.get('sv2RequireAuth')!.setValue(true);component.savePoolSettings(0);
+    expect(update.calls.mostRecent().args[1]).toEqual({pools:[{sv2RequireAuth:true},{}]});
+    expect(component.form.get('fallbackSv2RequireAuth')!.value).toBeTrue();expect(component.restartPending).toBeTrue();
   });
   it('keeps unsaved power windows during status reads and sends manual requests through their own API',()=>{
     component.addPowerWindow();component.powerSchedule!.timezone='Europe/London';component.refreshPower();

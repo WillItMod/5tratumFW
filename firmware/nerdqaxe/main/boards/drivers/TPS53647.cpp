@@ -255,18 +255,26 @@ void TPS53647::status()
               status_byte, status_word, status_vout, status_iout, status_input, status_mfr_specific);
 }
 
+uint16_t TPS53647::get_device_code()
+{
+    uint16_t device_code = 0;
+    if (read_word(PMBUS_MFR_SPECIFIC_44, &device_code) != ESP_OK) {
+        return 0;
+    }
+    return device_code;
+}
+
 // Set up the TPS53647 regulator and turn it on
 bool TPS53647::init(int num_phases, int imax, float ifault)
 {
     ESP_LOGI(TAG, "Initializing the core voltage regulator");
 
     // Establish communication with regulator
-    uint16_t device_code = 0x0000;
-    read_word(PMBUS_MFR_SPECIFIC_44, &device_code);
+    uint16_t device_code = get_device_code();
 
     ESP_LOGI(TAG, "Device Code: %04x", device_code);
 
-    if (device_code != 0x01f0) {
+    if (device_code != DEVICE_CODE) {
         ESP_LOGE(TAG, "ERROR- cannot find TPS53647 buck controller");
         return false;
     }
@@ -468,7 +476,7 @@ bool TPS53647::set_vout(float volts)
     }
 
     // make sure we're in range
-    if ((volts < m_initVOutMin) || (volts > m_initVOutMax)) {
+    if (!isfinite(volts) || (volts < m_initVOutMin) || (volts > m_initVOutMax)) {
         ESP_LOGE(TAG, "ERR- Voltage requested (%f V) is out of range", volts);
         return false;
     }
@@ -478,7 +486,10 @@ bool TPS53647::set_vout(float volts)
     if (vid == 0x97) {
         vid = 0x96;
     }
-    write_word(PMBUS_VOUT_COMMAND, (uint16_t) vid);
+    if (write_word(PMBUS_VOUT_COMMAND, (uint16_t) vid) != ESP_OK) {
+        ESP_LOGE(TAG, "ERR- Failed to write Vout command");
+        return false;
+    }
 
     // turn on output
     // write_byte(PMBUS_OPERATION, OPERATION_ON);

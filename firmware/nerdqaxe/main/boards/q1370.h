@@ -24,6 +24,9 @@ class Q1370B : public NerdQaxePlus {
 
     virtual void setAsicReset(bool state);
 
+    // drive GPIO3 low to release the FXL6408 IO expander from hardware reset
+    void releaseIoExpanderReset();
+
     virtual bool initBoard();
 
   public:
@@ -32,6 +35,8 @@ class Q1370B : public NerdQaxePlus {
     virtual void requestChipTemps();
     bool hasEthernet() override { return true; }
     bool hasCanExtension() override { return true; }
+    // different pinout: on-board W5500 on the driver's default pins, no ethernet HAT
+    const EthPins *getEthPins() override { return nullptr; }
     bool isCanSlave() override;
     int getCanTxPin() override { return 1; }
     int getCanRxPin() override { return 10; }

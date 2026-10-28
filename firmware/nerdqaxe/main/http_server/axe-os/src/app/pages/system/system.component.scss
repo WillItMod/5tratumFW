@@ -11,6 +11,23 @@
     width: 200px;
 }
 
+.coredump-description,
+.coredump-warning {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.coredump-description {
+  color: var(--text-hint-color);
+}
+
+.coredump-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-warning-600);
+}
+
 .logs-viewport {
   height: 70vh;
   width: 100%;
@@ -359,4 +376,31 @@
     grid-area: download;
     justify-self: start; /* align to the input start */
   }
+}
+
+/* Bitronics credit card (NerdAxeGaia / NerdAxe) */
+.bitronics-card .bitronics-body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.25rem;
+}
+.bitronics-logo-link { display: flex; justify-content: center; width: 100%; opacity: 0.95; transition: opacity 0.15s ease; }
+.bitronics-logo-link:hover { opacity: 1; }
+.bitronics-logo {
+  max-height: 44px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Bitronics credit: stack text above the logo */
+.bitronics-card .bitronics-body {
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.bitronics-credit-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-hint-color, #9aa3ad);
+  text-align: center;
 }

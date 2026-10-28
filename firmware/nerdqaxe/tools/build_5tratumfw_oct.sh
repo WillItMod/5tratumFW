@@ -61,6 +61,7 @@ PY
   npm test -- --watch=false --browsers=ChromeHeadless --progress=false
 )
 node tools/test_web_controls.mjs
+python3 tools/test_ca_bundle.py
 python3 tools/package_5tratumfw_oct.py --record-web-build
 # Host regressions execute production code through bounded fake hardware/RTOS boundaries.
 "$OCT_TEST_PYTHON" - <<'PY'
@@ -92,7 +93,7 @@ docker run --rm -e BOARD=NERDOCTAXEGAMMA \
       -D FIVETRATUM_RELEASE_PROFILE=NERDOCTAXEGAMMA \
       -D FIVETRATUM_ASIC_CAPTURE_LOGS=OFF \
       -D FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER=OFF \
-      -D FIVETRATUM_BM1370_CAPTURE=OFF build' \
+      -D FIVETRATUM_BM1370_CAPTURE=OFF build && python tools/test_ca_bundle.py --build-dir "$1"' \
   oct-build "/project/$OCT_BUILD_REL" "$OCT_VERSION" "$OCT_DEFAULT_CONFIG"
 "$OCT_TEST_PYTHON" test/host/render_display_native.py
 "$OCT_TEST_PYTHON" test/host/render_candidate_native.py

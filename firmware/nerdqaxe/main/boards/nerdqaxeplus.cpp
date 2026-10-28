@@ -24,6 +24,23 @@ static const char* TAG="nerdqaxe+";
 
 #define VR_TEMP1075_ADDR   0x1
 
+// W5500 ethernet HAT pins, same header pinout on the whole NerdQAxe family
+// (Q1370/Q1373 differ and override getEthPins()). RST is an RC on the HAT, no IRQ.
+static const EthPins kHatPins = { .sclk = GPIO_NUM_2, .mosi = GPIO_NUM_12, .miso = GPIO_NUM_16,
+                                  .cs = GPIO_NUM_21, .rst = GPIO_NUM_NC, .irq = GPIO_NUM_NC };
+
+const EthPins *NerdQaxePlus::getEthPins()
+{
+    // the CAN HAT uses GPIO16/21 too: don't probe (and drive CAN TX) when it is fitted
+    return m_hasCanExtension ? nullptr : &kHatPins;
+}
+
+void NerdQaxePlus::detectEthernet()
+{
+    // probes VERSIONR on getEthPins(); false if the board has no HAT pins
+    m_hatDetected = isEthConnected();
+}
+
 NerdQaxePlus::NerdQaxePlus() : Board() {
     m_deviceModel = "NerdQAxe+";
     m_miningAgent = m_deviceModel;
@@ -449,8 +466,12 @@ bool NerdQaxePlus::selfTest(){
     temp_display = new DisplayDriver();
     temp_display->init(this);
 
-    temp_display->logMessage("\nSelfTest initiated, wait...\r\n\n\n\n\n\n"
-                             "[Warning] This test only ensures Asic is properly soldered\nHashrate is not checked");
+    snprintf(logString, sizeof(logString),
+             "\nSelfTest initiated, wait...\r\n"
+             "Testing chip: %s\n\n\n\n\n"
+             "[Warning] Only checks soldering\nHashrate not checked",
+             m_asicModel);
+    temp_display->logMessage(logString);
 
     //Init Asics
     initAsics();
@@ -460,12 +481,12 @@ bool NerdQaxePlus::selfTest(){
     bool VrOK = (Vout > CORE_VOLTAGE_TARGET_MIN) && (Vout < CORE_VOLTAGE_TARGET_MAX);
     bool allAsicsDetected = (m_chipsDetected == m_asicCount); // Verifica que todos los ASICs se han detectado
 
-    //Warning! This test only ensures Asic is properly soldered
-    snprintf(logString, sizeof(logString),  "\nTest result:\r\n"
+    snprintf(logString, sizeof(logString),  "\nTest result [%s]:\r\n"
                                             "- Asics detected [%d/%d]\n"
                                             "- Power status: %s (%.2f W)\n"
                                             "- Asic voltage: %s (%.2f V)\r\n\n"
-                                            "%s", // Final result
+                                            "%s",
+                                            m_asicModel,
                                             m_chipsDetected, m_asicCount,
                                             powerOK ? "OK" : "Warning", power,
                                             VrOK ? "OK" : "Warning", Vout,

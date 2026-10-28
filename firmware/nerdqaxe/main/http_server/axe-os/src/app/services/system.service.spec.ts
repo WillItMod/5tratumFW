@@ -104,4 +104,25 @@ describe('SystemService', () => {
     expect(req.request.headers.has('X-OTP-Code')).toBeFalse();
     req.flush('ok');
   });
+
+  it('downloads a core dump as a blob with a one-shot OTP', () => {
+    let elfSha256 = '';
+    service.downloadCoreDump('123456').subscribe((response) => {
+      elfSha256 = response.headers.get('X-ESP-App-ELF-SHA256') ?? '';
+    });
+
+    const req = httpMock.expectOne('/api/system/coredump');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    expect(req.request.headers.get('X-TOTP')).toBe('123456');
+    req.flush(new Blob(), { headers: { 'X-ESP-App-ELF-SHA256': '0123456789abcdef' } });
+    expect(elfSha256).toBe('0123456789abcdef');
+  });
+  it('keeps ordinary session resets separate from authenticated persisted-stat resets', () => {
+    service.resetStats().subscribe();const session=httpMock.expectOne('/api/system/reset-stats');
+    expect(session.request.method).toBe('POST');expect(session.request.headers.has('X-TOTP')).toBeFalse();session.flush('ok');
+    service.resetStats('/selected-miner',true,'123456').subscribe();
+    const allTime=httpMock.expectOne('/selected-miner/api/system/reset-stats?allTime=1');
+    expect(allTime.request.headers.get('X-TOTP')).toBe('123456');allTime.flush('ok');
+  });
 });

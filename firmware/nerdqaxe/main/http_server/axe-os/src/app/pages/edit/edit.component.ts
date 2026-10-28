@@ -130,15 +130,15 @@ export class EditComponent implements OnInit, OnDestroy {
     'poolMode',
     'stratumProtocol',
     'fallbackStratumProtocol',
-    'sv2AuthorityPubkey','sv2ChannelType','fallbackSv2AuthorityPubkey','fallbackSv2ChannelType',
+    'sv2AuthorityPubkey','sv2ChannelType','sv2RequireAuth','fallbackSv2AuthorityPubkey','fallbackSv2ChannelType','fallbackSv2RequireAuth',
   ]);
 
   @Input() uri = '';
   @Input() section = 'performance';
 
   public readonly poolPanels = [
-    { index: 0 as const, url: 'stratumURL', port: 'stratumPort', user: 'stratumUser', password: 'stratumPassword', protocol: 'stratumProtocol', tls: 'stratumTLS', enonce: 'stratumEnonceSubscribe', authority: 'sv2AuthorityPubkey', channel: 'sv2ChannelType', verify: 'coinbaseVerifyMode', maxFee: 'coinbaseMaxFee', force: 'coinbaseVerifyForce', lastVerify: 'lastCoinbaseVerifyMode' as const },
-    { index: 1 as const, url: 'fallbackStratumURL', port: 'fallbackStratumPort', user: 'fallbackStratumUser', password: 'fallbackStratumPassword', protocol: 'fallbackStratumProtocol', tls: 'fallbackStratumTLS', enonce: 'fallbackStratumEnonceSubscribe', authority: 'fallbackSv2AuthorityPubkey', channel: 'fallbackSv2ChannelType', verify: 'fallbackCoinbaseVerifyMode', maxFee: 'fallbackCoinbaseMaxFee', force: 'fallbackCoinbaseVerifyForce', lastVerify: 'lastFallbackCoinbaseVerifyMode' as const },
+    { index: 0 as const, url: 'stratumURL', port: 'stratumPort', user: 'stratumUser', password: 'stratumPassword', protocol: 'stratumProtocol', tls: 'stratumTLS', enonce: 'stratumEnonceSubscribe', authority: 'sv2AuthorityPubkey', channel: 'sv2ChannelType', requireAuth: 'sv2RequireAuth', verify: 'coinbaseVerifyMode', maxFee: 'coinbaseMaxFee', force: 'coinbaseVerifyForce', lastVerify: 'lastCoinbaseVerifyMode' as const },
+    { index: 1 as const, url: 'fallbackStratumURL', port: 'fallbackStratumPort', user: 'fallbackStratumUser', password: 'fallbackStratumPassword', protocol: 'fallbackStratumProtocol', tls: 'fallbackStratumTLS', enonce: 'fallbackStratumEnonceSubscribe', authority: 'fallbackSv2AuthorityPubkey', channel: 'fallbackSv2ChannelType', requireAuth: 'fallbackSv2RequireAuth', verify: 'fallbackCoinbaseVerifyMode', maxFee: 'fallbackCoinbaseMaxFee', force: 'fallbackCoinbaseVerifyForce', lastVerify: 'lastFallbackCoinbaseVerifyMode' as const },
   ];
   public readonly fanPanels = [
     { index: 0, mode: 'autofanspeed', manual: 'manualFanSpeed', target: 'pidTargetTemp', overheat: 'overheat_temp', p: 'pidP', i: 'pidI', d: 'pidD' },
@@ -354,7 +354,7 @@ export class EditComponent implements OnInit, OnDestroy {
       if(kind==='tuning'){this.form.patchValue({frequency:info.frequency,coreVoltage:info.coreVoltage});this.originalSettings.frequency=info.frequency;this.originalSettings.coreVoltage=info.coreVoltage;for(const k of ['frequency','coreVoltage']){this.baseline[k]=this.form.get(k)?.value;this.form.get(k)?.markAsPristine();}return;}
       if (poolIndex === undefined) return;
       const i=poolIndex;const pool=info.pools[i],panel=this.poolPanels[i];
-      const values:any={}; values[panel.url]=pool.url;values[panel.port]=pool.port;values[panel.user]=pool.user;values[panel.password]='*****';values[panel.protocol]=pool.protocol;values[panel.tls]=!!pool.tls;values[panel.enonce]=!!pool.enonceSubscribe;values[panel.authority]=pool.sv2AuthorityPubkey;values[panel.channel]=pool.sv2ChannelType;values[panel.verify]=pool.coinbaseVerifyMode;values[panel.maxFee]=pool.coinbaseMaxFee;values[panel.force]=pool.coinbaseVerifyForce;
+      const values:any={}; values[panel.url]=pool.url;values[panel.port]=pool.port;values[panel.user]=pool.user;values[panel.password]='*****';values[panel.protocol]=pool.protocol;values[panel.tls]=!!pool.tls;values[panel.enonce]=!!pool.enonceSubscribe;values[panel.authority]=pool.sv2AuthorityPubkey;values[panel.channel]=pool.sv2ChannelType;values[panel.requireAuth]=pool.sv2RequireAuth ?? false;values[panel.verify]=pool.coinbaseVerifyMode;values[panel.maxFee]=pool.coinbaseMaxFee;values[panel.force]=pool.coinbaseVerifyForce;
       this.originalSettings.pools[i]=structuredClone(pool);this.originalSettings[panel.protocol]=pool.protocol;
       for(const k of Object.keys(values)){
         if (!previousRoute || this.form.get(k)?.value === previousRoute[k]) {this.form.get(k)?.setValue(values[k]);this.form.get(k)?.markAsPristine();}
@@ -491,6 +491,8 @@ export class EditComponent implements OnInit, OnDestroy {
           fallbackSv2AuthorityPubkey: [info.pools[1].sv2AuthorityPubkey ?? ''],
           sv2ChannelType: [info.pools[0].sv2ChannelType ?? 0],                      // 0 = Extended, 1 = Standard
           fallbackSv2ChannelType: [info.pools[1].sv2ChannelType ?? 0],
+          sv2RequireAuth: [info.pools[0].sv2RequireAuth ?? false],
+          fallbackSv2RequireAuth: [info.pools[1].sv2RequireAuth ?? false],
 
           poolMode: [info.poolMode ?? 0, [Validators.required]],                   // 0 = Failover, 1 = Dual
           poolBalance: [info.poolBalance ?? 50, [                                   // Anteil PRIMARY in %
@@ -846,6 +848,7 @@ export class EditComponent implements OnInit, OnDestroy {
       ['stratumProtocol',         'fallbackStratumProtocol'],
       ['sv2AuthorityPubkey',      'fallbackSv2AuthorityPubkey'],
       ['sv2ChannelType',          'fallbackSv2ChannelType'],
+      ['sv2RequireAuth',          'fallbackSv2RequireAuth'],
       ['coinbaseVerifyMode',      'fallbackCoinbaseVerifyMode'],
       ['coinbaseMaxFee',          'fallbackCoinbaseMaxFee'],
       ['coinbaseVerifyForce',     'fallbackCoinbaseVerifyForce'],

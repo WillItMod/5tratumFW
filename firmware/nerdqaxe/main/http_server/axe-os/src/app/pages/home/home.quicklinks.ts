@@ -183,6 +183,13 @@ const POOLS: PoolMeta[] = [
     match: (h) => isLocalHost(h),
     iconUrl: DEFAULT_POOL_ICON_URL,
   },
+  {
+    id: 'bitronics',
+    name: 'Bitronics',
+    match: (h) => h.includes('pool.bitronics.store'),
+    quickLink: (a) => `https://pool.bitronics.store/stats/${a}`,
+    iconUrl: 'assets/pools/bitronics.svg',
+  },
 
   {
     id: 'public-pool',
@@ -190,7 +197,6 @@ const POOLS: PoolMeta[] = [
     match: (h) => h.includes('public-pool.io'),
     quickLink: (a) => `https://web.public-pool.io/#/app/${a}`,
     iconUrl: 'assets/pools/public-pool.png',
-    caps: { ping: false },
   },
   {
     id: 'ocean',
@@ -198,27 +204,13 @@ const POOLS: PoolMeta[] = [
     match: (h) => h.includes('ocean.xyz'),
     quickLink: (a) => `https://ocean.xyz/stats/${a}`,
   },
-  // CKPool variants
+  // CKPool have now a global stats site
   {
-    id: 'ckpool-eusolo',
-    name: 'eusolo*.ckpool.org',
-    match: (h) => /^eusolo[46]?\.(ckpool\.org)$/.test(h),
-    quickLink: (a) => `https://eusolostats.ckpool.org/users/${a}`,
-    iconUrl: '/assets/pools/ck-eupool.svg',
-  },
-  {
-    id: 'ckpool-solo',
-    name: 'solo*.ckpool.org',
-    match: (h) => /^solo[46]?\.(ckpool\.org)$/.test(h),
-    quickLink: (a) => `https://solostats.ckpool.org/users/${a}`,
+    id: 'ckpool',
+    name: 'ckpool.org',
+    match: (h) => h.includes('ckpool.org'),
+    quickLink: (a) => `https://stats.ckpool.org/users/${a}`,
     iconUrl: '/assets/pools/ck-pool.svg',
-  },
-  {
-    id: 'ckpool-ausolo',
-    name: 'ausolo*.ckpool.org',
-    match: (h) => /^ausolo[46]?\.(ckpool\.org)$/.test(h),
-    quickLink: (a) => `https://ausolostats.ckpool.org/users/${a}`,
-    iconUrl: '/assets/pools/ck-aupool.svg',
   },
   {
     id: 'noderunners',
@@ -258,12 +250,26 @@ const POOLS: PoolMeta[] = [
     quickLink: (a) => `https://pool.solomining.de/#/app/${a}`,
   },
   {
+    id: 'nerdminer-de',
+    name: 'nerdminer.de',
+    match: (h) => h.includes('nerdminer.de'),
+    quickLink: (a) => `https://pool.nerdminer.de/#/app/${a}`,
+  },
+  {
     id: 'atlaspool',
     name: 'atlaspool.io',
     match: (h) => h.includes('atlaspool.io'),
     quickLink: (a) => `https://atlaspool.io/dashboard.html?wallet=${a}`,
     faviconHost: 'atlaspool.io',
     faviconPath: '/favicon.ico',
+  },
+  {
+    id: 'btc-pow-lab',
+    name: 'BTC PoW Lab Hybrid Solo',
+    match: (h) => h === 'stratum.btcpowlab-pool.com',
+    quickLink: (a) => `https://btcpowlab-pool.com/miner/${a}`,
+    faviconHost: 'btcpowlab-pool.com',
+    faviconPath: '/favicon.svg',
   },
   {
     id: 'sololuck',
@@ -292,6 +298,15 @@ const POOLS: PoolMeta[] = [
     quickLink: (a) => `https://solo.braiins.com/stats/${a}`,
     faviconHost: 'solo.braiins.com',
     faviconPath: '/icon.png'
+  },
+  {
+    id: 'mining-dutch',
+    name: 'mining-dutch.nl',
+    // stratum host is a regional subdomain (e.g. europe.mining-dutch.nl);
+    // account-based pool, so link to the main site instead of the wallet
+    match: (h) => h.includes('mining-dutch.nl'),
+    quickLink: () => `https://www.mining-dutch.nl`,
+    faviconHost: 'www.mining-dutch.nl',
   }
 ];
 
@@ -334,7 +349,17 @@ export function getQuickLink(
     return pool.quickLink(address);
   }
 
-  return safeUrl.startsWith('http') ? safeUrl : toUrlLike(safeUrl);
+  if (/^https?:\/\//i.test(safeUrl)) {
+    return safeUrl;
+  }
+
+  // Unknown pool: link to its website. A stratum+tcp:// URL can't be opened by
+  // the browser and the stratum port doesn't serve HTTP, so keep only the host.
+  const host = extractHost(safeUrl);
+  if (!host) {
+    return undefined;
+  }
+  return isLocalHost(host) ? `http://${host}` : `https://${host}`;
 }
 
 /**

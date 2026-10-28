@@ -13,10 +13,11 @@ import {
 import { map,
   Observable,
   Subscription,
-  firstValueFrom } from 'rxjs';
+  firstValueFrom, switchMap } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
-import { catchError, exhaustMap, of, Subject, takeUntil, timer } from 'rxjs';
+import { catchError, exhaustMap, finalize, of, Subject, takeUntil, timer } from 'rxjs';
 import { HashSuffixPipe } from '../../pipes/hash-suffix.pipe';
+import { OtpAuthService } from '../../services/otp-auth.service';
 import { SystemService } from '../../services/system.service';
 import { MiningWorkContext } from '../../models/IFiveTratumProfiles';
 import { IDashboardV2, IDashboardV2BlockHeader, IDashboardV2Pool } from '../../models/IDashboardV2';
@@ -177,6 +178,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     const stratum = this._info?.stratum;
     const pool = stratum?.pools?.[displayIndex];
     if (!pool?.connected || pool.verifyBlocked) return 0;
+    if (!this.isDualPool && typeof pool.active === 'boolean') return pool.active ? 100 : 0;
     if (stratum!.pools.filter(item => item.connected && !item.verifyBlocked).length === 1) return 100;
     const balance = stratum?.poolBalance;
     if (typeof balance !== 'number' || !Number.isFinite(balance) || balance < 0 || balance > 100) return null;
@@ -229,8 +231,17 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     zoomStepMs: HOME_CFG.xAxis.zoomStepMs,
   };
 
+  /**
+   * Hashrate accent colour (chart line, bar fill, logo tint). A getter so a
+   * themed dashboard subclass can override it: the chart is built in the
+   * constructor, before subclass fields would be initialised.
+   */
+  protected get hashrateColor(): string {
+    return HOME_CFG.colors.hashrateBase;
+  }
+
   // CSS vars for meter bars (kept in sync with HOME_CFG)
-  @HostBinding('style.--bar-fill') barFill: string = HOME_CFG.colors.hashrateBase;
+  @HostBinding('style.--bar-fill') barFill: string = this.hashrateColor;
   @HostBinding('style.--bar-track') barTrack: string = HOME_CFG.colors.chartGridColor;
   @HostBinding('style.--asic-temp-pill') asicTempPill: string = HOME_CFG.colors.asicTemp;
 
@@ -262,7 +273,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     } catch {}
   }
 
-  private setChartWindowMs(nextMs: number): void {
+  protected setChartWindowMs(nextMs: number): void {
     const next = clampWindowMs(nextMs, this.zoomCfg);
     if (next === this.chartWindowMs) return;
     const prev = this.chartWindowMs;
@@ -676,7 +687,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   private debugAxisPadding: boolean = false;
   private readonly axisPadOverrideEnabledKey: string = '__nerdCharts_axisPaddingOverrideEnabled';
   private readonly axisPadStorageKey: string = '__nerdCharts_axisPadding';
-  public nerdOsLogoColor: string = hexToRgba(HOME_CFG.colors.hashrateBase, 0.6);
+  public nerdOsLogoColor: string = hexToRgba(this.hashrateColor, 0.6);
 
   ngAfterViewChecked(): void {
     // Ensure chart is initialized only once when the canvas becomes available
@@ -692,8 +703,50 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.barDomSync.syncVrTempBarCritFill(!!this.vrTempBarCritWanted, this.currentThemeName);
   }
 
+  private legendClickHandler: ((e: MouseEvent) => void) | null = null;
+
+  /**
+   * Robust legend toggle: handle legend clicks ourselves on the canvas. Chart.js's
+   * built-in legend onClick can fail to fire in some embeddings; this guarantees
+   * clicking a legend item shows/hides its series (and persists the choice).
+   */
+  private installLegendClickToggle(): void {
+    const chart: any = this.chart;
+    if (!chart || !chart.canvas) return;
+    if (this.legendClickHandler) {
+      try { chart.canvas.removeEventListener('click', this.legendClickHandler); } catch {}
+    }
+    this.legendClickHandler = (e: MouseEvent) => {
+      try {
+        const ch: any = this.chart;
+        const legend: any = ch && ch.legend;
+        if (!legend || !Array.isArray(legend.legendHitBoxes)) return;
+        const rect = ch.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const boxes = legend.legendHitBoxes;
+        for (let i = 0; i < boxes.length; i++) {
+          const b = boxes[i];
+          if (!b) continue;
+          if (x >= b.left && x <= b.left + b.width && y >= b.top && y <= b.top + b.height) {
+            const item = legend.legendItems && legend.legendItems[i];
+            const idx = (item && item.datasetIndex != null) ? item.datasetIndex : i;
+            const meta = ch.getDatasetMeta(idx);
+            meta.hidden = meta.hidden === null ? !ch.data.datasets[idx].hidden : null;
+            ch.update();
+            const vis = ch.data.datasets.map((_d: any, j: number) => (ch.getDatasetMeta(j).hidden ? true : false));
+            try { this.chartStorage.saveLegendVisibility(vis); } catch {}
+            break;
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    chart.canvas.addEventListener('click', this.legendClickHandler);
+  }
+
   private initChart(): void {
     this.chart = createHomeChart(this.ctx.nativeElement, this.chartData, this.chartOptions);
+    this.installLegendClickToggle();
     // Restore legend visibility
     const storedVisibility = this.chartStorage.loadLegendVisibility();
     const visibility = storedVisibility ?? [
@@ -743,7 +796,8 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     private cdr: ChangeDetectorRef,
     private ngZone: NgZone,
     private dialogService: NbDialogService,
-    private toastrService: NbToastrService
+    private toastrService: NbToastrService,
+    private otpAuth: OtpAuthService,
   ) {
     // Local persistence wrapper for chart state/settings
     this.chartStorage = new HomeChartStorage({
@@ -794,6 +848,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     } catch {}
 
     const cfg = createHomeChartConfig({
+      hashrateColor: this.hashrateColor,
       series: {
         labels: this.dataLabel,
         hr1m: this.dataData1m,
@@ -1207,6 +1262,8 @@ ngOnInit() {
     this.destroy$.complete();
     // Destroy Chart.js instance to release canvas resources and internal listeners.
     if (this.chart) {
+      if (this.legendClickHandler) this.chart.canvas.removeEventListener('click',this.legendClickHandler);
+      this.legendClickHandler = null;
       this.chart.destroy();
       this.chart = undefined;
     }
@@ -2026,7 +2083,8 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
     if (!this._info || !stratum) return {} as any;
 
     if (i === undefined) {
-      return stratum.pools[0] ?? {} as any;
+      // failover mode: both pools are reported, show the active one
+      return stratum.pools.find(p => p.active) ?? stratum.pools[0] ?? {} as any;
     }
     return stratum.pools[i] ?? {} as any;
   }
@@ -2110,10 +2168,11 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
   if (!Array.isArray(pools) || pools.length === 0) return 0;
 
   // In some template contexts (e.g. single pool tile) `idx` may be undefined.
-  // For UI consistency we default to the PRIMARY pool (index 0), which also matches the Shares card.
-  const idx = (typeof id === 'number' && Number.isFinite(id)) ? id : 0;
-
-  const pool = pools[idx];
+  // Default to the ACTIVE pool then (failover mode reports both pools and
+  // carries the session stats on the active one), matching the Shares card.
+  const pool = (typeof id === 'number' && Number.isFinite(id))
+    ? pools[id]
+    : (pools.find(p => p.active) ?? pools[0]);
   if (!pool) return 0;
 
   const rejected = Number(pool.rejected ?? 0);
@@ -2124,13 +2183,27 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
 
   return (rejected / total) * 100;
 }
+
+  /** Reset-stats dialog: also reset the persisted all-time stats. */
+  public resetAllTime = false;
+  public resetStatsBusy = false;
+
   public openResetStatsDialog(template: any): void {
+    this.resetAllTime = false;
     this.dialogService.open(template);
   }
 
   public confirmResetStats(ref: any): void {
+    if (this.resetStatsBusy) return;
+    this.resetStatsBusy = true;
     ref.close();
-    this.systemService.resetStats().subscribe({
+    // all-time reset is permanent: the backend requires OTP (when enabled) for it
+    const reset$ = this.resetAllTime
+      ? this.otpAuth
+          .ensureOtp$('', this.translateService.instant('SECURITY.OTP_TITLE'), this.translateService.instant('SECURITY.OTP_HINT'))
+          .pipe(switchMap(({ totp }) => this.systemService.resetStats('', true, totp)))
+      : this.systemService.resetStats();
+    reset$.pipe(takeUntil(this.destroy$),finalize(() => {this.resetStatsBusy = false;this.cdr.markForCheck();})).subscribe({
       next: () => this.toastrService.success(
         this.translateService.instant('HOME.RESET_STATS_SUCCESS'),
         this.translateService.instant('COMMON.SUCCESS')

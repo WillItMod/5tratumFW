@@ -58,6 +58,7 @@ void capturePool(JsonDocument &doc,int pool) {
     doc["protocol"]=pool?Config::getFallbackStratumProtocol():Config::getStratumProtocol();
     stringField(doc,"authorityPubkey",pool?Config::getFallbackSV2AuthorityPubkey():Config::getSV2AuthorityPubkey());
     doc["channelType"]=pool?Config::getFallbackSV2ChannelType():Config::getSV2ChannelType();
+    doc["sv2RequireAuth"]=pool?Config::isFallbackSV2RequireAuth():Config::isSV2RequireAuth();
     doc["coinbaseVerifyMode"]=Config::getCoinbaseVerifyMode(pool);
     doc["coinbaseMaxFee"]=Config::getCoinbaseMaxFee(pool)/10.0;
     doc["coinbaseVerifyForce"]=Config::getCoinbaseVerifyForce(pool);

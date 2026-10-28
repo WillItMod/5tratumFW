@@ -1,4 +1,7 @@
 :host { display:block; color:var(--fw-text); }
+.stats-reset-dialog { width:min(440px,calc(100vw - 2rem)); }
+.stats-reset-dialog p { margin:0 0 1rem; }
+.stats-reset-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
 .miner-dashboard { min-width:0; }
 .page-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin:1px 0 24px; }
 .eyebrow { display:block; font-size:11px; color:var(--fw-muted); line-height:1.5; }

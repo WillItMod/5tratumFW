@@ -72,7 +72,7 @@ DisplayDriver::DisplayDriver() {
 void DisplayDriver::loadSettings() {
     PThreadGuard lock(m_lvglMutex);
     m_isAutoScreenOffEnabled = Config::isAutoScreenOffEnabled();
-    m_tempControlMode = Config::getTempControlMode();
+    m_tempControlMode = SYSTEM_MODULE.getBoard()->getFanMode(0);
     m_fanSpeed = Config::getFanSpeed();
     m_showFoundBlockEnabled = Config::isShowBlockFoundEnabled();
 
@@ -180,6 +180,7 @@ void DisplayDriver::startShutdownCountdown() {
     if (m_shutdownCountdownActive) return;
 
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     m_shutdownCountdownActive = true;
     m_isActiveOverlay = true;
     m_shutdownStartTime = esp_timer_get_time();
@@ -243,6 +244,7 @@ void DisplayDriver::showError(const char *error_message, uint32_t error_code) {
 
     // Safety cancels the informational celebration and its decorative motion.
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     // now show the (new) error overlay
     m_ui->showErrorOverlay(error_message, error_code);
     if (m_state == UiState::Identify || m_state == UiState::Brand) enterState(UiState::Mining, now_us());
@@ -272,14 +274,19 @@ void DisplayDriver::showFoundBlockOverlay() {
     // and dismissible after its short bob/shine/confetti burst has finished.
     enableLvglAnimations(true);
     m_ui->showCandidateOverlay(m_animationsEnabled);
+    m_foundBlockOverlay = true;
     m_isActiveOverlay = true;
     displayTurnOn();
     refreshScreen();
 }
 
 void DisplayDriver::hideFoundBlockOverlay() {
+    // called from the LVGL task (button press) while the system task may show a new
+    // one for another block
+    PThreadGuard lock(m_lvglMutex);
     // hide the overlay and free the memory
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     updateOverlayPriority();
 }
 
@@ -385,12 +392,14 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         break;
     case UiState::ShowQR:
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         ESP_LOGI(TAG, "enter qr state");
         enableLvglAnimations(true);
         safe_screen_change(m_ui->ui_qrScreen, LV_SCR_LOAD_ANIM_FADE_ON, 500, 0);
         break;
     case UiState::Identify:
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         ESP_LOGI(TAG, "enter state identify (blink %lums)", m_identifyDuration_ms);
         break;
     case UiState::PowerOff:
@@ -398,6 +407,7 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         // operations occur after the timer task releases the display mutex.
         m_ui->hideErrorOverlay();
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         if (!m_ui->ui_PowerOffScreen) {
             m_ui->powerOffScreenInit();
         }
@@ -617,8 +627,13 @@ void DisplayDriver::processButtons(Button &btn1, Button &btn2, int64_t tnow,
         btn2.clearEvent();
         return;
     }
-    if ((evt1 & BTN_EVENT_SHORTPRESS || evt2 & BTN_EVENT_SHORTPRESS) && m_ui->ui_imageOverlayContainer) {
-        hideFoundBlockOverlay();
+    if ((evt1 & BTN_EVENT_SHORTPRESS || evt2 & BTN_EVENT_SHORTPRESS) &&
+        m_foundBlockOverlay && m_ui->ui_imageOverlayContainer) {
+        // The LVGL timer already owns the nonrecursive display mutex here.
+        // The public hide method locks for callers from other tasks.
+        m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
+        updateOverlayPriority();
         btn1.clearEvent();
         btn2.clearEvent();
         return;
@@ -703,13 +718,16 @@ void DisplayDriver::handleUiQueueMessages(ui_msg_t &msg, int64_t tnow)
 }
 
 void DisplayDriver::updateOverlayPriority() {
+    // Errors/shutdown/enrollment can cancel the candidate independently. Its
+    // dismissal flag must not outlive the LVGL object or keep the screen awake.
+    if (!m_ui || !m_ui->ui_imageOverlayContainer) m_foundBlockOverlay = false;
     m_isActiveOverlay = m_ui && (m_ui->ui_errOverlayContainer || m_ui->ui_imageOverlayContainer ||
         m_shutdownCountdownActive || m_state == UiState::ShowQR || m_state == UiState::Identify);
 }
 
 void DisplayDriver::handleAutoOffAndOverlays()
 {
-    if (m_isActiveOverlay) {
+    if (m_isActiveOverlay || m_foundBlockOverlay) {
         displayTurnOn();
     } else if (m_isAutoScreenOffEnabled) {
         checkAutoTurnOffScreen();

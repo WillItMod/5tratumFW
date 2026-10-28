@@ -30,6 +30,7 @@
             <div *ngIf="form.controls[pool.protocol].value === 1">
               <label class="field"><span>Authority public key</span><input nbInput [formControlName]="pool.authority" type="text" spellcheck="false" /></label>
               <label class="field"><span>Channel type</span><nb-select [formControlName]="pool.channel"><nb-option [value]="0">Extended</nb-option><nb-option [value]="1">Standard</nb-option></nb-select></label>
+              <div class="checkbox-stack"><nb-checkbox [formControlName]="pool.requireAuth">Require Stratum V2 authentication</nb-checkbox><p class="section-note">Require an authenticated pool connection. Use the pool's authority public key when provided.</p></div>
             </div>
             <div class="checkbox-stack" *ngIf="form.controls[pool.protocol].value === 0"><nb-checkbox [formControlName]="pool.tls">TLS</nb-checkbox><nb-checkbox [formControlName]="pool.enonce">Extranonce subscription</nb-checkbox></div>
             <div class="checkbox-stack"><nb-checkbox [checked]="form.controls[pool.verify].value > 0" (checkedChange)="toggleCoinbaseVerify($event, pool.verify, pool.lastVerify)">Verify coinbase</nb-checkbox></div>
