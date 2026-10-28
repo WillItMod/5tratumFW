@@ -152,6 +152,18 @@ class NerdPackageIdentityTests(unittest.TestCase):
                     fixture.package()
                 self.assertFalse(fixture.output.exists())
 
+    def test_all_extra_board_definitions_are_rejected_in_both_orders_and_with_values(self):
+        for identity, other in ((QA, OCT), (OCT, QA)):
+            for extra in (other.board, "NERDOCTAXEPLUS", "Q13"):
+                for suffix in ("", "=1", "=0"):
+                    for boards in ((identity.board, extra + suffix), (extra + suffix, identity.board)):
+                        with self.subTest(model=identity.model, boards=boards), tempfile.TemporaryDirectory() as temporary:
+                            fixture = PackageFixture(Path(temporary), identity)
+                            fixture.compile_flags(*boards)
+                            with self.assertRaisesRegex(ValueError, "compiler"):
+                                fixture.package()
+                            self.assertFalse(fixture.output.exists())
+
     def test_actual_oct_source_constant_bindings_package_and_mutants_are_rejected(self):
         for mutation in (None, "model-binding", "agent-binding", "utf8-constant", "agent-constant", "include"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:

@@ -190,7 +190,7 @@ export class EditComponent implements OnInit, OnDestroy {
   get displayProfileRestartPending(): boolean {return this.displayProfileSupported && this.savedDisplayProfile !== this.displayActiveProfile;}
   displayProfileLabel(id: DisplayProfileId): string {return this.allDisplayProfiles.find(option => option.id === id)!.label;}
   private configureDisplayProfile(info: ISettingsV2, system: ISystemV2 | null): void {
-    const hardwareProfiles = info.asicModel === eASICModel.BM1370 && ['NerdQAxe++', 'NerdOCTAXE-γ'].includes(info.deviceModel)
+    const hardwareProfiles: readonly string[] = info.asicModel === eASICModel.BM1370 && ['NerdQAxe++', 'NerdOCTAXE-γ'].includes(info.deviceModel)
       ? this.allDisplayProfiles.map(option => option.id) : [];
     const options = system?.displayProfileOptions;
     const validOptions = Array.isArray(options) && options.length > 0 && options.includes('320x170') &&
