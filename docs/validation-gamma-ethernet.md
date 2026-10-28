@@ -12,7 +12,18 @@
 - The production web build passes the enforced compressed payload budget: **626,986 bytes**, 11 assets, below the 876,628-byte project budget and within the 3 MiB WWW partition.
 - Actual LVGL9.5.0 native rendering and production `screen.c` runtime pass under ASan/UBSan: two executables, 36 framebuffer views, lifecycle/safety/rate/MUX checks and wired-only display assertions. These views use simulated data.
 
-The final target uses pinned **ESP-IDF6.0.2**, SDK source `7101770dc6db2667b3c477cc31365dd1acd6db4e`, ESP32-S3 and compiler toolchain `esp-15.2.0_20251204`. A dedicated local ARM64 container runs the mounted SDK/toolchains with network access disabled; its Linux host image is ESP-IDF5.5.3, not the SDK used to compile the firmware. Build receipts identify both separately. Required configuration includes per-default-interface DNS, four mDNS interfaces and SPI interrupts in IRAM. Final build/package results are pending until the reviewed source is committed and compiled without intervening changes.
+The final target uses pinned **ESP-IDF6.0.2**, SDK source `7101770dc6db2667b3c477cc31365dd1acd6db4e`, ESP32-S3 and compiler toolchain `esp-15.2.0_20251204`. A dedicated local ARM64 container runs the mounted SDK/toolchains with network access disabled; its Linux host image is ESP-IDF5.5.3, not the SDK used to compile the firmware. Build receipts identify both separately. The actual SDKCONFIG confirms per-default-interface DNS, four mDNS interfaces and SPI interrupts in IRAM.
+
+## Final target and paired package
+
+On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `4d3f665777681cdca294cadb37eef2c43cb5ad15`. The build directory began fresh with this exact SDK; the final same-SDK incremental reconfigure/rebuild incorporated the scan/AP lifecycle correction. No source changed during that final run. The manifest records the same commit for the firmware build and corresponding source archive; this later evidence-only documentation update does not relabel those files.
+
+| File | Bytes | SHA256 |
+| --- | --- | --- |
+| `esp-miner.bin` | 2,836,144 | `4c3d4418499093b6a14e2befd3ecbf0665a39f8ef8eb4dc9340c09c989bddd2b` |
+| `www.bin` | 3,145,728 | `6e3277f6cb5c5a0944a4cb48a3b7505c8c89515d52f3065f89e4a9a2615eaddf` |
+
+The application descriptor confirms Beta11 and SDK6.0.2. Packaging compares every embedded web asset with the frozen production bundle and independently regenerates SPIFFS to compare the WWW image byte for byte. A separate verification checks all manifest/checksum entries and all **2,169** source-inventory hashes, including the final network correction. The firmware contains the pinned 55,222-byte trust store; its 118 roots and positive/12 negative incident-chain controls pass. No generated factory or NVS image is distributed. The prior public Beta10 artifacts and root SDKCONFIG remain unchanged.
 
 ## Physical qualification remains pending
 
