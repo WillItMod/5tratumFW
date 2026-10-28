@@ -6,6 +6,12 @@
 
 using namespace FiveTratumDisplay;
 
+#if defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
+static_assert(SupportsRuntimeWideProfiles);
+#else
+static_assert(!SupportsRuntimeWideProfiles);
+#endif
+
 static void checkMetadata(const char *saved, const DisplayProfileRuntime &runtime,
                           bool valid, bool restart, size_t count) {
     JsonDocument doc;
@@ -14,6 +20,11 @@ static void checkMetadata(const char *saved, const DisplayProfileRuntime &runtim
     assert(doc["displayProfileStorageValid"].as<bool>() == valid);
     assert(doc["displayRestartRequired"].as<bool>() == restart);
     assert(doc["displayProfileOptions"].size() == count);
+    assert(doc["displayProfileOptions"][0] == "320x170");
+    if (count == 3) {
+        assert(doc["displayProfileOptions"][1] == "480x320-rgb");
+        assert(doc["displayProfileOptions"][2] == "480x320-bgr");
+    }
     assert(std::strcmp(doc["displayActiveProfile"].as<const char *>(), runtime.active().id) == 0);
     assert(doc["displayWidth"] == runtime.active().width);
     assert(doc["displayHeight"] == runtime.active().height);
@@ -50,13 +61,20 @@ int main() {
             assert(panelMirrorX(true, rebooted.active()) && panelMirrorY(true, rebooted.active()));
             checkMetadata(id, rebooted, true, false, count);
             checkMetadata("320x170", rebooted, true, true, count);
+            const auto *other = rebooted.active().bgr ? "480x320-rgb" : "480x320-bgr";
+            checkMetadata(other, rebooted, true, true, count);
+            rebooted.latch(other);
+            assert(std::strcmp(rebooted.active().id, id) == 0);
+            checkMetadata(id, rebooted, true, false, count);
         }
     } else {
-        // A stale QAxe display key must never select a large panel on OctAxe.
-        DisplayProfileRuntime otherBoard;
-        otherBoard.latch("480x320-bgr");
-        assert(otherBoard.active().width == 320 && !otherBoard.active().bgr);
-        checkMetadata("480x320-bgr", otherBoard, false, false, count);
+        // A stale saved choice must not enable a panel on another target.
+        for (const char *id : {"480x320-rgb", "480x320-bgr"}) {
+            DisplayProfileRuntime otherBoard;
+            otherBoard.latch(id);
+            assert(otherBoard.active().width == 320 && !otherBoard.active().bgr);
+            checkMetadata(id, otherBoard, false, false, count);
+        }
     }
 
     for (const char *invalid : {"", "480x320", "320X170", "320x170-extra"}) {
@@ -72,5 +90,6 @@ int main() {
     // Inversion is a user toggle relative to the established stock visuals.
     static_assert(panelInvertColors(false));
     static_assert(!panelInvertColors(true));
-    std::printf("runtime display latch/metadata passed (%s)\n", SupportsRuntimeWideProfiles ? "QAxe" : "OctAxe");
+    std::printf("runtime display latch/metadata passed (%s)\n",
+                SupportsRuntimeWideProfiles ? "runtime wide enabled" : "standard only");
 }

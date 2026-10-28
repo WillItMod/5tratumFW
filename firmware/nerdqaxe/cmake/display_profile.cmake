@@ -5,9 +5,11 @@ set(FIVETRATUM_DISPLAY_PROFILE "TDISPLAY_S3_320X170" CACHE STRING "Display-only 
 set_property(CACHE FIVETRATUM_DISPLAY_PROFILE PROPERTY STRINGS
     TDISPLAY_S3_320X170 QAXE_480X320_RGB QAXE_480X320_BGR)
 option(FIVETRATUM_EXPERIMENTAL_DISPLAY "Enable an unqualified, private QAxe display build" OFF)
-# Normal QAxe builds retain the original boot default and include explicit,
-# persisted runtime choices. Other board families cannot opt into these LCDs.
-if("$ENV{BOARD}" STREQUAL "NERDQAXEPLUS2")
+# QAxe++ and OctAxe Gamma builds retain the original boot default and include
+# explicit, persisted experimental choices. Other targets cannot select them.
+# The separate fixed experimental default remains restricted to private QAxe.
+if("$ENV{BOARD}" STREQUAL "NERDQAXEPLUS2" OR
+   "$ENV{BOARD}" STREQUAL "NERDOCTAXEGAMMA")
     set(FIVETRATUM_RUNTIME_DISPLAY_SELECTOR ON CACHE BOOL "Model-qualified runtime LCD selection" FORCE)
     add_compile_definitions(FIVETRATUM_RUNTIME_WIDE_DISPLAY=1)
 else()

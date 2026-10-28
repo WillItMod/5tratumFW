@@ -1,5 +1,7 @@
 # Aligned BETA tuning-schedule update — 28 October 2026
 
+The later [OctAxe Beta6 experimental screen release](../firmware/nerdqaxe/docs/octaxe-480-display.md) adds saved 480×320 choices. This aligned-update record retains the original Beta5 scope; see [Beta6 validation](../firmware/nerdqaxe/docs/validation-oct-beta6.md) for the new pair.
+
 This update brings the same saved tuning-profile schedule to the three existing
 firmware families. Each family retains a separate application/web pair and
 hardware qualification. No settings or schedules are installed automatically.
@@ -66,7 +68,8 @@ See the [dated build and package validation](validation-aligned-20261028.md) for
 
 ## Release boundary
 
-Gamma Beta10, QAxe Beta8 and OctAxe Beta5 are the public BETA pairs listed in
+Gamma Beta10, QAxe Beta8 and OctAxe Beta5 were the original aligned BETA pairs.
+Their successors, where available, are listed in
 [Downloads](../DOWNLOADS.md). Their immutable matched packages have separate
 source receipts and the dated installed-device evidence above; previous downloads
 remain available as historical releases. Central OS/MUX exact-release admission

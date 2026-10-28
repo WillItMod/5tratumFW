@@ -5,7 +5,8 @@
 
 // Display-only profiles. A pixel count or inherited board version is not a
 // controller/flash identity. Public builds retain the original boot default;
-// only QAxe exposes an explicit persisted choice of the larger profiles.
+// exact QAxe++ and OctAxe Gamma targets expose an explicit persisted choice
+// of the experimental larger profiles. This does not qualify a fitted panel.
 #ifndef FIVETRATUM_LCD_PROFILE
 #define FIVETRATUM_LCD_PROFILE 0
 #endif
@@ -46,7 +47,7 @@ inline constexpr DisplayProfile PanelProfile = WideBgrPanelProfile;
 
 #if defined(FIVETRATUM_RUNTIME_WIDE_DISPLAY)
 inline constexpr bool SupportsRuntimeWideProfiles = FIVETRATUM_RUNTIME_WIDE_DISPLAY == 1;
-#elif defined(NERDQAXEPLUS2)
+#elif defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
 inline constexpr bool SupportsRuntimeWideProfiles = true;
 #else
 inline constexpr bool SupportsRuntimeWideProfiles = false;

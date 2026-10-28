@@ -4,6 +4,12 @@
 #include <cassert>
 #include <iostream>
 
+#if defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
+static_assert(FiveTratumDisplay::SupportsRuntimeWideProfiles);
+#else
+static_assert(!FiveTratumDisplay::SupportsRuntimeWideProfiles);
+#endif
+
 std::vector<std::string> effects;
 std::string selectedProfile;
 System SYSTEM_MODULE;
@@ -150,7 +156,23 @@ std::string get(Handler handler, JsonDocument &doc) {
     assert(!deserializeJson(doc, req.response));
     return req.response;
 }
-void checkDurableSettingsAndBootLatchedMetadata() {
+#if defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
+void saveOnlyDisplayProfile(Handler handler, const char *id) {
+    effects.clear();
+    FACTORY_OTA_UPDATER.reads = 0;
+    httpd_req_t req;
+    req.body = std::string("{\"displayProfile\":\"") + id + "\"}";
+    assert(handler(&req) == ESP_OK && req.status == 200);
+    assert(selectedProfile == id);
+    assert(std::count(effects.begin(), effects.end(), "Config::setDisplayProfile") == 1);
+    assert(std::count(effects.begin(), effects.end(), "Config::flush") == 1);
+    assert(FACTORY_OTA_UPDATER.reads == 1);
+    for (const auto &effect : effects)
+        if (effect.compare(0, std::strlen("Config::set"), "Config::set") == 0)
+            assert(effect == "Config::setDisplayProfile");
+}
+#endif
+void checkDurableSettingsAndBootLatchedMetadata(Handler handler) {
     using namespace FiveTratumDisplay;
     // Simulated boots reset only the production latch object; GETs and PATCHes
     // never invoke latch. No settings cache or hardware initializer is replaced.
@@ -168,38 +190,71 @@ void checkDurableSettingsAndBootLatchedMetadata() {
     assert(system["displayActiveProfile"] == "320x170");
     assert(system["displayWidth"] == 320 && system["displayHeight"] == 170);
     assert(!system["displayRestartRequired"].as<bool>());
-#if defined(NERDQAXEPLUS2)
+#if defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
     assert(system["displayProfileOptions"].size() == 3);
-    // A saved supported profile appears in durable settings immediately while
-    // actual runtime dimensions remain those latched at the first boot.
-    selectedProfile = "480x320-rgb";
-    const auto beforeBoot = get(GET_V2_settings, settings);
-    assert(settings["displayProfile"] == "480x320-rgb");
-    get(GET_V2_system, system);
-    assert(system["displayProfile"] == "480x320-rgb");
-    assert(system["displayActiveProfile"] == "320x170");
-    assert(system["displayWidth"] == 320 && system["displayHeight"] == 170);
-    assert(system["displayRestartRequired"].as<bool>());
-    displayProfileRuntime.latch(selectedProfile.c_str());
-    assert(displayProfileRuntime.active().width == 320); // Re-latching cannot hot-switch.
-    displayProfileRuntime = DisplayProfileRuntime{};
-    displayProfileRuntime.latch(selectedProfile.c_str());
-    const auto afterBoot = get(GET_V2_settings, settings);
-    assert(beforeBoot == afterBoot); // Central durable hashes stay unchanged.
-    get(GET_V2_system, system);
-    assert(system["displayActiveProfile"] == "480x320-rgb");
-    assert(system["displayWidth"] == 480 && system["displayHeight"] == 320);
-    assert(!system["displayRestartRequired"].as<bool>());
+    assert(system["displayProfileOptions"][0] == "320x170");
+    assert(system["displayProfileOptions"][1] == "480x320-rgb");
+    assert(system["displayProfileOptions"][2] == "480x320-bgr");
+    for (const char *id : {"480x320-rgb", "480x320-bgr"}) {
+        // Exercise the actual PATCH path with only a screen choice: it cannot
+        // replace clocks, cooling, network, pools or the currently active LCD.
+        saveOnlyDisplayProfile(handler, id);
+        const auto beforeBoot = get(GET_V2_settings, settings);
+        assert(settings["displayProfile"] == id);
+        get(GET_V2_system, system);
+        assert(system["displayProfile"] == id);
+        assert(system["displayActiveProfile"] == "320x170");
+        assert(system["displayWidth"] == 320 && system["displayHeight"] == 170);
+        assert(system["displayProfileStorageValid"].as<bool>());
+        assert(system["displayRestartRequired"].as<bool>());
+        assert(!system["displayProfileExperimental"].as<bool>()); // Active panel is stock.
+        displayProfileRuntime.latch(selectedProfile.c_str());
+        assert(displayProfileRuntime.active().width == 320); // No hot-switch.
+        displayProfileRuntime = DisplayProfileRuntime{};
+        displayProfileRuntime.latch(selectedProfile.c_str());
+        const auto afterBoot = get(GET_V2_settings, settings);
+        assert(beforeBoot == afterBoot); // Durable settings hashes stay unchanged.
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == id);
+        assert(system["displayWidth"] == 480 && system["displayHeight"] == 320);
+        assert(!system["displayRestartRequired"].as<bool>());
+        assert(system["displayProfileExperimental"].as<bool>());
+        assert(displayProfileRuntime.active().bgr == (std::strcmp(id, "480x320-bgr") == 0));
+
+        // Changing colour order is also boot-latched. Reverting a pending
+        // choice clears the restart requirement without changing live state.
+        const char *other = displayProfileRuntime.active().bgr ? "480x320-rgb" : "480x320-bgr";
+        saveOnlyDisplayProfile(handler, other);
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == id && system["displayProfile"] == other);
+        assert(system["displayRestartRequired"].as<bool>());
+        saveOnlyDisplayProfile(handler, id);
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == id && !system["displayRestartRequired"].as<bool>());
+        saveOnlyDisplayProfile(handler, "320x170");
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == id && system["displayRestartRequired"].as<bool>());
+        displayProfileRuntime = DisplayProfileRuntime{};
+        displayProfileRuntime.latch(selectedProfile.c_str());
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == "320x170");
+        assert(system["displayWidth"] == 320 && system["displayHeight"] == 170);
+        assert(!system["displayRestartRequired"].as<bool>());
+        assert(!system["displayProfileExperimental"].as<bool>());
+    }
 #else
+    (void)handler;
     assert(system["displayProfileOptions"].size() == 1);
-    selectedProfile = "480x320-rgb"; // Simulate an unsupported stored value.
-    get(GET_V2_settings, settings);
-    assert(settings["displayProfile"] == "320x170");
-    get(GET_V2_system, system);
-    assert(system["displayActiveProfile"] == "320x170");
-    assert(!system["displayProfileStorageValid"].as<bool>());
-    assert(!system["displayRestartRequired"].as<bool>());
-    assert(selectedProfile == "480x320-rgb"); // GET does not rewrite storage.
+    for (const char *id : {"480x320-rgb", "480x320-bgr"}) {
+        selectedProfile = id; // Simulate an unsupported stored value.
+        get(GET_V2_settings, settings);
+        assert(settings["displayProfile"] == "320x170");
+        get(GET_V2_system, system);
+        assert(system["displayActiveProfile"] == "320x170");
+        assert(!system["displayProfileStorageValid"].as<bool>());
+        assert(!system["displayRestartRequired"].as<bool>());
+        assert(selectedProfile == id); // GET does not rewrite storage.
+    }
 #endif
 }
 }
@@ -217,7 +272,7 @@ int main() {
             "\"320x170\\u0000extra\"", "\"480x320-rgb\\u0000extra\"",
             "\"480x320-bgr\\u0000\"", "\"320x170\\n\""
         }) { expectRejected(handler, invalid); ++rejected; }
-#if defined(NERDQAXEPLUS2)
+#if defined(NERDQAXEPLUS2) || defined(NERDOCTAXEGAMMA)
         expectAccepted(handler, "\"480x320-rgb\"", "480x320-rgb");
         expectAccepted(handler, "\"480x320-bgr\"", "480x320-bgr");
 #else
@@ -234,8 +289,8 @@ int main() {
         req = call(handler, "{\"displayProfile\":");
         assert(req.status == 400 && effects.empty() && selectedProfile == "unchanged");
         checkFactoryOtaBusyGuard(handler);
+        checkDurableSettingsAndBootLatchedMetadata(handler);
     }
-    checkDurableSettingsAndBootLatchedMetadata();
     std::cout << "Actual legacy/v2 PATCH handlers passed " << rejected
               << " mixed-payload profile rejection checks with zero settings/pool/flush/reload effects; "
                  "valid profiles/auth paths, factory-OTA busy guard and durable GET-settings/boot-latched GET-system metadata passed\n";

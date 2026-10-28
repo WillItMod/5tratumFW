@@ -83,13 +83,14 @@ class DisplaySettingsApiTests(unittest.TestCase):
                 'namespace FiveTratumDisplay {\n' + adapters + '\n}\n' +
                 "\n\n".join(function_body(path.read_text(), signature)
                                for path, signature in handlers) + "\n")
-            for board in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA"):
+            for board in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA", "NERDOCTAXEPLUS",
+                          "NERDQAXEPLUS", "NERDOCTAXEGAMMA_EXTRA", None):
                 with self.subTest(board=board):
-                    binary = temporary / board
+                    binary = temporary / (board or "no-board")
                     subprocess.run([
                         self.compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                         "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
-                        f"-D{board}",
+                        *([f"-D{board}"] if board else []),
                         "-I", str(HOST / "display_settings_api_stubs"),
                         "-I", str(ROOT / "components/arduinojson"),
                         "-I", str(ROOT / "main/displays"),

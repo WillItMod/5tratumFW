@@ -1,8 +1,8 @@
 # OctAxe BETA installation and recovery — owned PCB 2.2 scope
 
-**OctAxe Beta5 uses only the standard 320×170 screen. QAxe Beta8 has a separate experimental 480×320 selector; those QAxe files are not OctAxe firmware.**
+**OctAxe Beta6 is a public EXPERIMENTAL release with a saved 480×320 RGB/BGR selector and Standard 320×170 default. It has software/build checks only; neither screen size has a physical Beta6 check. QAxe files are not OctAxe firmware.**
 
-This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. Beta5 is the current standard BETA pair; its exact pair passed a supervised update, settings/mining, pause/resume and same-point profile-schedule checks on the owned PCB 2.2 unit, with normal screen and both fans confirmed. Read [the dated validation](../../../docs/validation-aligned-20261028.md). [Beta4](validation-oct-beta4.md) and Beta3 remain historical evidence for their own images. Prior Beta1/Beta2 bench evidence is limited to one owned PCB 2.2 unit after a verified private recovery backup and actual layout inspection. Regulator strap/stock profile were reviewed against pinned hardware source; the package marking was not physically read. No other assembly or revision is qualified by this guide.
+This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. The current experimental Beta6 pair was compiled from clean source `5567a2d6c1f59808f197062e565fa6525a93f97b`; read [its software validation](validation-oct-beta6.md). The previous physically checked standard-screen [Beta5 pair](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.5) remains available. Beta5 passed a supervised update, settings/mining, pause/resume and same-point profile-schedule checks on the owned PCB 2.2 unit, with normal screen and both fans confirmed; [that dated evidence](../../../docs/validation-aligned-20261028.md) does not qualify Beta6. Earlier records apply to their own images. Prior bench evidence is limited to one owned PCB 2.2 unit after a verified private recovery backup and actual layout inspection. Regulator strap/stock profile were reviewed against pinned hardware source; the package marking was not physically read. No other assembly or revision is qualified by this guide.
 
 ## Establish the unit and recovery record
 
@@ -20,9 +20,9 @@ A PCB 3.1 unit using the same **NERDOCTAXEGAMMA / NerdOCTAXE-γ / BM1370 ×8** d
 
 ## Matched pair and routine OTA
 
-Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from one verified OctAxe BETA package after its dated installed-pair record is completed. For Beta5, both descriptor/web versions must be `5tratumFW-oct-0.1.0-beta.5`. Read the manifest, qualification notes and checksums. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
+Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from the same [OctAxe Beta6 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6). Both descriptor/web versions must be `5tratumFW-oct-0.1.0-beta.6`. Read the manifest, experimental limits and checksums. Beta6 has no installed-pair qualification. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
 
-Once the exact unit/layout and recovery path are established for a supervised bench test:
+Once the exact unit/layout and recovery path are established:
 
 1. Keep normal power, cooling and network access stable. Retain the original settings record and unit-specific recovery backup.
 2. Use the running firmware's supported application updater to upload `esp-miner-NerdOCTAXE-Gamma.bin` first. Retain any enabled OTP/authentication. Wait for completion and restart; do not interrupt a write.
@@ -34,9 +34,31 @@ Once the exact unit/layout and recovery path are established for a supervised be
 
 If the page cannot identify an older application, inspect only the model/version/ASIC fields from `/api/system/info` locally. The full response may contain private network/pool data. Retry the identity read or use the original firmware's supported updater. Do not rename a different board's image or bypass authentication to pass a filename check.
 
+## Update from 5tratumOS
+
+For an existing compatible 5tratumFW OctAxe, open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. Find the OctAxe and select **Open miner**. Download the matched application and `www.bin` from the [OctAxe Beta6 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6).
+
+In the miner's **Updates** page, upload `esp-miner-NerdOCTAXE-Gamma.bin` first and wait for the restart. Then upload the same release's matching `www.bin` through the web-interface updater and refresh. Confirm both application and web versions are `5tratumFW-oct-0.1.0-beta.6`, then follow the display steps below. Keep the existing authentication and the unit/layout requirements above.
+
+The current public **5tratumOS v0.8.47** does **not** offer OctAxe Beta6 through **Firmware update → Check for updates**. Its central admission/catalogue has not been updated for this release; use **Open miner** instead. This does not convert stock Nerd firmware: follow the separate initial-installation instructions below for a stock unit.
+
+## Select the experimental larger screen
+
+The reported larger panel is treated as **480×320 (153,600 pixels)** by accepted working assumption. Its controller, wiring and any vendor-specific flash layout remain unidentified. The application defaults to **Standard 320×170** and does not detect a larger panel automatically.
+
+1. Install the Beta6 application first and wait for the miner's restart. Then install that same release's matching OctAxe `www.bin` and reload the browser, as above.
+2. Open **Miner controls → Display → Screen**.
+3. Select **3.5-inch 480×320 RGB** or **3.5-inch 480×320 BGR** for the larger panel. Keep **Standard 320×170** for the standard screen.
+4. Select **Save this section**, wait for the saved/next-boot notice, then select **Restart device**. Selecting a choice alone does not change the active screen.
+5. Reload and confirm the active profile. Check full-screen position, readable unmirrored text, colours, startup and refresh. If the red/blue colours are exchanged, try the other RGB/BGR choice and repeat save/restart. **Rotate miner screen** remains the separate 180° control.
+
+The larger profiles change resolution, offset and mirror orientation together. No physical Beta6 panel check has been completed; record the actual panel result before treating it as qualified. The screen selector does not change the board identity, clock, voltage, cooling, pools, slots or schedules.
+
+To return to the previous physically checked standard-screen **Beta5**, first select **Standard 320×170** on Beta6, select **Save this section**, then **Restart device** and confirm Standard is active. Only then install the matching Beta5 application followed by its Beta5 `www.bin`. A saved or active larger profile blocks older OctAxe images that lack the selector; installing a QAxe image does not provide a downgrade path.
+
 ## Central management and initial installation
 
-Central Dual pool, Power and paired-update controls require an OS/MUX release explicitly admitting the installed family, version and source. The earlier QAxe Beta6 / OctAxe Beta4 admission at `689b2c8fcd01c4b507be102bb1caed22f4552738` does not automatically admit QAxe Beta8 / OctAxe Beta5 at `1a34b24100e1238e331d8145a70f6b08f85f943d`. This firmware publication does not update central admission. Native A/B sessions and the miner’s own controls remain available under their security policy. Admission still requires fresh capability/identity and matching app/web reports; a similar name, count or prefix is insufficient.
+Central Dual pool, Power and paired-update controls require an OS/MUX release explicitly admitting the installed family, version and source. The earlier QAxe Beta6 / OctAxe Beta4 admission at `689b2c8fcd01c4b507be102bb1caed22f4552738` does not automatically admit QAxe Beta8 / OctAxe Beta5 at `1a34b24100e1238e331d8145a70f6b08f85f943d`, or OctAxe Beta6 at `5567a2d6c1f59808f197062e565fa6525a93f97b`. This firmware publication does not update central admission. Native A/B sessions and the miner’s own controls remain available under their security policy. Admission still requires fresh capability/identity and matching app/web reports; a similar name, count or prefix is insufficient.
 
 Earlier central qualification (8 October 2026): MUX 0.9.75 passed its sampled live acceptance. 5tratumOS 0.8.31 completed the normal system update with settings/state preserved, followed by separate installed-file verification and seven GET-only observations over sixty seconds. The qualified QAxe Beta5 and OctAxe Beta3 miners reported both native streams, running Dual mode with 50% job allocation, and bound pool, power and paired-updater admission. This is sampled API and control-admission evidence; the check did not exercise an authenticated portal UI, perform new miner-control writes or establish independent physical-ASIC assignment.
 

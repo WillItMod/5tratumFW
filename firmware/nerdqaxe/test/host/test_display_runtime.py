@@ -19,13 +19,15 @@ class DisplayRuntimeTests(unittest.TestCase):
         if not compiler:
             raise RuntimeError("Runtime LCD tests require a C++17 compiler")
         with tempfile.TemporaryDirectory(prefix="display-runtime-") as temporary:
-            for board in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA"):
+            for board in ("NERDQAXEPLUS2", "NERDOCTAXEGAMMA", "NERDOCTAXEPLUS",
+                          "NERDQAXEPLUS", "NERDOCTAXEGAMMA_EXTRA", None):
                 with self.subTest(board=board):
-                    binary = Path(temporary) / board
+                    binary = Path(temporary) / (board or "no-board")
                     subprocess.run([
                         compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                         "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
-                        f"-D{board}", "-I", str(ROOT / "main/displays"),
+                        *([f"-D{board}"] if board else []),
+                        "-I", str(ROOT / "main/displays"),
                         "-I", str(ROOT / "components/arduinojson"),
                         str(ROOT / "test/host/display_runtime_harness.cpp"),
                         "-o", str(binary),

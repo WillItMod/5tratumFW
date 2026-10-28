@@ -1,8 +1,11 @@
-# QAxe screen size and panel selection
+# Screen size and panel selection
 
 QAxe Beta8 carries forward the saved screen selector introduced in the unpublished
 Beta7 work, under **Miner controls → Display → Screen**.
-One QAxe application supports these choices:
+The **public experimental OctAxe Beta6 BETA** adds the same explicit choices in
+its own matched application/web pair; earlier OctAxe Beta5 remains standard-only.
+See the [OctAxe working assumption and limits](octaxe-480-display.md). One
+application for each of those selected families supports these choices:
 
 | Screen | Resolution | Panel settings |
 | --- | --- | --- |
@@ -31,9 +34,11 @@ The 3.5-inch options remain **experimental** until checked on the actual panel.
 They retain the existing controller bus pins, flash/partition layout, board
 identity guard and mining hardware behavior. Selecting a resolution does not
 establish compatibility with another controller or a vendor's different flash
-layout. The OctAxe build exposes only its existing standard screen.
+layout. Neither a standard-screen nor larger-screen Beta6 installation has a
+new physical bench; Beta5's owned-board observations apply to that earlier pair.
+The 480×320 OctAxe resolution is a working assumption, not a panel measurement.
 
-The application rejects known older QA firmware when a larger screen is selected
+The application rejects known older standard-only firmware when a larger screen is selected
 or still active, before pausing mining or starting an update. The inherited
 upstream factory updater is also blocked in that state. Use a matching paired
 5tratumFW update that retains screen selection. Returning to Standard is an
@@ -47,3 +52,7 @@ existing source/version schema.
 
 The [panel references and fixed-profile experiments](experimental-480-display.md)
 record where the colour, timing, offset and orientation settings originate.
+Use the matching [OctAxe Beta6 application/web pair](releases/octaxe-v0.1.0-beta.6.md);
+the common choices do not make QAxe and OctAxe images interchangeable.
+[Beta6 validation](validation-oct-beta6.md) records its completed software checks
+and the remaining physical boundary.

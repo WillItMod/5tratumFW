@@ -142,7 +142,8 @@ def cache_values(path: Path) -> dict[str, str]:
 
 def verified_display_profiles(identity: BuildIdentity, cache: dict[str, str], commands: list[dict]) -> dict:
     """Bind update metadata to the actual public display-driver compilation."""
-    wide = identity == QA
+    checked_identity(identity)
+    wide = identity in (QA, OCT)
     if (cache.get("FIVETRATUM_DISPLAY_PROFILE") != "TDISPLAY_S3_320X170"
         or cache.get("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR") != ("ON" if wide else "OFF")):
         raise ValueError("Public display build must preserve the stock default and exact runtime selector")
@@ -178,7 +179,8 @@ def package(build: Path, output: Path, identity: BuildIdentity = QA) -> dict:
     commands = json.loads((build / "compile_commands.json").read_text())
     display_profiles = verified_display_profiles(identity, cache, commands)
     main_command = next((c.get("command", "") for c in commands if c.get("file", "").endswith("/main/main.cpp")), "")
-    board_flags = set(re.findall(r"(?:^|\s)-D((?:NERD|Q13)[A-Z0-9_]+)(?:\s|$)", main_command))
+    # Keep separators for adjacent defines; =0 still satisfies C++ defined().
+    board_flags = set(re.findall(r"(?:^|\s)-D(NERD[A-Z0-9_]+|Q13[A-Z0-9_]*)(?:=\S+)?(?=\s|$)", main_command))
     if board_flags != {identity.board}:
         raise ValueError(f"Application compiler did not select only {identity.board}")
     if config.get("PARTITION_TABLE_CUSTOM_FILENAME") != "partitions.csv":

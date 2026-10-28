@@ -155,6 +155,30 @@ describe('QAxe public release checks', () => {
     }
   });
 
+  it('offers the complete OctAxe Beta6 pair without substituting newer QAxe assets', () => {
+    let result!: QaxeUpdateCheck;
+    service.check('NerdOCTAXE-γ', '5tratumFW-oct-0.1.0-beta.5').subscribe(value => result = value);
+    http.expectOne(CATALOG + '1').flush([
+      release('qaxe-v9.0.0-beta.1'),
+      release('octaxe-v0.1.0-beta.7'), // A QAxe application under an Oct tag is still the wrong family.
+      release('octaxe-v0.1.0-beta.6', 'esp-miner-NerdOCTAXE-Gamma.bin'),
+    ]);
+    expect(result.status).toBe('available');
+    expect(result.release?.version).toBe('5tratumFW-oct-0.1.0-beta.6');
+    expect(result.release?.appUrl).toBe(`${REPOSITORY}/releases/download/octaxe-v0.1.0-beta.6/esp-miner-NerdOCTAXE-Gamma.bin`);
+    expect(result.release?.webUrl).toBe(`${REPOSITORY}/releases/download/octaxe-v0.1.0-beta.6/www.bin`);
+    http.expectNone(request => request.method !== 'GET' || request.url.includes('/api/v2/settings'));
+  });
+
+  it('does not describe the older OctAxe Beta5 catalog pair as an update for Beta6', () => {
+    let result!: QaxeUpdateCheck;
+    service.check('NerdOCTAXE-γ', '5tratumFW-oct-0.1.0-beta.6').subscribe(value => result = value);
+    http.expectOne(CATALOG + '1').flush([release('octaxe-v0.1.0-beta.5', 'esp-miner-NerdOCTAXE-Gamma.bin')]);
+    expect(result.status).toBe('newer-build');
+    // Catalog checks have no active-panel metadata. The miner validates a manual OTA's display compatibility.
+    http.expectNone(request => request.method !== 'GET');
+  });
+
   it('maps only the exact reported model to the Oct application filename', () => {
     expect(releasePolicyForModel('NerdOCTAXE-γ')?.appName).toBe('esp-miner-NerdOCTAXE-Gamma.bin');
     expect(releasePolicyForModel('NerdQAxe++')?.appName).toBe('esp-miner-NerdQAxe++.bin');

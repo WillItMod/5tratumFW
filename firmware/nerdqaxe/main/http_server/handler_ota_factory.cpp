@@ -284,7 +284,7 @@ esp_err_t FactoryOTAUpdate::ota_update_from_factory(const char *start_url, bool 
     // Upstream factory images do not promise to consume our saved display
     // profile. Refuse before downloads, power changes, flash writes or erasure.
     if (requires_display_profile_support()) {
-        setStep(OtaStep::ERROR, "OTA: use a profile-aware QAxe application for 480x320");
+        setStep(OtaStep::ERROR, "OTA: use a profile-aware application for this miner for 480x320");
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -369,7 +369,7 @@ esp_err_t FactoryOTAUpdate::ota_update_from_factory(const char *start_url, bool 
 
     // A display setting may have changed while the HTTP download was running.
     if (requires_display_profile_support()) {
-        setStep(OtaStep::ERROR, "OTA: use a profile-aware QAxe application for 480x320");
+        setStep(OtaStep::ERROR, "OTA: use a profile-aware application for this miner for 480x320");
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -685,7 +685,7 @@ esp_err_t POST_OTA_update_from_url(httpd_req_t *req)
     if (requires_display_profile_support()) {
         httpd_resp_set_status(req, "409 Conflict");
         return httpd_resp_sendstr(req,
-            "480x320 requires a profile-aware QAxe application; upstream factory updates are unavailable");
+            "480x320 requires a profile-aware application for this miner; upstream factory updates are unavailable");
     }
 
     // Read body into PSRAM or heap buffer
