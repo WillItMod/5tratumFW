@@ -16,9 +16,9 @@ The complete host runner also passes inside Ubuntu24.04 with **GCC13.3.0**, Pyth
 
 The final target uses pinned **ESP-IDF6.0.2**, SDK source `7101770dc6db2667b3c477cc31365dd1acd6db4e`, ESP32-S3 and compiler toolchain `esp-15.2.0_20251204`. A dedicated local ARM64 container runs the mounted SDK/toolchains with network access disabled; its Linux host image is ESP-IDF5.5.3, not the SDK used to compile the firmware. Build receipts identify both separately. The actual SDKCONFIG confirms per-default-interface DNS, four mDNS interfaces and SPI interrupts in IRAM.
 
-## Initial target and paired package
+## Final target and paired package
 
-On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `4d3f665777681cdca294cadb37eef2c43cb5ad15`. The build directory began fresh with this exact SDK; the final same-SDK incremental reconfigure/rebuild incorporated the scan/AP lifecycle correction. No source changed during that final run. The manifest records the same commit for the firmware build and corresponding source archive; this later evidence-only documentation update does not relabel those files.
+On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. The build directory began fresh with this exact SDK; subsequent same-SDK incremental reconfigure/rebuilds incorporated the scan/AP lifecycle correction and verified the final source. No source changed during the final run. The manifest records the same commit for the firmware build and corresponding source archive, including the GCC-tested fixture corrections. The application and WWW bytes are identical to the earlier `4d3f6657` candidate; its complete previous package is preserved separately. This later evidence-only documentation update does not relabel those files.
 
 | File | Bytes | SHA256 |
 | --- | --- | --- |
