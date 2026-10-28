@@ -1,6 +1,6 @@
-# Gamma Beta11 Ethernet candidate validation
+# Gamma Beta11 experimental Ethernet validation
 
-**Candidate: `5tratumFW-0.1.0-beta.11`, Gamma PCB601/602 BM1370 only.** This is a development candidate; the public Gamma release remains Beta10. No physical W5500 module is available locally, and this candidate has not been installed on a miner.
+**Public EXPERIMENTAL BETA: `5tratumFW-0.1.0-beta.11`, Gamma PCB 601/602 BM1370 only.** The verified candidate is published unchanged as [Gamma Beta11](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.11), with Ethernet off by default. No physical W5500 module is available locally, and Beta11 has not been installed on a miner. The previous physically checked [Beta10 pair](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.10) remains available.
 
 ## Software checks
 
@@ -18,7 +18,7 @@ The final target uses pinned **ESP-IDF6.0.2**, SDK source `7101770dc6db2667b3c47
 
 ## Final target and paired package
 
-On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. The build directory began fresh with this exact SDK; subsequent same-SDK incremental reconfigure/rebuilds incorporated the scan/AP lifecycle correction and verified the final source. No source changed during the final run. The manifest records the same commit for the firmware build and corresponding source archive, including the GCC-tested fixture corrections. The application and WWW bytes are identical to the earlier `4d3f6657` candidate; its complete previous package is preserved separately. This later evidence-only documentation update does not relabel those files.
+On 28 October 2026, target compilation, pinned CA verification and paired packaging **passed** from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. The build directory began fresh with this exact SDK; subsequent same-SDK incremental reconfigure/rebuilds incorporated the scan/AP lifecycle correction and verified the final source. No source changed during the final run. The manifest records the same commit for the firmware build and corresponding source archive, including the GCC-tested fixture corrections. The application and WWW bytes are identical to the earlier `4d3f6657` candidate; its complete previous package is preserved separately. Later evidence/publication documentation updates do not relabel those files. The immutable corresponding-source archive retains the prepublication wording present in its build commit; current online release notes describe public availability.
 
 | File | Bytes | SHA256 |
 | --- | --- | --- |
@@ -31,4 +31,4 @@ The application descriptor confirms Beta11 and SDK6.0.2. Packaging compares ever
 
 The tests simulate the receive record as a two-byte big-endian length including its own header, followed by the frame. They do not independently establish the W5500 silicon's RX header/FCS behavior. Link negotiation, DHCP, real packet exchange, cable fallback, sustained mining and Ethernet-only application/WWW OTA require the actual adapter. The [module checklist and instructions](gamma-ethernet.md) record those checks.
 
-Earlier Gamma Beta10 device observations do not qualify this candidate. No CI or build step flashes hardware, and no current public release or one-click update feed is changed by preparing it. The package must retain `hardware_tested: false` until separate dated hardware evidence exists.
+Earlier Gamma Beta10 device observations do not qualify Beta11. No CI or build step flashes hardware. Public Beta11 is offered through the 5tratumOS 0.8.48+ BETA channel as an experimental release; publishing the verified files adds no physical test evidence. The package retains `hardware_tested: false` until separate dated hardware evidence exists. Ethernet remains off by default, and installation/verification should use Wi-Fi until the actual adapter is qualified.

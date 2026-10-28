@@ -1,8 +1,10 @@
 # Build and validate 5tratumFW BETA
 
-The published Gamma Beta10 pair was compiled from clean source `1645747dfc46a83c52e27c567d43be3f0b53a035`. It passed 172 browser tests, all 14 host entry points, 36 native OLED/lifecycle views, target and exact package checks. QAxe Beta8 and OctAxe Beta5 were compiled separately from `1a34b24100e1238e331d8145a70f6b08f85f943d`. All six final GitHub checks passed at `09edf4d5`; the exact published local pairs completed short supervised updates, settings/mining, pause/resume and same-point schedule checks on the four owned miners. The owner confirmed all screens and fans normal. See [the dated record](validation-aligned-20261028.md) for exact scope, hashes and the honest local Gamma SDK/toolchain receipt. The older [Beta9 record](validation-beta9.md) applies only to that earlier pair.
+The previous Gamma Beta10 pair was compiled from clean source `1645747dfc46a83c52e27c567d43be3f0b53a035`. It passed 172 browser tests, all 14 host entry points, 36 native OLED/lifecycle views, target and exact package checks. QAxe Beta8 and OctAxe Beta5 were compiled separately from `1a34b24100e1238e331d8145a70f6b08f85f943d`. All six final GitHub checks passed at `09edf4d5`; the exact published local pairs completed short supervised updates, settings/mining, pause/resume and same-point schedule checks on the four owned miners. The owner confirmed all screens and fans normal. See [the dated record](validation-aligned-20261028.md) for exact scope, hashes and the honest local Gamma SDK/toolchain receipt. The older [Beta9 record](validation-beta9.md) applies only to that earlier pair.
 
-The Gamma source version is **`5tratumFW-0.1.0-beta.10`**. Application and WWW use the same `version.txt` marker. Keep versions unique and within the ESP application descriptor's 31-byte limit. Releases remain **prerelease/BETA**. [Beta7 validation](validation-beta7.md) retains the earlier pair's evidence.
+The current public Gamma Beta11 **EXPERIMENTAL BETA** pair was compiled from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. It passed 192 browser tests, 18 host entry points, 36 native OLED/lifecycle views, target compilation and paired-package checks. See [Beta11 validation](validation-gamma-ethernet.md) for exact host/toolchain receipts and limits. Beta11 has not been installed on a miner; its original W5500 driver is off by default, and physical LAN/Ethernet-only OTA remain unqualified. Later publication-documentation commits do not relabel the compiled pair or source archive.
+
+The Gamma source version is **`5tratumFW-0.1.0-beta.11`**. Application and WWW use the same `version.txt` marker. Keep versions unique and within the ESP application descriptor's 31-byte limit. Releases remain **prerelease/BETA**. [Beta7 validation](validation-beta7.md) retains the earlier pair's evidence.
 
 These instructions produce paired OTA images for **Bitaxe Gamma PCB revisions 601 and 602 only**. A successful compile does not establish compatibility with another board or prove operation on a physical miner. See [compatibility](compatibility.md) and [installation](installation.md) for the hardware and upgrade requirements.
 
@@ -43,13 +45,13 @@ Run the build from a clean source checkout rather than reusing an older `build/`
 
 ## Outputs
 
-When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.10/`:
+When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.11/`:
 
 | File | Purpose |
 | --- | --- |
 | `esp-miner.bin` | Application-only OTA image; use the firmware/app BIN uploader. |
 | `www.bin` | Complete WWW/SPIFFS image; use the web/WWW BIN uploader. |
-| `5tratumFW-0.1.0-beta.10-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
+| `5tratumFW-0.1.0-beta.11-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
 | `manifest.json` | Product version, upstream baseline, supported board identities, toolchain, image sizes and SHA-256 hashes. |
 | `SHA256SUMS` | Checksums for the images, source archive and web budget report. |
 | `web-budget.json` | Measurement of the compressed files actually placed in the WWW partition. |
@@ -77,7 +79,7 @@ Run the host regression suite from the repository root:
 python3 tools/test_gamma_host.py
 ```
 
-The runner executes the Gamma boot tests first, then every sorted `test/host/test_*.py` script as a separate Python process. It deliberately runs script entry points directly: the MUX receiver regression script does not define unittest classes and would be skipped by unittest discovery.
+The runner executes the Gamma boot tests first, then every sorted `test/host/test_*.py` script and `tools/test_gamma_ethernet.py` as separate Python processes. It deliberately runs script entry points directly: the MUX receiver regression script does not define unittest classes and would be skipped by unittest discovery.
 
 The host tests compile production C code with fake drivers, storage, time or HTTP where appropriate. The scheduler runtime tests obtain the exact cJSON source from the pinned ESP-IDF image. These checks exercise preservation, identity validation, weekly schedule behavior, power-control state transitions and MUX receiver handling without miner I/O. They cannot prove electrical behavior, ASIC performance, OTA installation or thermal safety on physical hardware.
 
@@ -93,7 +95,7 @@ GitHub's **Gamma BETA validation** workflow repeats frontend tests, host tests, 
 
 ## Validation and BETA limits
 
-Record the exact version, commit, test results and build host for each release. Keep compiled support separate from installed-device testing. The earlier `5tratumFW-0.1.0-a1` app/WWW pair was smoke tested on a Gamma 601; that is historical evidence for that earlier build. [Beta7 validation](validation-beta7.md) retains that earlier pair's separate supervised updates on 601 and 602; it does not qualify Beta10. Beta10 has its own [dated owned-device record](validation-aligned-20261028.md), including normal-screen/fan confirmation. These short checks do not establish a different operating point, sustained soak or all protection faults. The package manifest's `hardware_tested: false` is the immutable pre-bench packaging result; the dated validation records add later scoped installation evidence.
+Record the exact version, commit, test results and build host for each release. Keep compiled support separate from installed-device testing. The earlier `5tratumFW-0.1.0-a1` app/WWW pair was smoke tested on a Gamma 601; that is historical evidence for that earlier build. [Beta7 validation](validation-beta7.md) retains that earlier pair's separate supervised updates on 601 and 602; it does not qualify a later image. Beta10 has its own [dated owned-device record](validation-aligned-20261028.md), including normal-screen/fan confirmation. These short checks do not qualify Beta11 or establish a different operating point, sustained soak or all protection faults. Beta11 currently has software/build evidence only, including no physical W5500 or Ethernet-only OTA check. The package manifest's `hardware_tested: false` is the immutable pre-bench packaging result; the dated validation records add later scoped installation evidence.
 
 MUX deployment and live end-to-end validation are separate from this build. Compiling and host-testing the receiver does not establish a connected peer advertisement. No hub deployment or device flashing occurs in CI or these build commands.
 

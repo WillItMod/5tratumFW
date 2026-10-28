@@ -4,6 +4,8 @@ These application and web images are for **Bitaxe Gamma PCB revisions 601 and 60
 
 GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this Gamma image's supported hardware. NerdQAxe++ has a separate firmware family in this repository; use its [model-specific guide](nerdqaxe.md) and image pair. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
 
+**Current public Gamma release: [Beta11 — EXPERIMENTAL BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.11).** It has software/build evidence only and has not been installed on a miner. The original W5500 Ethernet option is off by default; physical LAN and Ethernet-only OTA remain unqualified. See [Ethernet setup and qualification](gamma-ethernet.md). The previous physically checked [Beta10 pair](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.10) remains available.
+
 ## Choose the correct files
 
 Use the paired files from the same 5tratumFW release or verified local build:
@@ -28,7 +30,9 @@ Both images are needed to install a complete release when its application and we
 
 ## Update through 5tratumOS
 
-For an existing compatible **Bitaxe Gamma 601 or 602** running 5tratumFW, update 5tratumOS to **0.8.48** through **Settings → Updates** and reload the portal. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. On the correct Gamma, select **Firmware update → BETA → Check for updates** and confirm the model-labelled **Bitaxe Gamma 601/602 Beta 10** release. Select **Install firmware → Confirm install** and keep the miner powered until **Firmware installation verified** appears. The OS installs both matching images, handles restarts and verifies versions and retained settings. See the [complete one-click instructions](../DOWNLOADS.md#update-through-5tratumos).
+For an existing compatible **Bitaxe Gamma 601 or 602** running 5tratumFW, update 5tratumOS to **0.8.48 or later** through **Settings → Updates** and reload the portal. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. On the correct Gamma, select **Firmware update → BETA → Check for updates** and confirm the model-labelled **Bitaxe Gamma 601/602 Beta11 — experimental** release. Select **Install firmware → Confirm install** and keep the miner powered until **Firmware installation verified** appears. The OS installs both matching images, handles restarts and verifies versions and retained settings. See the [complete one-click instructions](../DOWNLOADS.md#update-through-5tratumos).
+
+For Beta11, install and verify both images over Wi-Fi with the adapter disconnected. The update does not enable Ethernet by default. Open **Network → Enable wired Ethernet (W5500)** only when ready to follow [the powered-off wiring and save/restart procedure](gamma-ethernet.md#enable-ethernet). Ethernet-only update qualification remains pending.
 
 Future compatible releases are discovered without another OS update for each firmware version; BETA also includes compatible stable releases. Firmware-update eligibility is independent of separate central miner-control qualification, including Power. Hardware, identity, package and API checks still apply; new hardware or a breaking contract can require an adapter. The one-click updater does not perform the initial conversion from stock firmware.
 
@@ -44,6 +48,8 @@ Follow any order stated in the release notes. Otherwise:
 
 The **5tratumFW releases → Check releases** control opens the WillItMod/5tratumFW GitHub release channel, including BETA prereleases. Read the compatibility, release notes and validation record before selecting files. Obtain the paired images from that channel or build this repository yourself.
 
-Before downgrading Gamma Beta10 to Beta9, read the [authentication-journal compatibility limits](upstream-migration-20261028.md). Changing either saved pool authentication flag from its original individual-key baseline can require an extended journal that Beta9 cannot read. Restore both authentication flags to their original baseline while running Beta10 to regain the legacy journal format, or retain compatible firmware and the unit-specific recovery backup. An old app/WWW pair alone does not repair an extended journal. Ordinary tuning changes retain the legacy format when authentication still matches that baseline.
+Before downgrading Gamma Beta11 to Beta10, clear **Enable wired Ethernet (W5500)**, save, power off and disconnect the adapter, then install both matching Beta10 files over Wi-Fi. Older firmware does not reserve the accessory pins for W5500.
+
+Before downgrading Gamma Beta10 or Beta11 to Beta9, read the [authentication-journal compatibility limits](upstream-migration-20261028.md). Changing either saved pool authentication flag from its original individual-key baseline can require an extended journal that Beta9 cannot read. Restore both authentication flags to their original baseline while running Beta10 or Beta11 to regain the legacy journal format, or retain compatible firmware and the unit-specific recovery backup. An old app/WWW pair alone does not repair an extended journal. Ordinary tuning changes retain the legacy format when authentication still matches that baseline.
 
 If the web interface is damaged, follow [Recovery](recovery.md). Do not erase flash or write a factory configuration as a routine update step.
