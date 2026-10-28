@@ -63,9 +63,15 @@ inline void releaseHostSamples(HashrateMonitor &monitor) {
     delete[] monitor.m_prevResponse;
     delete[] monitor.m_prevCounter;
     delete[] monitor.m_chipSampleAvailable;
+    delete[] monitor.m_chipErrorRate;
+    delete[] monitor.m_prevErrorResponse;
+    delete[] monitor.m_prevErrorCounter;
     monitor.m_chipHashrate = nullptr;
     monitor.m_prevResponse = nullptr;
     monitor.m_prevCounter = nullptr;
     monitor.m_chipSampleAvailable = nullptr;
+    monitor.m_chipErrorRate = nullptr;
+    monitor.m_prevErrorResponse = nullptr;
+    monitor.m_prevErrorCounter = nullptr;
     monitor.m_asicCount = 0;
 }

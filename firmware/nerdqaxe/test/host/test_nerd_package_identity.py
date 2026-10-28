@@ -57,6 +57,8 @@ class PackageFixture:
         (self.build / "build-source-receipt.json").write_text(json.dumps({"sourceCommit": COMMIT,
             "boardProfile": identity.board, "version": self.version, "idfImage": packaging.IDF_IMAGE}))
         self.cache = {"FIVETRATUM_RELEASE_PROFILE": identity.board,
+            "FIVETRATUM_DISPLAY_PROFILE": "TDISPLAY_S3_320X170",
+            "FIVETRATUM_RUNTIME_DISPLAY_SELECTOR": "ON" if identity == QA else "OFF",
             "FIVETRATUM_ASIC_CAPTURE_LOGS": "OFF", "FIVETRATUM_BM1370_CAPTURE": "OFF",
             "FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER": "OFF"}
         self.write_cache()
@@ -80,7 +82,10 @@ class PackageFixture:
 
     def compile_flags(self, *boards):
         (self.build / "compile_commands.json").write_text(json.dumps([{"file": "/project/main/main.cpp",
-            "command": "clang " + " ".join("-D" + board for board in boards) + " -c main.cpp"}]))
+            "command": "clang " + " ".join("-D" + board for board in boards) + " -c main.cpp"},
+            {"file": "/project/main/displays/displayDriver.cpp", "command":
+             "clang -DFIVETRATUM_LCD_PROFILE=0 -DFIVETRATUM_RUNTIME_WIDE_DISPLAY="
+             + str(int(self.identity == QA)) + " -c displayDriver.cpp"}]))
 
     def fake_recreate_spiffs(self, command, **kwargs):
         if command[:3] != ["docker", "run", "--rm"]:
@@ -130,6 +135,10 @@ class NerdPackageIdentityTests(unittest.TestCase):
                 self.assertFalse(manifest["independentWorkAssignment"])
                 self.assertFalse(manifest["partitionLayout"]["physicalLayoutVerified"])
                 self.assertEqual(manifest["partitionLayout"]["flashBytesAssumed"], 16 * 1024 * 1024)
+                self.assertEqual(manifest["displayProfiles"], {"schemaVersion": 1,
+                    "defaultProfile": "320x170", "persistentSelection": True,
+                    "supportedProfiles": ["320x170", "480x320-rgb", "480x320-bgr"] if identity == QA else ["320x170"],
+                    "experimentalProfiles": ["480x320-rgb", "480x320-bgr"] if identity == QA else []})
                 self.assertEqual({path.name for path in fixture.output.glob("*.bin")}, {identity.app_name, "www.bin"})
                 for name, entry in manifest["files"].items():
                     self.assertEqual(packaging.sha256(fixture.output / name), entry["sha256"])
@@ -167,6 +176,24 @@ class NerdPackageIdentityTests(unittest.TestCase):
                     self.assertEqual(json.loads((fixture.output / "manifest.json").read_text())["deviceModel"], OCT.model)
                 else:
                     with self.assertRaisesRegex(ValueError, "model/BM1370/count contract"):
+                        fixture.package()
+                    self.assertFalse(fixture.output.exists())
+
+    def test_display_metadata_rejects_stale_or_wrong_family_compilations(self):
+        for identity in (QA, OCT):
+            for mutation in ("missing-cache", "wrong-default", "wrong-selector", "missing-driver", "wrong-driver", "duplicate-flag"):
+                with self.subTest(model=identity.model, mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                    fixture = PackageFixture(Path(temporary), identity)
+                    if mutation == "missing-cache": fixture.cache.pop("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR")
+                    elif mutation == "wrong-default": fixture.cache["FIVETRATUM_DISPLAY_PROFILE"] = "QAXE_480X320_BGR"
+                    elif mutation == "wrong-selector": fixture.cache["FIVETRATUM_RUNTIME_DISPLAY_SELECTOR"] = "OFF" if identity == QA else "ON"
+                    fixture.write_cache()
+                    commands = json.loads((fixture.build / "compile_commands.json").read_text())
+                    if mutation == "missing-driver": commands = commands[:1]
+                    elif mutation == "wrong-driver": commands[1]["command"] = commands[1]["command"].replace("LCD_PROFILE=0", "LCD_PROFILE=2")
+                    elif mutation == "duplicate-flag": commands[1]["command"] += " -DFIVETRATUM_RUNTIME_WIDE_DISPLAY=1"
+                    (fixture.build / "compile_commands.json").write_text(json.dumps(commands))
+                    with self.assertRaisesRegex(ValueError, "[Dd]isplay|display"):
                         fixture.package()
                     self.assertFalse(fixture.output.exists())
 

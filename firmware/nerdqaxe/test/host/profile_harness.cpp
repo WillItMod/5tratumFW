@@ -1,5 +1,7 @@
 #include "profile_schema.h"
 #include "config_transaction.h"
+#include "sdkconfig.h"
+#include "../../main/nvs_config.h"
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -46,6 +48,18 @@ int main() {
     assert(!parse(R"({"type":"pool","slot":0,"poolTarget":"asic0"})",true));
     assert(!parse(R"({"type":"pool","slot":0,"poolTarget":"primary","coreIndex":0})",true));
     assert(parse(R"({"type":"pool","slot":9,"clear":true})"));assert(request.clear);
+    // Legacy profiles keep their missing RC1 auth choice; applying one cannot
+    // weaken the destination's explicit requirement. New choices round-trip.
+    record=old;assert(validRecord(record.as<JsonObjectConst>(),Kind::Pool));
+    patch.clear();buildActivePatch(patch.to<JsonObject>(),Kind::Pool,record.as<JsonObjectConst>(),0);assert(patch[NVS_CONFIG_SV2_REQUIRE_AUTH].isNull());
+    record["sv2RequireAuth"]=true;assert(validRecord(record.as<JsonObjectConst>(),Kind::Pool));
+    patch.clear();buildActivePatch(patch.to<JsonObject>(),Kind::Pool,record.as<JsonObjectConst>(),0);assert(patch.size()==13 && patch[NVS_CONFIG_SV2_REQUIRE_AUTH]==1);
+    publicSlot.clear();writePublicSlot(publicSlot.to<JsonObject>(),0,Kind::Pool,record.as<JsonObjectConst>());assert(publicSlot["sv2RequireAuth"]==true);
+    record["sv2RequireAuth"]=false;patch.clear();buildActivePatch(patch.to<JsonObject>(),Kind::Pool,record.as<JsonObjectConst>(),1);assert(patch[NVS_CONFIG_FB_SV2_REQUIRE_AUTH]==0);
+    record["sv2RequireAuth"]=nullptr;assert(!validRecord(record.as<JsonObjectConst>(),Kind::Pool));
+    assert(parse(R"({"type":"pool","slot":0,"name":"Rename legacy"})"));assert(buildRecord(input.as<JsonObjectConst>(),request,old.as<JsonObjectConst>(),{},limits,record));assert(record["sv2RequireAuth"].isNull());
+    assert(parse(R"({"type":"pool","slot":0,"name":"Require auth","sv2RequireAuth":true})"));assert(buildRecord(input.as<JsonObjectConst>(),request,old.as<JsonObjectConst>(),{},limits,record));assert(record["sv2RequireAuth"]==true);
+    assert(parse(R"({"type":"pool","slot":0,"name":"bad","sv2RequireAuth":1})"));assert(!buildRecord(input.as<JsonObjectConst>(),request,old.as<JsonObjectConst>(),{},limits,record));
     publicSlot.clear();writePublicSlot(publicSlot.to<JsonObject>(),9,Kind::Pool,{});assert(!publicSlot["configured"].as<bool>() && publicSlot["name"].isNull());
     std::cout << "profile validation, credentials, exact patch and commit-before-publish tests passed\n";
 }

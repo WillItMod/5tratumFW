@@ -2,9 +2,10 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of, timeout } from 'rxjs';
 import { environment } from 'src/environments/environment';
+import { TuningSchedule, TuningScheduleReport } from 'src/models/ITuningSchedule';
 
 export interface TuningSlot { slot: number; configured: boolean; name: string | null; frequencyMHz?: number; coreVoltageMv?: number; }
-export interface PoolSlot { slot: number; configured: boolean; name: string | null; host?: string; port?: number; user?: string; protocol?: string; passwordConfigured?: boolean; }
+export interface PoolSlot { slot: number; configured: boolean; name: string | null; host?: string; port?: number; user?: string; protocol?: string; passwordConfigured?: boolean; sv2RequireAuth?: boolean; }
 export interface Profiles { schemaVersion: number; tuning: TuningSlot[]; pools: PoolSlot[]; limits: { frequency: { min: number; max: number; step: number; quantization: string }; coreVoltage: { min: number; max: number; step: number } }; current: { frequencyMHz: number; coreVoltageMv: number; overclockEnabled?: boolean }; }
 export interface ProfileResult { ok: boolean; restartRequired: boolean; }
 export interface PoolEvent { enabled: boolean; dayMask: number; timeMinutes: number; slot: number; }
@@ -13,6 +14,8 @@ export interface PoolSchedule { schemaVersion: number; enabled: boolean; utcOffs
 export class OperatingProfilesService {
   private mockProfiles: Profiles = { schemaVersion: 1, tuning: Array.from({ length: 10 }, (_, slot) => ({ slot, configured: false, name: null })), pools: Array.from({ length: 10 }, (_, slot) => ({ slot, configured: false, name: null })), limits: { frequency: { min: 400, max: 625, step: .25, quantization: 'nearest-pll' }, coreVoltage: { min: 1000, max: 1250, step: 1 } }, current: { frequencyMHz: 525, coreVoltageMv: 1150 } };
   private mockSchedule: PoolSchedule = { schemaVersion: 1, enabled: false, utcOffsetMinutes: 0, events: [], clockValid: false, selectedSlot: null, timezoneMode: 'fixed-utc-offset', poolTarget: 'primary', maxEvents: 16 };
+  private mockTuningSchedule: TuningScheduleReport = {schemaVersion:1,enabled:false,utcOffsetMinutes:0,events:[],supported:true,
+    clockValid:false,selectedSlot:null,appliedSlot:null,timezoneMode:'fixed-utc-offset',status:'disabled',error:null,maxEvents:16};
   constructor(private http: HttpClient) {}
   get(uri = ''): Observable<Profiles> { return environment.production || uri ? this.http.get<Profiles>(`${uri}/api/5tratum/profiles`).pipe(timeout(5000)) : of(structuredClone(this.mockProfiles)); }
   save(body: Record<string, unknown>, uri = ''): Observable<ProfileResult> {
@@ -31,6 +34,16 @@ export class OperatingProfilesService {
     return of({ ok: true, restartRequired: body['poolTarget'] === 'fallback' });
   }
   getSchedule(uri = ''): Observable<PoolSchedule> { return environment.production || uri ? this.http.get<PoolSchedule>(`${uri}/api/5tratum/pool-schedule`).pipe(timeout(5000)) : of(structuredClone(this.mockSchedule)); }
+  getTuningSchedule(uri = ''): Observable<TuningScheduleReport> {
+    return environment.production || uri ? this.http.get<TuningScheduleReport>(`${uri}/api/5tratum/tuning-schedule`).pipe(timeout(5000)) : of(structuredClone(this.mockTuningSchedule));
+  }
+  saveTuningSchedule(schedule: TuningSchedule, uri = ''): Observable<{ok:boolean}> {
+    const body = {schemaVersion:1 as const,enabled:schedule.enabled,utcOffsetMinutes:schedule.utcOffsetMinutes,
+      events:schedule.events.map(({enabled,dayMask,timeMinutes,slot}) => ({enabled,dayMask,timeMinutes,slot}))};
+    if (environment.production || uri) return this.http.post<{ok:boolean}>(`${uri}/api/5tratum/tuning-schedule`,body).pipe(timeout(6000));
+    this.mockTuningSchedule = {...this.mockTuningSchedule,...structuredClone(body),selectedSlot:null,appliedSlot:null,status:body.enabled ? 'waiting-clock' : 'disabled',error:null};
+    return of({ok:true});
+  }
   saveSchedule(schedule: PoolSchedule, uri = ''): Observable<PoolSchedule> {
     const body = { schemaVersion: 1, enabled: schedule.enabled, utcOffsetMinutes: schedule.utcOffsetMinutes, events: schedule.events.map(({ enabled, dayMask, timeMinutes, slot }) => ({ enabled, dayMask, timeMinutes, slot })) };
     if (environment.production || uri) return this.http.post<PoolSchedule>(`${uri}/api/5tratum/pool-schedule`, body).pipe(timeout(6000));

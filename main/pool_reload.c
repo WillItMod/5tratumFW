@@ -17,6 +17,8 @@ esp_err_t SYSTEM_reload_primary_pool(GlobalState *state, stratum_protocol_t *pro
     char *user = nvs_config_get_string(NVS_CONFIG_STRATUM_USER);
     char *password = nvs_config_get_string(NVS_CONFIG_STRATUM_PASS);
     char *certificate = nvs_config_get_string(NVS_CONFIG_STRATUM_CERT);
+    char *authority = nvs_config_get_string(NVS_CONFIG_SV2_AUTHORITY_PUBKEY);
+    char *channel = nvs_config_get_string(NVS_CONFIG_SV2_CHANNEL_TYPE);
     esp_err_t error = ESP_OK;
     stratum_protocol_t parsed = STRATUM_PROTOCOL_UNKNOWN;
     uint16_t port = nvs_config_get_u16(NVS_CONFIG_STRATUM_PORT);
@@ -24,7 +26,7 @@ esp_err_t SYSTEM_reload_primary_pool(GlobalState *state, stratum_protocol_t *pro
     uint16_t difficulty = nvs_config_get_u16(NVS_CONFIG_STRATUM_DIFFICULTY);
     bool extranonce = nvs_config_get_bool(NVS_CONFIG_STRATUM_EXTRANONCE_SUBSCRIBE);
     bool decode = nvs_config_get_bool(NVS_CONFIG_STRATUM_DECODE_COINBASE_TX);
-    if (!kind || !host || !user || !password || !certificate) error = ESP_ERR_NO_MEM;
+    if (!kind || !host || !user || !password || !certificate || !authority || !channel) error = ESP_ERR_NO_MEM;
     else {
         if (!strcmp(kind, "SV1")) parsed = STRATUM_PROTOCOL_V1;
         else if (!strcmp(kind, "SV2")) parsed = STRATUM_PROTOCOL_V2;
@@ -32,7 +34,7 @@ esp_err_t SYSTEM_reload_primary_pool(GlobalState *state, stratum_protocol_t *pro
             strlen(password) > 512 || strlen(certificate) > 2048 || !port || tls > 2) error = ESP_ERR_INVALID_ARG;
     }
     free(kind);
-    if (error != ESP_OK) { free(host); free(user); free(password); free(certificate); return error; }
+    if (error != ESP_OK) { free(host); free(user); free(password); free(certificate); free(authority);free(channel);return error; }
     pthread_mutex_lock(&config_mutex);
     SystemModule *module = &state->SYSTEM_MODULE;
     char *old_host = module->pool_url, *old_user = module->pool_user;
@@ -41,6 +43,15 @@ esp_err_t SYSTEM_reload_primary_pool(GlobalState *state, stratum_protocol_t *pro
     module->pool_pass = password; module->pool_cert = certificate;
     module->pool_port = port; module->pool_tls = tls; module->pool_difficulty = difficulty;
     module->pool_extranonce_subscribe = extranonce; module->pool_decode_coinbase_tx = decode;
+    PoolConfig *view=&module->pools[0];
+    char *old_authority=view->sv2_authority_pubkey;
+    view->url=host;view->user=user;view->pass=password;view->cert=certificate;
+    view->port=port;view->tls=tls;view->difficulty=difficulty;view->protocol=parsed;
+    view->extranonce_subscribe=extranonce;view->decode_coinbase_tx=decode;
+    view->sv2_authority_pubkey=authority;
+    view->sv2_channel_type=!strcmp(channel,"standard")?1:2;
+    view->sv2_require_auth=nvs_config_get_bool(NVS_CONFIG_SV2_REQUIRE_AUTH);
+    free(channel);free(old_authority);
     // No fallback, pause, voltage, clock, fan or ASIC state is changed by a route reload.
     *protocol = parsed;
     free(old_host); free(old_user); free(old_password); free(old_certificate);

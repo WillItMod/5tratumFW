@@ -1,15 +1,28 @@
 #include "esp_ota_ops.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "global_state.h"
 
 #include "http_cors.h"
 #include "http_utils.h"
+#include "nvs_config.h"
+#include "displays/display_profile.h"
+#include "display_ota_compatibility.h"
 
 static const char *TAG = "http_ota";
 
 extern bool enter_recovery;
+
+static bool requires_display_profile_support()
+{
+    char *saved = Config::getDisplayProfile();
+    const bool required = FiveTratumDisplayOta::requiresProfileSupport(
+        saved, FiveTratumDisplay::displayProfileRuntime.active().id);
+    free(saved);
+    return required;
+}
 
 
 esp_err_t POST_WWW_update(httpd_req_t *req)
@@ -111,6 +124,37 @@ esp_err_t POST_OTA_update(httpd_req_t *req)
     esp_ota_handle_t ota_handle;
     int remaining = req->content_len;
 
+    uint8_t prefix[FiveTratumDisplayOta::ImagePrefixBytes];
+    std::size_t prefix_size = 0;
+    if (requires_display_profile_support()) {
+        if (remaining < static_cast<int>(sizeof(prefix))) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Application header is incomplete");
+        }
+        const int64_t prefix_started_us = esp_timer_get_time();
+        while (prefix_size < sizeof(prefix)) {
+            if (FiveTratumDisplayOta::prefixReadDeadlineExpired(prefix_started_us, esp_timer_get_time())) {
+                return httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Application header timed out");
+            }
+            const int received = httpd_req_recv(req, reinterpret_cast<char *>(prefix) + prefix_size,
+                                               sizeof(prefix) - prefix_size);
+            if (FiveTratumDisplayOta::prefixReadDeadlineExpired(prefix_started_us, esp_timer_get_time())) {
+                return httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Application header timed out");
+            }
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            if (received <= 0) {
+                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Application header is incomplete");
+            }
+            prefix_size += static_cast<std::size_t>(received);
+        }
+        // Refuse legacy or unrelated images while the current firmware is
+        // still running normally: neither flash nor ASIC power changes first.
+        if (!FiveTratumDisplayOta::compatibleImagePrefix(prefix, prefix_size)) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                "480x320 requires a profile-aware QAxe application (5tratumFW QA beta.7 or newer)");
+        }
+        remaining -= static_cast<int>(prefix_size);
+    }
+
     // lock the power management module
     LockGuard lg(POWER_MANAGEMENT_MODULE);
 
@@ -126,6 +170,15 @@ esp_err_t POST_OTA_update(httpd_req_t *req)
     // don't put it on the stack
     char *buf = (char*) malloc(2048);
     uint32_t offset = 0;
+
+    if (prefix_size) {
+        if (esp_ota_write(ota_handle, prefix, prefix_size) != ESP_OK) {
+            esp_ota_abort(ota_handle);
+            free(buf);
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash Error");
+        }
+        offset = static_cast<uint32_t>(prefix_size);
+    }
 
     while (remaining > 0) {
         int recv_len = httpd_req_recv(req, buf, min(remaining, 2048));

@@ -72,7 +72,7 @@ DisplayDriver::DisplayDriver() {
 void DisplayDriver::loadSettings() {
     PThreadGuard lock(m_lvglMutex);
     m_isAutoScreenOffEnabled = Config::isAutoScreenOffEnabled();
-    m_tempControlMode = Config::getTempControlMode();
+    m_tempControlMode = SYSTEM_MODULE.getBoard()->getFanMode(0);
     m_fanSpeed = Config::getFanSpeed();
     m_showFoundBlockEnabled = Config::isShowBlockFoundEnabled();
 
@@ -180,6 +180,7 @@ void DisplayDriver::startShutdownCountdown() {
     if (m_shutdownCountdownActive) return;
 
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     m_shutdownCountdownActive = true;
     m_isActiveOverlay = true;
     m_shutdownStartTime = esp_timer_get_time();
@@ -243,6 +244,7 @@ void DisplayDriver::showError(const char *error_message, uint32_t error_code) {
 
     // Safety cancels the informational celebration and its decorative motion.
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     // now show the (new) error overlay
     m_ui->showErrorOverlay(error_message, error_code);
     if (m_state == UiState::Identify || m_state == UiState::Brand) enterState(UiState::Mining, now_us());
@@ -272,14 +274,19 @@ void DisplayDriver::showFoundBlockOverlay() {
     // and dismissible after its short bob/shine/confetti burst has finished.
     enableLvglAnimations(true);
     m_ui->showCandidateOverlay(m_animationsEnabled);
+    m_foundBlockOverlay = true;
     m_isActiveOverlay = true;
     displayTurnOn();
     refreshScreen();
 }
 
 void DisplayDriver::hideFoundBlockOverlay() {
+    // called from the LVGL task (button press) while the system task may show a new
+    // one for another block
+    PThreadGuard lock(m_lvglMutex);
     // hide the overlay and free the memory
     m_ui->hideImageOverlay();
+    m_foundBlockOverlay = false;
     updateOverlayPriority();
 }
 
@@ -385,12 +392,14 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         break;
     case UiState::ShowQR:
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         ESP_LOGI(TAG, "enter qr state");
         enableLvglAnimations(true);
         safe_screen_change(m_ui->ui_qrScreen, LV_SCR_LOAD_ANIM_FADE_ON, 500, 0);
         break;
     case UiState::Identify:
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         ESP_LOGI(TAG, "enter state identify (blink %lums)", m_identifyDuration_ms);
         break;
     case UiState::PowerOff:
@@ -398,6 +407,7 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         // operations occur after the timer task releases the display mutex.
         m_ui->hideErrorOverlay();
         m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
         if (!m_ui->ui_PowerOffScreen) {
             m_ui->powerOffScreenInit();
         }
@@ -617,8 +627,13 @@ void DisplayDriver::processButtons(Button &btn1, Button &btn2, int64_t tnow,
         btn2.clearEvent();
         return;
     }
-    if ((evt1 & BTN_EVENT_SHORTPRESS || evt2 & BTN_EVENT_SHORTPRESS) && m_ui->ui_imageOverlayContainer) {
-        hideFoundBlockOverlay();
+    if ((evt1 & BTN_EVENT_SHORTPRESS || evt2 & BTN_EVENT_SHORTPRESS) &&
+        m_foundBlockOverlay && m_ui->ui_imageOverlayContainer) {
+        // The LVGL timer already owns the nonrecursive display mutex here.
+        // The public hide method locks for callers from other tasks.
+        m_ui->hideImageOverlay();
+        m_foundBlockOverlay = false;
+        updateOverlayPriority();
         btn1.clearEvent();
         btn2.clearEvent();
         return;
@@ -703,13 +718,16 @@ void DisplayDriver::handleUiQueueMessages(ui_msg_t &msg, int64_t tnow)
 }
 
 void DisplayDriver::updateOverlayPriority() {
+    // Errors/shutdown/enrollment can cancel the candidate independently. Its
+    // dismissal flag must not outlive the LVGL object or keep the screen awake.
+    if (!m_ui || !m_ui->ui_imageOverlayContainer) m_foundBlockOverlay = false;
     m_isActiveOverlay = m_ui && (m_ui->ui_errOverlayContainer || m_ui->ui_imageOverlayContainer ||
         m_shutdownCountdownActive || m_state == UiState::ShowQR || m_state == UiState::Identify);
 }
 
 void DisplayDriver::handleAutoOffAndOverlays()
 {
-    if (m_isActiveOverlay) {
+    if (m_isActiveOverlay || m_foundBlockOverlay) {
         displayTurnOn();
     } else if (m_isAutoScreenOffEnabled) {
         checkAutoTurnOffScreen();
@@ -772,6 +790,12 @@ void DisplayDriver::mainCreatSysteTasks(void)
 
 lv_obj_t *DisplayDriver::initTDisplayS3(void)
 {
+    // Boot-only selection: never resize or replace active DMA buffers from a
+    // settings request. Board identity has already passed its normal guard.
+    char *savedProfile = Config::getDisplayProfile();
+    FiveTratumDisplay::displayProfileRuntime.latch(savedProfile);
+    free(savedProfile);
+    const auto &panel = FiveTratumDisplay::displayProfileRuntime.active();
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
     // GPIO configuration
@@ -810,14 +834,14 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
                                                    TDISPLAYS3_PIN_NUM_DATA7,
                                                },
                                            .bus_width = 8,
-                                           .max_transfer_bytes = LVGL_LCD_BUF_SIZE * sizeof(uint16_t),
+                                           .max_transfer_bytes = panel.bufferPixels * sizeof(uint16_t),
                                            .psram_trans_align = LCD_PSRAM_TRANS_ALIGN,
                                            .sram_trans_align = LCD_SRAM_TRANS_ALIGN};
     ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i80_config_t io_config = {
         .cs_gpio_num = TDISPLAYS3_PIN_NUM_CS,
-        .pclk_hz = TDISPLAYS3_LCD_PIXEL_CLOCK_HZ,
+        .pclk_hz = panel.pixelClock,
         .trans_queue_depth = 20,
         .on_color_trans_done = notifyLvglFlushReady,
         .user_ctx = &disp_drv,
@@ -838,7 +862,7 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = TDISPLAYS3_PIN_NUM_RST,
-        .rgb_ele_order = FiveTratumDisplay::PanelProfile.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order = panel.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
 
@@ -846,17 +870,18 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
 
     esp_lcd_panel_reset(panel_handle);
     esp_lcd_panel_init(panel_handle);
-    esp_lcd_panel_invert_color(panel_handle, true);
+    esp_lcd_panel_invert_color(panel_handle,
+        FiveTratumDisplay::panelInvertColors(Config::isInvertScreenEnabled()));
 
     esp_lcd_panel_swap_xy(panel_handle, true);
 
     Board *board = SYSTEM_MODULE.getBoard();
     esp_lcd_panel_mirror(panel_handle,
-        FiveTratumDisplay::panelMirrorX(board->isFlipScreenEnabled()),
-        FiveTratumDisplay::panelMirrorY(board->isFlipScreenEnabled()));
+        FiveTratumDisplay::panelMirrorX(board->isFlipScreenEnabled(), panel),
+        FiveTratumDisplay::panelMirrorY(board->isFlipScreenEnabled(), panel));
 
     // the gap is LCD panel specific, even panels with the same driver IC, can have different gap value
-    esp_lcd_panel_set_gap(panel_handle, 0, FiveTratumDisplay::PanelProfile.gapY);
+    esp_lcd_panel_set_gap(panel_handle, 0, panel.gapY);
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
@@ -868,15 +893,15 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
     lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = (lv_color_t*) MALLOC_DMA(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t));
+    lv_color_t *buf1 = (lv_color_t*) MALLOC_DMA(panel.bufferPixels * sizeof(lv_color_t));
     assert(buf1);
     // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, LVGL_LCD_BUF_SIZE);
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, panel.bufferPixels);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = TDISPLAYS3_LCD_H_RES;
-    disp_drv.ver_res = TDISPLAYS3_LCD_V_RES;
+    disp_drv.hor_res = panel.width;
+    disp_drv.ver_res = panel.height;
     disp_drv.flush_cb = lvglFlushCallback;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;

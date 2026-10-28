@@ -238,10 +238,10 @@ void pool_schedule_tick(void)
         pthread_mutex_unlock(&schedule_mutex);
         return;
     }
-    uint32_t desired_hash, current_hash;
-    if (!operating_profile_pool_hash(slot, &desired_hash) || !operating_profile_current_pool_hash(false, &current_hash)) return;
+    bool matches;
+    if (!operating_profile_pool_matches(slot, false, &matches)) return;
     esp_err_t error = ESP_OK;
-    if (desired_hash != current_hash)
+    if (!matches)
         error = operating_profile_apply_pool_guarded(slot, false, revision_current, &generation);
     pthread_mutex_lock(&schedule_mutex);
     if (error == ESP_OK && generation == revision) selected_slot = slot;

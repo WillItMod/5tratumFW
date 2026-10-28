@@ -1,5 +1,5 @@
 import { ElementRef } from '@angular/core';
-import { of, Subscription } from 'rxjs';
+import { EMPTY, of, Subscription } from 'rxjs';
 import { HomeComponent } from './home.component';
 import { SystemService } from '../../services/system.service';
 import { IDashboardV2 } from '../../models/IDashboardV2';
@@ -8,6 +8,9 @@ describe('5tratumFW dashboard telemetry', () => {
   let component: HomeComponent;
   let dashboard: IDashboardV2;
   let subscription: Subscription;
+  let reset: jasmine.Spy;
+  let auth: jasmine.Spy;
+  let openDialog: jasmine.Spy;
   beforeEach(() => {
     localStorage.clear();
     dashboard = SystemService.defaultDashboardV2();
@@ -16,18 +19,22 @@ describe('5tratumFW dashboard telemetry', () => {
     dashboard.power.voltage = 12.08;
     dashboard.power.coreVoltageActual = 1.126;
     dashboard.power.currentA = 6.28;
+    reset = jasmine.createSpy('resetStats').and.returnValue(of('ok'));
+    auth = jasmine.createSpy('ensureOtp$').and.returnValue(of({totp:'123456'}));
+    openDialog = jasmine.createSpy('open');
     component = new HomeComponent(
       { get: () => of(null) } as any,
       {} as any,
-      { getDashboardV2WithSpan: () => of(dashboard) } as any,
+      { getDashboardV2WithSpan: () => of(dashboard), resetStats:reset } as any,
       { instant: (key: string) => key } as any,
       { getItem: () => null } as any,
       new ElementRef(document.createElement('div')),
       {} as any,
       { markForCheck: () => {} } as any,
       { runOutsideAngular: (fn: () => unknown) => fn() } as any,
-      {} as any,
-      {} as any,
+      {open:openDialog} as any,
+      {success:()=>{},danger:()=>{}} as any,
+      {ensureOtp$:auth} as any,
     );
     subscription = component.info$.subscribe();
   });
@@ -83,6 +90,23 @@ describe('5tratumFW dashboard telemetry', () => {
     expect(component.physicalPoolIndex(0)).toBe(1);
     expect(component.muxConnected(component.physicalPoolIndex(0))).toBeTrue();
     expect(component.routingAllocation(0)).toBe(100);
+  });
+  it('uses RC1 active flags when failover reports both pool connections', () => {
+    const primary=dashboard.stratum.pools[0];primary.connected=true;primary.active=false;
+    dashboard.stratum.pools.push({...primary,active:true});dashboard.stratum.usingFallback=true;
+    expect(component.physicalPoolIndex(1)).toBe(1);expect(component.routingAllocation(0)).toBe(0);expect(component.routingAllocation(1)).toBe(100);
+  });
+  it('keeps all-time reset opt-in and requests OTP only after an explicit all-time reset confirmation', () => {
+    component.resetAllTime=true;component.openResetStatsDialog('dialog');
+    expect(component.resetAllTime).toBeFalse();expect(reset).not.toHaveBeenCalled();expect(auth).not.toHaveBeenCalled();
+    const ref={close:jasmine.createSpy('close')};component.confirmResetStats(ref);
+    expect(reset.calls.mostRecent().args).toEqual([]);expect(auth).not.toHaveBeenCalled();
+    component.resetAllTime=true;component.confirmResetStats(ref);
+    expect(auth).toHaveBeenCalledTimes(1);expect(reset.calls.mostRecent().args).toEqual(['',true,'123456']);expect(component.resetStatsBusy).toBeFalse();
+  });
+  it('does not reset statistics when the all-time OTP prompt is cancelled', () => {
+    auth.and.returnValue(EMPTY);component.resetAllTime=true;component.confirmResetStats({close:()=>{}});
+    expect(reset).not.toHaveBeenCalled();expect(component.resetStatsBusy).toBeFalse();
   });
   it('does not divide device hashrate equally to fabricate chip counters', () => {
     freshStatus([{ index: 0, hashRateGHs: 963.5, fresh: true, sampleAgeSeconds: 1, temperatureC: null }]);

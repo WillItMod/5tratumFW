@@ -2,7 +2,9 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The current QAxe source/build version is `5tratumFW-qa-0.1.0-beta.6`, compiled from clean source `689b2c8fcd01c4b507be102bb1caed22f4552738`. Its pinned build, exact-source CI and supervised installed-pair checks passed; see [Beta6 validation](validation-qa-beta6.md). The previously qualified [Beta5 pair](validation-qa-beta5.md) retains its separate historical evidence. Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. Public helpers retain the original 320×170 screen. [Experimental 480×320 profiles](experimental-480-display.md) are excluded from this release/package path.
+The current published QAxe version is `5tratumFW-qa-0.1.0-beta.8`, compiled from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d` on shufps v1.1.1-rc1. It adds saved tuning-profile scheduling and retains the Beta7 screen selector. Its own target, browser/host, native display and package checks passed, followed by a short supervised standard-screen update and settings/mining/control bench on the owned unit. See [the dated validation](../../../docs/validation-aligned-20261028.md) for exact limits. [Beta7](validation-qa-beta7.md), [Beta6](validation-qa-beta6.md) and [Beta5](validation-qa-beta5.md) retain their own historical evidence; none qualifies the larger panel.
+
+Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. The default remains the original 320×170 screen. The QAxe image includes a [saved screen selector](display-settings.md) for two experimental 480×320 profiles. A fixed experimental compile-time default remains excluded from this release/package path.
 
 ## Requirements
 
@@ -61,7 +63,7 @@ These files contain no NVS partition and are not merged factory flash images. Us
 Check package hashes before installation:
 
 ```sh
-cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.6'
+cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.8'
 shasum -a 256 -c SHA256SUMS
 ```
 
@@ -102,6 +104,6 @@ After target compilation resolves the pinned LVGL component, render native scree
 python3 test/host/render_display_native.py
 ```
 
-Those output images are simulated, not photographs or hardware telemetry. The exact Beta6 pair's separate short OTA/settings/mining record and owner normal-screen confirmation are in [Beta6 validation](validation-qa-beta6.md); candidate animations, sustained soak and all protection faults were not physically exercised. Each future pair needs its own installation and preservation record. Do not copy an earlier candidate's hardware qualification into another build.
+Those output images are simulated, not photographs or hardware telemetry. The exact Beta8 pair's separate short OTA/settings/mining/control record and owner normal-screen/fan confirmation are in [the dated validation](../../../docs/validation-aligned-20261028.md); the larger panel, candidate animations, sustained soak and all protection faults were not physically exercised. Each future pair needs its own installation and preservation record. Do not copy an earlier candidate's hardware qualification into another build.
 
 Native Dual pool provides two MUX connections using the shared ASIC chain. It does **not** establish independent mining on individual physical ASICs. The manifest keeps `independentWorkAssignment: false`. Saved clocks, voltage, cooling, pool/tuning slots and schedules must be retained through compatible OTA; no presets or automatic tuning run during this build or upgrade.

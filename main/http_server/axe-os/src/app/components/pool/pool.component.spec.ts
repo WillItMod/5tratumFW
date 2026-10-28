@@ -68,6 +68,18 @@ describe('Unified Pool routing editor', () => {
     component.form.get('stratumURL')!.markAsDirty();
   }
 
+  it('uses an explicit authentication field capability and never sends a default false value to older firmware', () => {
+    expect(component.authRequirementSupported.stratum).toBeFalse();expect(component.form.get('stratumV2RequireAuth')!.disabled).toBeTrue();
+    component.form.get('stratumUser')!.setValue('edited.worker');component.form.get('stratumUser')!.markAsDirty();component.updateSystem();
+    expect(api.updateSystem.calls.mostRecent().args[1].stratumV2RequireAuth).toBeUndefined();
+    fixture.destroy();readings.next({...reading,stratumV2RequireAuth:true,fallbackStratumV2RequireAuth:false});
+    fixture=TestBed.createComponent(PoolComponent);component=fixture.componentInstance;fixture.detectChanges();
+    expect(component.form.get('stratumV2RequireAuth')!.enabled).toBeTrue();
+    component.form.get('stratumV2RequireAuth')!.setValue(false);component.form.get('stratumV2RequireAuth')!.markAsDirty();component.updateSystem();
+    expect(api.updateSystem.calls.mostRecent().args[1].stratumV2RequireAuth).toBeFalse();
+    expect(api.updateSystem.calls.mostRecent().args[1].fallbackStratumV2RequireAuth).toBeUndefined();
+  });
+
   it('does not infer MUX from port 7331 and mode changes neither write nor alter the shared draft', () => {
     expect(component.connectionMode).toBe('direct');
     component.form.get('stratumUser')!.setValue('unsaved.worker');

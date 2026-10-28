@@ -1,4 +1,5 @@
 import { eASICModel } from './enum/eASICModel';
+import { DisplayProfileId } from './IDisplaySettings';
 
 export interface ISettingsV2FanPid {
     targetTemp: number;
@@ -24,6 +25,7 @@ export interface ISettingsV2Pool {
     protocol: number;
     sv2AuthorityPubkey: string;
     sv2ChannelType: number;
+    sv2RequireAuth: boolean;
     coinbaseVerifyMode: number;
     coinbaseMaxFee: number;
     coinbaseVerifyForce: boolean;
@@ -76,6 +78,7 @@ export interface ISettingsV2 {
     mempoolUrl: string;
 
     // Display
+    displayProfile?: DisplayProfileId;
     flipScreen: number;
     invertScreen: number;
     autoScreenOff: number;

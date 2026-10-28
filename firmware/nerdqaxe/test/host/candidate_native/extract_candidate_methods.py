@@ -25,6 +25,7 @@ sources = {
         "void DisplayDriver::showError(", "void DisplayDriver::hideError(",
         "void DisplayDriver::startShutdownCountdown(", "void DisplayDriver::hideShutdownCountdown(",
         "uint32_t DisplayDriver::handleLvglTick(",
+        "void DisplayDriver::updateOverlayPriority(",
     ],
 }
 methods, report = [], []
@@ -47,5 +48,11 @@ methods.append("void DisplayDriver::fixtureEnterPriorityState(UiState state, int
                "    (void)now; m_state = state;\n    switch (state) {\n" + "".join(priority_cases) +
                "    default: break;\n    }\n    updateOverlayPriority();\n}\n")
 report.append({"source": "main/displays/displayDriver.cpp", "productionPriorityCases": ["ShowQR", "Identify", "PowerOff"]})
+buttons = body((root / "main/displays/displayDriver.cpp").read_text(), "void DisplayDriver::processButtons(")
+buttons = buttons[:buttons.index("    // --- Shutdown countdown handling ---")]
+buttons = buttons.replace("void DisplayDriver::processButtons(", "void DisplayDriver::fixtureProcessOverlayButtons(")
+buttons += "    (void)bothPressed; (void)btn1Press; (void)btn2Press; (void)btnBothLongPress;\n}\n"
+methods.append(buttons)
+report.append({"source": "main/displays/displayDriver.cpp", "productionOverlayButtonHandling": True})
 (output / "candidate_methods.inc").write_text("\n".join(methods))
 (output / "candidate-source.json").write_text(json.dumps(report, indent=2) + "\n")

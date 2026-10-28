@@ -1,12 +1,14 @@
 import { eASICModel } from './enum/eASICModel';
 import { IHistory } from '../models/IHistory';
 import { IStratum } from './IStratum';
+import { DisplayProfileId } from './IDisplaySettings';
 
 export interface ISystemInfo {
 
     flipscreen: number;
     invertscreen: number;
     autoscreenoff: number;
+    displayProfile?: DisplayProfileId;
     power: number,
     maxPower: number,
     minPower: number,

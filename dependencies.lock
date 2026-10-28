@@ -1,4 +1,14 @@
 dependencies:
+  espressif/cjson:
+    component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.7.19~2
   espressif/esp_lcd_sh1107:
     component_hash: 9cc00a4d066e3e1d120fd2006d30612766488379b820804092a9bfedb3c1f93c
     dependencies:
@@ -10,11 +20,11 @@ dependencies:
       type: service
     version: 1.1.0
   espressif/esp_lvgl_port:
-    component_hash: 3264cc85d86a7c32b67d26a1353a57c67e7986bb293ebb1731801936b056e632
+    component_hash: cca194347416db5f7fbe53e3bf788266061032c6b094d0186e9c988d6e8ff218
     dependencies:
     - name: idf
       require: private
-      version: '>=5.1'
+      version: '>=5.2'
     - name: lvgl/lvgl
       registry_url: https://components.espressif.com
       require: public
@@ -22,23 +32,35 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.6.3
+    version: 2.8.0
+  espressif/mdns:
+    component_hash: ef0766474b37459f6ad22461e453a8713e780e831a7c993b16919d817988dff6
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.14.1
   idf:
     source:
       type: idf
-    version: 5.5.3
+    version: 6.0.2
   lvgl/lvgl:
-    component_hash: b702d642e03e95928046d5c6726558e6444e112420c77efa5fdb6650b0a13c5d
+    component_hash: 184e532558c1c45fefed631f3e235423d22582aafb4630f3e8885c35281a49ae
     dependencies: []
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 9.3.0
+    version: 9.5.0
 direct_dependencies:
+- espressif/cjson
 - espressif/esp_lcd_sh1107
 - espressif/esp_lvgl_port
+- espressif/mdns
 - idf
 - lvgl/lvgl
-manifest_hash: 171f8820c696177d4a308ad968741d4763328838e4fa7512d0e9c2b1bfa31360
+manifest_hash: 469b3eb8d1b01151b8e1ba8390aee30260aea25ac13323700b39bc73adac3572
 target: esp32s3
-version: 2.0.0
+version: 3.0.0

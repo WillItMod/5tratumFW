@@ -125,6 +125,9 @@ class StratumManager {
         PThreadGuard lock(m_mutex);
         m_foundBlocks = 0;
     }
+
+    // Reset the persisted all-time stats (best difficulty, found blocks)
+    void resetAllTimeStats();
     StratumManager(PoolMode mode);
     static void taskWrapper(void *pvParameters); ///< Wrapper function for task execution
 
@@ -154,7 +157,11 @@ class StratumManager {
     virtual bool isDualPool() const { return false; }
     virtual bool isFallback() const { return false; }
 
-    virtual void getManagerInfoJson(JsonObject &obj);
+    // verbose=false emits the slim legacy shape used by the v1 /api/system/info
+    // (external clients like the Blocktrainer terminal depend on it); verbose=true
+    // adds the dashboard-only per-pool fields (active/activeProtocol/encrypted/
+    // verifyBlocked) for the v2 dashboard.
+    virtual void getManagerInfoJson(JsonObject &obj, bool verbose);
 
     virtual void loadSettings() = 0;
     virtual void loadSettings(bool reconnect);

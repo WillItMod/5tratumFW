@@ -13,6 +13,8 @@
 #include "http_utils.h"
 #include "macros.h"
 #include "network_manager.h"
+#include "display_settings.h"
+#include "profile_store.h"
 
 static const char *TAG = "http_v2_settings";
 
@@ -83,16 +85,17 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
             JsonObject pool = pools.add<JsonObject>();
             char *url  = Config::getStratumURL();
             char *user = Config::getStratumUser();
-            pool["url"]              = url  ? url  : "";
+            pool["url"]              = url; 
             pool["port"]             = Config::getStratumPortNumber();
-            pool["user"]             = user ? user : "";
+            pool["user"]             = user;
             pool["enonceSubscribe"]  = Config::isStratumEnonceSubscribe();
             pool["tls"]              = Config::isStratumTLS();
             pool["protocol"]         = Config::getStratumProtocol();
             char *sv2 = Config::getSV2AuthorityPubkey();
-            pool["sv2AuthorityPubkey"] = sv2 ? sv2 : "";
+            pool["sv2AuthorityPubkey"] = sv2;
             safe_free(sv2);
             pool["sv2ChannelType"]   = Config::getSV2ChannelType();
+            pool["sv2RequireAuth"]   = Config::isSV2RequireAuth();
             pool["coinbaseVerifyMode"]  = Config::getCoinbaseVerifyMode(0);
             pool["coinbaseMaxFee"]      = Config::getCoinbaseMaxFee(0) / 10.0f;
             pool["coinbaseVerifyForce"] = Config::getCoinbaseVerifyForce(0);
@@ -105,16 +108,17 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
             JsonObject pool = pools.add<JsonObject>();
             char *url  = Config::getStratumFallbackURL();
             char *user = Config::getStratumFallbackUser();
-            pool["url"]              = url  ? url  : "";
+            pool["url"]              = url;
             pool["port"]             = Config::getStratumFallbackPortNumber();
-            pool["user"]             = user ? user : "";
+            pool["user"]             = user;
             pool["enonceSubscribe"]  = Config::isStratumFallbackEnonceSubscribe();
             pool["tls"]              = Config::isStratumFallbackTLS();
             pool["protocol"]         = Config::getFallbackStratumProtocol();
             char *sv2 = Config::getFallbackSV2AuthorityPubkey();
-            pool["sv2AuthorityPubkey"] = sv2 ? sv2 : "";
+            pool["sv2AuthorityPubkey"] = sv2;
             safe_free(sv2);
             pool["sv2ChannelType"]   = Config::getFallbackSV2ChannelType();
+            pool["sv2RequireAuth"]   = Config::isFallbackSV2RequireAuth();
             pool["coinbaseVerifyMode"]  = Config::getCoinbaseVerifyMode(1);
             pool["coinbaseMaxFee"]      = Config::getCoinbaseMaxFee(1) / 10.0f;
             pool["coinbaseVerifyForce"] = Config::getCoinbaseVerifyForce(1);
@@ -131,7 +135,7 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
             PidSettings* fanPid = board->getPidSettings(ch);
             JsonObject fan = fans.add<JsonObject>();
             fan["label"]       = board->getFanLabel(ch);
-            fan["mode"]        = Config::getFanMode(ch);
+            fan["mode"]        = board->getFanMode(ch);
             fan["manualSpeed"] = Config::getFanManualSpeed(ch);
             fan["overheatTemp"] = Config::getFanOverheatTemp(ch);
             JsonObject pid_obj = fan["pid"].to<JsonObject>();
@@ -150,8 +154,8 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
     {
         char *hostname = Config::getHostname();
         char *ssid     = Config::getWifiSSID();
-        doc["hostname"] = hostname ? hostname : "";
-        doc["ssid"]     = ssid     ? ssid     : "";
+        doc["hostname"] = hostname;
+        doc["ssid"]     = ssid;
         free(hostname);
         free(ssid);
     }
@@ -160,7 +164,7 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
     {
         doc["mempoolCustom"] = Config::isMempoolCustom();
         char *mempoolUrl = Config::getMempoolUrl();
-        doc["mempoolUrl"] = mempoolUrl ? mempoolUrl : "";
+        doc["mempoolUrl"] = mempoolUrl;
         free(mempoolUrl);
     }
 
@@ -168,6 +172,9 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
     doc["flipScreen"]    = board->isFlipScreenEnabled() ? 1 : 0;
     doc["invertScreen"]  = Config::isInvertScreenEnabled() ? 1 : 0;
     doc["autoScreenOff"] = Config::isAutoScreenOffEnabled() ? 1 : 0;
+    // Keep this endpoint durable-only: central settings hashes must not include
+    // the boot-latched profile, changing restart state or capability telemetry.
+    FiveTratumDisplay::appendSavedDisplayProfile(doc);
 
     return sendJsonResponse(req, doc);
 }
@@ -201,6 +208,21 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
     esp_err_t err = getJsonData(req, doc);
     if (err != ESP_OK) {
         return err;
+    }
+
+    const auto displayPatch = FiveTratumDisplay::validateDisplayProfilePatch(doc.as<JsonObjectConst>());
+    if (displayPatch.error)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, displayPatch.error);
+    // Keep a settings request and the scheduled operating pair in one order.
+    FiveTratumProfiles::ProfileStoreGuard profileTransaction;
+    if (displayPatch.id) {
+        FactoryOTAUpdate::OtaStatus displayOtaStatus{};
+        FACTORY_OTA_UPDATER.getStatus(&displayOtaStatus);
+        if (displayOtaStatus.pending || displayOtaStatus.running) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_sendstr(req, "Firmware update in progress; display settings were not saved");
+        }
+        Config::setDisplayProfile(displayPatch.id);
     }
 
     // --- network ---
@@ -348,6 +370,10 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
                 if (i == 0) Config::setSV2ChannelType(pool["sv2ChannelType"].as<uint16_t>());
                 else        Config::setFallbackSV2ChannelType(pool["sv2ChannelType"].as<uint16_t>());
             }
+            if (pool["sv2RequireAuth"].is<bool>()) {
+                if (i == 0) Config::setSV2RequireAuth(pool["sv2RequireAuth"].as<bool>());
+                else        Config::setFallbackSV2RequireAuth(pool["sv2RequireAuth"].as<bool>());
+            }
 
             // Coinbase verification
             if (pool["coinbaseVerifyMode"].is<uint16_t>()) {
@@ -387,7 +413,7 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
 
     // Reload all subsystems
     Board *board = SYSTEM_MODULE.getBoard();
-    board->loadSettings();
+    { LockGuard<PowerManagementTask> hardware(POWER_MANAGEMENT_MODULE); board->loadSettings(); }
     POWER_MANAGEMENT_MODULE.getFanController().loadSettings();
     SYSTEM_MODULE.loadSettings();
     STRATUM_MANAGER->loadSettings();

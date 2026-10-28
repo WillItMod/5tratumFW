@@ -16,13 +16,14 @@ int main() {
     std::printf(
         "{\"profile\":\"%s\",\"width\":%d,\"height\":%d,"
         "\"pixelClock\":%u,\"bufferPixels\":%d,\"bufferBytes\":%zu,"
-        "\"bgr\":%s,\"gapY\":%d,\"experimental\":%s,"
+        "\"bgr\":%s,\"gapY\":%d,\"experimental\":%s,\"runtimeDisplaySelector\":%s,"
         "\"mirrorNormal\":[%s,%s],\"mirrorFlipped\":[%s,%s]}\n",
         PanelProfile.name, PanelProfile.width, PanelProfile.height,
         static_cast<unsigned>(PanelProfile.pixelClock), PanelProfile.bufferPixels,
         PanelProfile.bufferPixels * sizeof(uint16_t),
         PanelProfile.bgr ? "true" : "false", PanelProfile.gapY,
         PanelProfile.experimental ? "true" : "false",
+        SupportsRuntimeWideProfiles ? "true" : "false",
         panelMirrorX(false) ? "true" : "false", panelMirrorY(false) ? "true" : "false",
         panelMirrorX(true) ? "true" : "false", panelMirrorY(true) ? "true" : "false");
 }

@@ -5,13 +5,14 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include "lvgl.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
 #include "5tratumfw.h"
 #include "oled_display_data.h"
 #include "tasks/hashrate_display.h"
 typedef int esp_err_t;
 #define ESP_OK 0
 typedef struct {
-    float fan_perc, voltage, core_voltage, power, chip_temp_avg, chip_temp2_avg, vr_temp;
+    float fan_perc, voltage, core_voltage, power, current, chip_temp_avg, chip_temp2_avg, vr_temp;
     uint16_t fan_rpm;
 } PowerManagementModule;
 typedef struct {
@@ -26,7 +27,7 @@ typedef struct {
     const char *asic_status;
     float current_hashrate;
     uint64_t shares_accepted, shares_rejected, work_received, best_session_nonce_diff;
-    int64_t start_time;
+    int64_t start_time_us;
     int identify_mode_time_ms;
     int block_found;
     bool is_connected, ap_enabled, mining_paused, mining_runtime_ready, hardware_fault, overheat_mode;

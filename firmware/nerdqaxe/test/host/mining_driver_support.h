@@ -36,6 +36,8 @@ extern bool serialShortWrite;
 extern unsigned simulatedChips;
 extern int hostBaud;
 extern std::deque<std::vector<uint8_t>> serialFrames;
+struct HostSettingEvent { char kind; float value; };
+extern std::vector<HostSettingEvent> hostSettingEvents;
 int64_t esp_timer_get_time();
 void vTaskDelay(uint32_t milliseconds);
 void gpio_set_level(int pin, int value);
@@ -50,7 +52,7 @@ struct Buck {
         initializedPhases = phases; initializedCurrent = current; initializedFaultCurrent = fault;
         return initOkay;
     }
-    bool set_vout(float volts) { voltages.push_back(volts); return voltageOkay; }
+    bool set_vout(float volts) { voltages.push_back(volts); hostSettingEvents.push_back({'v', volts}); return voltageOkay; }
     bool disable_vout() { return disableOkay; }
 };
 
@@ -68,6 +70,11 @@ public:
     virtual int getDetectedAsicCount() const = 0;
     virtual unsigned getAsicCount() const = 0;
     virtual unsigned getAsicVoltageMillis() const = 0;
+    virtual unsigned getAsicFrequency() const = 0;
+    virtual uint32_t getVrFrequency() const = 0;
+    virtual bool isInitialized() const = 0;
+    virtual bool setVoltage(float) = 0;
+    virtual void setVrFrequency(uint32_t) = 0;
     virtual bool isShutdown() const = 0;
     virtual bool isBuckInitialized() const = 0;
     virtual bool supportsMiningPowerControl() const = 0;
@@ -92,7 +99,7 @@ public:
     const char *model = "NerdQAxe+", *asicModel = "BM1368";
     virtual ~NerdQaxePlus() = default;
     bool initAsics() override;
-    virtual bool setVoltage(float volts);
+    bool setVoltage(float volts) override;
     bool pauseMiningPower() override;
     const char *getDeviceModel() const override { return model; }
     const char *getAsicModel() const override { return asicModel; }
@@ -100,6 +107,10 @@ public:
     int getDetectedAsicCount() const override { return m_chipsDetected; }
     unsigned getAsicCount() const override { return m_asicCount; }
     unsigned getAsicVoltageMillis() const override { return m_asicVoltageMillis; }
+    unsigned getAsicFrequency() const override { return m_asicFrequency; }
+    uint32_t getVrFrequency() const override { return m_vrFrequency; }
+    bool isInitialized() const override { return m_isInitialized; }
+    void setVrFrequency(uint32_t frequency) override { m_asics->setVrFrequency(frequency); }
     bool isShutdown() const override { return m_shutdown; }
     bool isBuckInitialized() const override { return m_isBuckInitialized; }
     bool supportsMiningPowerControl() const override { return true; }
@@ -150,9 +161,15 @@ public:
     uint64_t maximumPollGapMs = 0;
     unsigned polls = 0, firstBuckPoll = 0;
     HostFan m_fanController;
+    uint16_t m_appliedCoreVoltage = 0, m_appliedAsicFrequency = 0;
     bool isShutdown() { return m_shutdown; }
     void pollProtection(); // Sensor/fan boundary; refresh decision is production code.
     bool refreshProtectionForMining();
+    void acknowledgeAsicSettings(uint16_t frequency, uint16_t millivolts);
+    bool checkCoreVoltageChanged();
+    bool checkAsicFrequencyChanged();
+    void checkVrFrequencyChanged();
+    void applyAsicSettings();
 };
 struct HostHashrate { unsigned resets = 0; void resetAfterPowerCycle() { ++resets; } };
 extern HostSystem SYSTEM_MODULE;

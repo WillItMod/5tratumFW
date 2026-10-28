@@ -1,0 +1,25 @@
+:host { display: block; min-width: 0; }
+.config-panel { background: var(--fw-surface, #101824); border: 1px solid var(--fw-border, #243044); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; min-width: 0; }
+h3 { font-size: 1rem; line-height: 1.3; margin: 0; }
+p { margin: .4rem 0 0; color: var(--fw-muted, #93a4b8); font-size: .82rem; line-height: 1.55; }
+.panel-heading, .event-heading, .actions, .schedule-controls { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.panel-heading { align-items: flex-start; margin-bottom: .75rem; }
+.note { color: var(--fw-muted, #93a4b8); font-size: .74rem; line-height: 1.5; }
+.error { color: var(--fw-warn, #ffb692); }
+.success { color: var(--fw-accent, #72d4b7); }
+.field { display: flex; flex-direction: column; min-width: 0; gap: .45rem; margin: .8rem 0; font-size: .8rem; }
+.field > span { color: var(--fw-muted, #93a4b8); font-weight: 500; }
+select { background: var(--fw-surface, #101824); color: var(--fw-text, #dce8ed); border: 1px solid var(--fw-border, #243044); border-radius: 5px; padding: .65rem; min-height: 44px; width: 100%; min-width: 0; }
+.schedule-event { border-top: 1px solid var(--fw-border, #243044); margin-top: 1rem; padding-top: 1rem; }
+.event-heading { justify-content: flex-start; margin-bottom: .65rem; font-size: .8rem; }
+.event-fields { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: end; gap: .75rem; }
+.event-fields button { margin-bottom: .8rem; }
+.field input { width: 100%; min-width: 0; }
+.schedule-days { display: flex; gap: 4px; flex-wrap: wrap; }
+.schedule-days button { font: inherit; font-size: .75rem; background: var(--fw-surface-alt, #111e25); color: var(--fw-muted, #95a8b1); border: 1px solid var(--fw-border, #294049); border-radius: 4px; padding: .5rem; min-height: 40px; }
+.schedule-days button.selected { color: var(--fw-accent, #b5f1d1); border-color: var(--fw-accent, #409c72); }
+.schedule-days button:disabled { opacity: .55; }
+.actions { justify-content: flex-start; margin-top: 1rem; }
+.runtime-status { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--fw-border, #243044); font-size: .8rem; }
+.runtime-status p { overflow-wrap: anywhere; }
+@media (max-width:600px) { .config-panel { padding: 1rem; } .event-fields { grid-template-columns: 1fr; gap: 0; } .event-fields button { justify-self: start; } .schedule-controls { align-items: stretch; flex-direction: column; } }

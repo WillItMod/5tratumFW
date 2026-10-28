@@ -1,3 +1,5 @@
+Current BETA evidence: [28 October aligned releases](validation-aligned-20261028.md). The record below remains specific to BETA 1.
+
 # BETA 1 validation record
 
 **Version: `5tratumFW-0.1.0-beta.1` — BETA / GitHub prerelease.** Checked on 7 October 2026.

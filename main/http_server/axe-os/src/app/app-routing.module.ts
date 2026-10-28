@@ -11,7 +11,7 @@ import { SwarmComponent } from './components/swarm/swarm.component';
 import { ScoreboardComponent } from './components/scoreboard/scoreboard.component';
 import { DesignComponent } from './components/design/design.component';
 import { PoolComponent } from './components/pool/pool.component';
-import { SchedulerComponent } from './components/scheduler/scheduler.component';
+import { SchedulerComponent, leaveScheduler } from './components/scheduler/scheduler.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
@@ -92,6 +92,7 @@ const routes: Routes = [
       {
         path: 'scheduler',
         component: SchedulerComponent,
+        canDeactivate: [leaveScheduler],
         title: `${TITLE_PREFIX} Scheduler`,
       }
     ]

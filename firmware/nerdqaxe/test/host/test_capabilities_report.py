@@ -129,7 +129,7 @@ class CapabilitiesTests(unittest.TestCase):
     def test_prototype_identity_distinct_from_upstream_product_version(self):
         report = self.report()
         self.assertEqual(report["firmware"]["product"], "ESP-Miner-NerdQAxePlus")
-        self.assertEqual(report["firmware"]["version"], "v1.1.0-rc1-test1")
+        self.assertEqual(report["firmware"]["version"], "v1.1.1-rc1")
         self.assertIsNone(report["firmware"]["sourceRevision"])
         self.assertEqual(report["integration"]["status"], "capability-prototype")
         self.assertEqual(report["integration"]["extensionBuild"]["product"], "5tratumFW capability prototype")

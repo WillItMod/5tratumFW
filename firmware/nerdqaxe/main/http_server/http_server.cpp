@@ -2,6 +2,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
 
 #include "dns_server.h"
 
@@ -156,9 +157,9 @@ esp_err_t start_rest_server(void * pvParameters)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
-    config.max_uri_handlers = 64;
+    config.max_uri_handlers = 67;
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
-    config.max_uri_handlers = 72;
+    config.max_uri_handlers = 75;
 #endif
     config.lru_purge_enable = true;
     config.max_open_sockets = 10;
@@ -204,9 +205,12 @@ esp_err_t start_rest_server(void * pvParameters)
         {.uri = "/api/5tratum/profiles/apply", .method = HTTP_POST, .handler = POST_five_tratum_profiles_apply, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_GET, .handler = GET_five_tratum_pool_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_POST, .handler = POST_five_tratum_pool_schedule, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/tuning-schedule", .method = HTTP_GET, .handler = GET_five_tratum_tuning_schedule, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/tuning-schedule", .method = HTTP_POST, .handler = POST_five_tratum_tuning_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/profiles", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
         {.uri = "/api/5tratum/profiles/apply", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
-        {.uri = "/api/5tratum/pool-schedule", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr}
+        {.uri = "/api/5tratum/pool-schedule", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
+        {.uri = "/api/5tratum/tuning-schedule", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr}
     };
     for (const auto &route : profile_routes) {
         ESP_ERROR_CHECK(httpd_register_uri_handler(http_server, &route));
@@ -295,6 +299,16 @@ esp_err_t start_rest_server(void * pvParameters)
     httpd_uri_t v2_system_options = {
         .uri = "/api/v2/system", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = NULL};
     httpd_register_uri_handler(http_server, &v2_system_options);
+
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+    httpd_uri_t system_coredump_get_uri = {
+        .uri = "/api/system/coredump", .method = HTTP_GET, .handler = GET_system_coredump, .user_ctx = rest_context};
+    httpd_register_uri_handler(http_server, &system_coredump_get_uri);
+
+    httpd_uri_t system_coredump_options_uri = {
+        .uri = "/api/system/coredump", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = NULL};
+    httpd_register_uri_handler(http_server, &system_coredump_options_uri);
+#endif
 
     httpd_uri_t system_restart_uri = {
         .uri = "/api/system/restart", .method = HTTP_POST, .handler = POST_restart, .user_ctx = rest_context};

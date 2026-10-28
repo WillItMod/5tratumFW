@@ -1,0 +1,74 @@
+# Aligned BETA tuning-schedule update — 28 October 2026
+
+This update brings the same saved tuning-profile schedule to the three existing
+firmware families. Each family retains a separate application/web pair and
+hardware qualification. No settings or schedules are installed automatically.
+
+The QAxe and OctAxe releases migrate the Nerd derivative to shufps
+[`v1.1.1-rc1`](https://github.com/shufps/ESP-Miner-NerdQAxePlus/releases/tag/v1.1.1-rc1),
+exact commit `bfd07393918ce1b464faf1b7bd1ecd11343197f4`. This imports the
+upstream source changes, including the pinned certificate bundle, while
+retaining 5tratumFW's settings, controls, routing extensions and displays.
+Gamma migrates its separate Bitaxe ESP-Miner base to
+[`v2.15.4`](https://github.com/bitaxeorg/ESP-Miner/releases/tag/v2.15.4).
+The shufps release is not a Gamma base or a reason to interchange firmware files.
+
+| Family | BETA version | Application | Display scope |
+| --- | --- | --- | --- |
+| Bitaxe Gamma PCB 601/602 | `5tratumFW-0.1.0-beta.10` | `esp-miner.bin` | Existing 128×32 OLED |
+| NerdQAxe++ / NERDQAXEPLUS2 | `5tratumFW-qa-0.1.0-beta.8` | `esp-miner-NerdQAxe++.bin` | Standard 320×170 plus explicit experimental 480×320 RGB/BGR selector |
+| NerdOCTAXE Gamma / NERDOCTAXEGAMMA | `5tratumFW-oct-0.1.0-beta.5` | `esp-miner-NerdOCTAXE-Gamma.bin` | Existing 320×170 display |
+
+Each application requires the `www.bin` packaged for that same family/version.
+The shared web filename does not make the web images interchangeable. These
+releases do not widen support to other PCB revisions, QAxe+, GT800 or 650 DUO.
+
+## Common behaviour
+
+Scheduler can select ten existing tuning slots at up to sixteen weekly time
+points. Daily 00:00 → slot 3, 09:00 → slot 1 and 21:00 → slot 2 uses the most
+recent enabled point until the next one, including across midnight/week wrap.
+The miner needs synchronized network time and an explicit fixed UTC offset;
+this schedule does not automatically follow daylight saving time. Reads and
+schedule storage do not directly activate tuning. Runtime activation preserves
+manual/scheduled pauses and hardware protection and uses the normal saved
+clock/voltage path. The separate pool and pause schedules retain their roles.
+
+See the [saved tuning schedule](../firmware/nerdqaxe/docs/tuning-profile-schedule.md)
+for the shared API shape and point semantics. Gamma retains its own backend,
+security flow and native web controls; it does not use the Nerd image or UI.
+
+## QAxe larger screen
+
+The selector carries forward unpublished Beta7 work and addresses viewport
+size, the standard panel's offset and horizontal mirroring together. The
+28 October [online firmware reference check](../firmware/nerdqaxe/docs/experimental-480-display.md#online-firmware-reference-check--28-october-2026)
+records pinned open-source implementations and a published 480×320 build.
+No other fork's flash driver, partitions or tuning values are imported.
+
+Tadets' larger panel is not available locally. Confirm its physical position,
+orientation, colours, startup and refresh before treating a profile as qualified.
+The owned standard QAxe subsequently completed its paired update and short
+mining/control bench on 28 October. Those observations do not qualify the larger
+panel; builds and simulated tests do not replace that physical check.
+
+## Independent chip work remains unavailable
+
+Gamma retains its one-chip primary/fallback behaviour. Nerd A/B streams continue
+to share their ASIC chain. Current primary-source implementations still do not
+establish a BM1370 command for independent chip-specific work. No capability
+flag is enabled and no guessed command is sent. The [chip-targeting investigation](../firmware/nerdqaxe/docs/asic-work-targeting-investigation.md)
+records the source evidence, missing proof and bounded capture tool for a future
+hardware investigation. This work is outstanding, not implemented by the
+tuning schedule or screen selector.
+
+See the [dated build and package validation](validation-aligned-20261028.md) for exact source revisions, checksums and remaining physical tests.
+
+## Release boundary
+
+Gamma Beta10, QAxe Beta8 and OctAxe Beta5 are the public BETA pairs listed in
+[Downloads](../DOWNLOADS.md). Their immutable matched packages have separate
+source receipts and the dated installed-device evidence above; previous downloads
+remain available as historical releases. Central OS/MUX exact-release admission
+is separate from native mining connections and has not been extended by this
+publication. The miner’s own controls remain available under its security policy.

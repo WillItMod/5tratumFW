@@ -25,8 +25,8 @@ bool knownKeys(JsonObjectConst o, const char *const *keys, size_t count) {
     }
     return true;
 }
-const char *const poolFields[] = {"host", "port", "user", "password", "protocol", "tls", "extranonceSubscribe", "authorityPubkey", "channelType", "coinbaseVerifyMode", "coinbaseMaxFee", "coinbaseVerifyForce"};
-const char *const saveKeys[] = {"type", "slot", "name", "clear", "captureCurrent", "frequencyMHz", "coreVoltageMv", "host", "port", "user", "password", "protocol", "tls", "extranonceSubscribe", "authorityPubkey", "channelType", "coinbaseVerifyMode", "coinbaseMaxFee", "coinbaseVerifyForce"};
+const char *const poolFields[] = {"host", "port", "user", "password", "protocol", "tls", "extranonceSubscribe", "authorityPubkey", "channelType", "coinbaseVerifyMode", "coinbaseMaxFee", "coinbaseVerifyForce", "sv2RequireAuth"};
+const char *const saveKeys[] = {"type", "slot", "name", "clear", "captureCurrent", "frequencyMHz", "coreVoltageMv", "host", "port", "user", "password", "protocol", "tls", "extranonceSubscribe", "authorityPubkey", "channelType", "coinbaseVerifyMode", "coinbaseMaxFee", "coinbaseVerifyForce", "sv2RequireAuth"};
 const char *const applyKeys[] = {"type", "slot", "poolTarget", "frequencyMHz", "coreVoltageMv"};
 bool validPool(JsonObjectConst r) {
     if (!text(r["host"], 128, false) || !text(r["user"], 128) || !text(r["password"], 128) || !integer(r["port"],1,65535)) return false;
@@ -88,7 +88,10 @@ bool validTuning(JsonObjectConst r, const Limits &l) {
 bool validRecord(JsonObjectConst r, Kind kind) {
     if (!text(r["name"],48,false) || !integer(r["schemaVersion"],1,1)) return false;
     if (kind==Kind::Tuning) return r.size()==4 && integer(r["frequencyMHz"],1,65535) && integer(r["coreVoltageMv"],1,65535);
-    if (r.size()!=14) return false;
+    // Legacy slots omit this new security choice. Keep it absent so applying
+    // one cannot silently disable a requirement configured on the destination.
+    if (r.size()!=14 && r.size()!=15) return false;
+    if (r.size()==15 && !r["sv2RequireAuth"].is<bool>()) return false;
     for (JsonPairConst p:r) {
         if (strcmp(p.key().c_str(),"name")==0 || strcmp(p.key().c_str(),"schemaVersion")==0) continue;
         bool found=false; for (auto key:poolFields) if (strcmp(p.key().c_str(),key)==0) {found=true;break;}
@@ -110,6 +113,7 @@ bool buildRecord(JsonObjectConst in, const Request &r, JsonObjectConst old, Json
     out["protocol"]=base["protocol"] | 0; out["tls"]=base["tls"] | false;
     out["extranonceSubscribe"]=base["extranonceSubscribe"] | false;
     out["authorityPubkey"]=base["authorityPubkey"] | ""; out["channelType"]=base["channelType"] | 0;
+    if (base["sv2RequireAuth"].is<bool>()) out["sv2RequireAuth"]=base["sv2RequireAuth"];
     out["coinbaseVerifyMode"]=base["coinbaseVerifyMode"] | 0;
     out["coinbaseMaxFee"]=base["coinbaseMaxFee"] | 3.0;
     out["coinbaseVerifyForce"]=base["coinbaseVerifyForce"] | false;
@@ -136,6 +140,7 @@ void buildActivePatch(JsonObject p, Kind kind, JsonObjectConst r, int pool) {
     p[pool?NVS_CONFIG_FB_STRATUM_PROTOCOL:NVS_CONFIG_STRATUM_PROTOCOL]=r["protocol"];
     p[pool?NVS_CONFIG_FB_SV2_AUTHORITY_PUBKEY:NVS_CONFIG_SV2_AUTHORITY_PUBKEY]=r["authorityPubkey"];
     p[pool?NVS_CONFIG_FB_SV2_CHANNEL_TYPE:NVS_CONFIG_SV2_CHANNEL_TYPE]=r["channelType"];
+    if (r["sv2RequireAuth"].is<bool>()) p[pool?NVS_CONFIG_FB_SV2_REQUIRE_AUTH:NVS_CONFIG_SV2_REQUIRE_AUTH]=r["sv2RequireAuth"].as<bool>()?1:0;
     p[pool?NVS_CONFIG_FB_COINBASE_VERIFY_MODE:NVS_CONFIG_COINBASE_VERIFY_MODE]=r["coinbaseVerifyMode"];
     p[pool?NVS_CONFIG_FB_COINBASE_MAX_FEE:NVS_CONFIG_COINBASE_MAX_FEE]=static_cast<uint16_t>(std::round(r["coinbaseMaxFee"].as<double>()*10));
     p[pool?NVS_CONFIG_FB_COINBASE_VERIFY_FORCE:NVS_CONFIG_COINBASE_VERIFY_FORCE]=r["coinbaseVerifyForce"].as<bool>()?1:0;

@@ -58,7 +58,7 @@ class StratumManagerFallback : public StratumManager {
 
     virtual void checkForBestDiff(int pool, double diff, uint32_t nbits);
 
-    virtual void getManagerInfoJson(JsonObject &obj);
+    virtual void getManagerInfoJson(JsonObject &obj, bool verbose);
 
     virtual void loadSettings();
     virtual void saveSettings(const JsonDocument &doc);
@@ -95,6 +95,7 @@ class StratumManagerFallback : public StratumManager {
         for (int i = 0; i < 2; i++) {
             resetPoolSessionStats(i);
         }
+        m_foundBlocks = 0;
     }
 
     virtual int getPoolErrors() {

@@ -50,16 +50,18 @@ esp_err_t esp_read_mac(uint8_t *output, int source)
     memcpy(output, fixture, sizeof(fixture));
     return ESP_OK;
 }
-int mbedtls_sha256(const unsigned char *bytes, size_t size, unsigned char *digest, int mode)
+psa_status_t psa_crypto_init(void){return PSA_SUCCESS;}
+psa_status_t psa_hash_compute(psa_algorithm_t algorithm,const uint8_t *bytes,size_t size,uint8_t *digest,size_t capacity,size_t *written)
 {
     // Crypto is a platform boundary. Verify the unchanged binding helper's exact
     // namespaced NUL-delimited input; never use or output a physical MAC.
     const char prefix[] = "5tratum/device/v1";
-    assert(mode == 0 && size == sizeof(prefix) + 6);
+    assert(algorithm==PSA_ALG_SHA_256 && capacity==32 && size == sizeof(prefix) + 6);
     assert(!memcmp(bytes, prefix, sizeof(prefix)));
     assert(bytes[sizeof(prefix)] == 1 && bytes[size - 1] == 6);
     if (!digest_available) return -1;
     for (unsigned i = 0; i < 32; ++i) digest[i] = (unsigned char)(i + 1);
+    *written=32;
     return 0;
 }
 char *nvs_config_get_string(int key)

@@ -19,6 +19,8 @@ int main() {
     HashrateMonitor monitor;
     assert(!monitor.getChipHashrateSample(0).available);
     monitor.onRegisterReply(0, 1); // Early RX must be harmless.
+    monitor.onErrorReply(0, 1);
+    assert(monitor.getChipErrorRate(0) == 0);
     assert(!monitor.start(nullptr, &asic));
     assert(!monitor.start(&board, nullptr));
     board.count = 0;
@@ -29,7 +31,8 @@ int main() {
     hostTaskResult = 0;
     assert(!monitor.start(&board, &asic));
     assert(!monitor.getChipHashrateSample(0).available);
-    assert(monitor.m_asicCount == 0 && !monitor.m_prevCounter);
+    assert(monitor.m_asicCount == 0 && !monitor.m_prevCounter && !monitor.m_chipErrorRate &&
+           !monitor.m_prevErrorResponse && !monitor.m_prevErrorCounter);
     hostTaskResult = pdPASS;
 
     std::atomic<bool> stop{false};
@@ -37,6 +40,7 @@ int main() {
         while (!stop.load()) {
             auto sample = monitor.getChipHashrateSample(3);
             assert(!sample.available || sample.capturedAtUs > 0);
+            assert(std::isfinite(monitor.getChipErrorRate(3)));
         }
     });
     assert(monitor.start(&board, &asic));
@@ -44,41 +48,62 @@ int main() {
     assert(!monitor.getChipHashrateSample(-1).available);
     assert(!monitor.getChipHashrateSample(4).available);
     monitor.onRegisterReply(250, 1);
+    monitor.onErrorReply(250, 1);
+    assert(monitor.getChipErrorRate(-1) == 0 && monitor.getChipErrorRate(4) == 0);
     monitor.onRegisterReply(0, 100);
+    monitor.onErrorReply(0, 100);
     assert(!monitor.getChipHashrateSample(0).available);
     hostNow = 6000000;
     monitor.onRegisterReply(0, 100); // Measured zero after the second response.
+    monitor.onErrorReply(0, 100);
+    assert(monitor.getChipErrorRate(0) == 0);
     auto zero = monitor.getChipHashrateSample(0);
     assert(zero.available && zero.ghPerSecond == 0 && zero.isFresh(hostNow));
     assert(!monitor.getChipHashrateSample(1).available);
     hostNow = 11000000;
     monitor.onRegisterReply(0, 1100);
+    monitor.onErrorReply(0, 1100);
     auto positive = monitor.getChipHashrateSample(0);
     const double expected = 1000.0 * 4294967296.0 / 5000000.0 / 1000.0;
     assert(std::abs(positive.ghPerSecond - expected) < 0.001);
+    assert(std::abs(monitor.getChipErrorRate(0) - expected) < 0.001);
     assert(!positive.isFresh(hostNow.load() + 15000001));
     monitor.onRegisterReply(0, 9999); // Same timestamp must not mutate context.
+    monitor.onErrorReply(0, 9999);
     assert(monitor.getChipHashrateSample(0).ghPerSecond == positive.ghPerSecond);
+    assert(monitor.m_prevErrorCounter[0] == 1100 && std::abs(monitor.getChipErrorRate(0) - expected) < 0.001);
     monitor.onRegisterReply(1, 0xfffffff0u);
+    monitor.onErrorReply(1, 0xfffffff0u);
     hostNow = 16000000;
     monitor.onRegisterReply(1, 0x10u); // Unsigned hardware-counter wrap.
+    monitor.onErrorReply(1, 0x10u);
     assert(std::abs(monitor.getChipHashrateSample(1).ghPerSecond -
                     32.0 * 4294967296.0 / 5000000.0 / 1000.0) < 0.001);
+    assert(std::abs(monitor.getChipErrorRate(1) - 32.0 * 4294967296.0 / 5000000.0 / 1000.0) < 0.001);
     monitor.onRegisterReply(3, 0);
+    monitor.onErrorReply(3, 0);
     for (int i = 1; i <= 1000; ++i) {
         hostNow = 16000000 + static_cast<int64_t>(i) * 5000000;
         monitor.onRegisterReply(3, static_cast<uint32_t>(i) * 1000);
+        monitor.onErrorReply(3, static_cast<uint32_t>(i) * 50);
     }
     stop = true;
     reader.join();
     assert(monitor.getChipHashrateSample(3).isFresh(hostNow));
     monitor.resetAfterPowerCycle();
-    for (int i = 0; i < 4; ++i) assert(!monitor.getChipHashrateSample(i).available);
+    for (int i = 0; i < 4; ++i) {
+        assert(!monitor.getChipHashrateSample(i).available);
+        assert(monitor.getChipErrorRate(i) == 0 && monitor.m_prevErrorResponse[i] == 0 && monitor.m_prevErrorCounter[i] == 0);
+    }
     hostNow = hostNow.load() + 5000000;
     monitor.onRegisterReply(0, 10); // First post-reset reply establishes a new counter baseline.
+    monitor.onErrorReply(0, 10);
+    assert(monitor.getChipErrorRate(0) == 0);
     assert(!monitor.getChipHashrateSample(0).available);
     hostNow = hostNow.load() + 5000000;
     monitor.onRegisterReply(0, 20);
+    monitor.onErrorReply(0, 20);
+    assert(monitor.getChipErrorRate(0) > 0);
     assert(monitor.getChipHashrateSample(0).available && monitor.getChipHashrateSample(0).isFresh(hostNow));
     releaseHostSamples(monitor);
     std::cout << "Actual monitor: startup/failure/retry, concurrent publication, "

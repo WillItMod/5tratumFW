@@ -2,17 +2,30 @@
 #include "nvs.h"
 #include <cstdio>
 #include <cstdlib>
+#include <pthread.h>
 
 namespace FiveTratumProfiles {
 namespace {
+pthread_mutex_t storeMutex;
+pthread_once_t storeOnce = PTHREAD_ONCE_INIT;
+void initializeMutex() {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&storeMutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
 const char *const PROFILE_NAMESPACE = "pf5tfw";
 bool keyFor(Kind kind, unsigned slot, char (&key)[5]) {
     if (slot>=SLOT_COUNT) return false;
     std::snprintf(key,sizeof(key),"%c%02u",kind==Kind::Tuning?'t':'p',slot); return true;
 }
 }
+ProfileStoreGuard::ProfileStoreGuard() { pthread_once(&storeOnce, initializeMutex); pthread_mutex_lock(&storeMutex); }
+ProfileStoreGuard::~ProfileStoreGuard() { pthread_mutex_unlock(&storeMutex); }
 // HTTP server runs on a normal internal-memory stack; never invoke from PSRAM tasks.
 StoreResult readSlot(Kind kind, unsigned slot, JsonDocument &record) {
+    ProfileStoreGuard guard;
     record.clear(); char key[5]; if (!keyFor(kind,slot,key)) return StoreResult::Failure;
     nvs_handle_t handle;
     esp_err_t err=nvs_open(PROFILE_NAMESPACE,NVS_READONLY,&handle);
@@ -29,6 +42,7 @@ StoreResult readSlot(Kind kind, unsigned slot, JsonDocument &record) {
     return ok?StoreResult::Ok:StoreResult::Failure;
 }
 StoreResult saveSlot(Kind kind, unsigned slot, JsonObjectConst record) {
+    ProfileStoreGuard guard;
     char key[5]; if (!keyFor(kind,slot,key) || !validRecord(record,kind)) return StoreResult::Failure;
     const size_t len=measureJson(record);
     if (!len || len>MAX_SLOT_BYTES) return StoreResult::Failure;
@@ -43,6 +57,7 @@ StoreResult saveSlot(Kind kind, unsigned slot, JsonObjectConst record) {
     free(buffer); return err==ESP_OK?StoreResult::Ok:StoreResult::Failure;
 }
 StoreResult clearSlot(Kind kind,unsigned slot) {
+    ProfileStoreGuard guard;
     char key[5]; if (!keyFor(kind,slot,key)) return StoreResult::Failure;
     nvs_handle_t handle; esp_err_t err=nvs_open(PROFILE_NAMESPACE,NVS_READWRITE,&handle);
     if (err==ESP_OK) {

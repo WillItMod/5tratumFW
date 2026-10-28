@@ -23,6 +23,34 @@ The observed test board is a NerdQAxe++ with four BM1370 ASICs, originally repor
 
 The evidence establishes an implementation gap and an unknown hardware mechanism, rather than proving that BM1370 isolation is physically impossible. A firmware signature, four sockets, distinct worker names or distinct returned ASIC indices cannot fill that gap. No reviewed source supplies a validated job-acceptance gate or addressed job format that preserves other chips' work.
 
+## Source recheck — 28 October 2026
+
+Current primary repositories still supply no addressed BM1370 job or a local
+acceptance gate that preserves another chip's previous job:
+
+- [Nerd develop `bfd0739`](https://github.com/shufps/ESP-Miner-NerdQAxePlus/blob/bfd07393918ce1b464faf1b7bd1ecd11343197f4/components/bm1397/bm1370.cpp): addressed register initialization and the same sixteen work IDs; mining still uses the inherited shared sender.
+- [Mujina `f7c45b4`, mining-job reference](https://github.com/256foundation/mujina/blob/f7c45b4668029dbd16adbfd043146f8487795dc8/mujina-miner/src/asic/bm13xx/REFERENCE.md#mining-job-type1-cmd1) and [encoder](https://github.com/256foundation/mujina/blob/f7c45b4668029dbd16adbfd043146f8487795dc8/mujina-miner/src/asic/bm13xx/command.rs): `0x21` already has its broadcast bit clear, but the 82-byte payload has no destination. Clearing that bit therefore supplies no chip selection; `0x01` alone omits the job type and has no established addressed-job meaning.
+- [Quad Miner `91a9988`](https://github.com/SerpentXSF/NerdQAxe-Quad-Miner/blob/91a99884b89cd7e154d8f736933699b1c0c83a76/README.md#how-it-works-job-level-split): four pool sessions use one shared chain job; physical chip dedication remains a future path.
+- [Gekko `7582c8d`, BM1370 job builder](https://github.com/wareck/cgminer-gekko/blob/7582c8da08f2b57a2fd35481a6c3155034bebed6/driver-gekko.c#L3337): its different length/control values still supply no destination. [GPTech `d00c086`](https://github.com/GPTechinno/bm13xx-rs/blob/d00c086bc66e6d4d4fa47fa6191ae40e7e566c0d/bm13xx-protocol/src/command.rs#L211) also keeps register destinations separate from job construction.
+- [S21 Pro `0a78d7d`, pattern sender](https://github.com/HashSource/bitmain_antminer_binaries/blob/0a78d7d123ed3b720f074e6d524ce5f96012034d/S21pro/single_board_test.dec/sw_pt_send_work%4058D8C.c) feeds a 532-byte host/FPGA work structure, while [nonce-return control](https://github.com/HashSource/bitmain_antminer_binaries/blob/0a78d7d123ed3b720f074e6d524ce5f96012034d/S21pro/single_board_test.dec/set_core_rec_nonce%40CBBA8.c) changes reporting. Neither establishes local acceptance of distinct full-header jobs on the QAxe UART. This is third-party decompilation, not a manufacturer specification.
+
+The next missing proof is a source-supported silicon mechanism, followed by
+captured concurrent distinct headers on the four physical chips, qualified
+nonce attribution, and pipeline retirement across work-ID reuse, clean jobs,
+reconnects and shared power/reset events. A runtime experimental switch cannot
+substitute for that mechanism. Chip-target requests continue to return
+unsupported with zero UART writes; `independentWorkAssignment` remains false.
+
+The new `tools/bm1370_capture_collect.py` closes the manual-export gap in the
+existing passive recorder. With the diagnostic capture firmware already
+installed, it exports an explicit frozen capture or arms one RAM-only capture
+for at most two seconds. It checks the expected opaque device identity and
+all immutable pages, saves a private file without overwriting, and runs the
+existing offline analyzer. It never flashes, alters ASIC work/settings, or
+retries an uncertain arm. Its fifteen host tests exercise synthetic HTTP and
+the published third-party nonce vector; no new physical capture was taken.
+See `--help`; save observations only under ignored `local-devices/` storage.
+
 Do not insert a chip address into the existing payload, reinterpret the Job ID/midstate fields as an address, or assume `0x21`/`0x31` selects a particular chip. An inserted byte changes the documented field positions, length and CRC. Turning off other cores or hiding their nonce responses also does not prove concurrent independent work.
 
 The user requires a firmware-only solution, with the hardware unchanged. Published [QAxe++ CAD](https://github.com/shufps/qaxe/blob/be1a4a071def733a601a62b4fda3f3c5558c332e/nerdqaxe%2B%2B/nerdqaxe%2B%2B/nerdqaxe%2B%2B.kicad_pcb) shows one controller UART through the level translator to the ASIC chain, rather than four independently routed controller UART links. This source topology does not identify the unknown test PCB revision, and does not prove that an undocumented job acceptance gate is impossible.

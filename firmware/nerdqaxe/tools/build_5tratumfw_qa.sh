@@ -61,6 +61,7 @@ PY
   npm test -- --watch=false --browsers=ChromeHeadless --progress=false
 )
 node tools/test_web_controls.mjs
+python3 tools/test_ca_bundle.py
 python3 tools/package_5tratumfw_qa.py --record-web-build
 # Host regressions execute production code through bounded fake hardware/RTOS boundaries.
 "$QA_TEST_PYTHON" - <<'PY'
@@ -92,7 +93,7 @@ docker run --rm -e BOARD=NERDQAXEPLUS2 \
       -D FIVETRATUM_RELEASE_PROFILE=NERDQAXEPLUS2 \
       -D FIVETRATUM_ASIC_CAPTURE_LOGS=OFF \
       -D FIVETRATUM_BM1370_DIAGNOSTIC_DRIVER=OFF \
-      -D FIVETRATUM_BM1370_CAPTURE=OFF build' \
+      -D FIVETRATUM_BM1370_CAPTURE=OFF build && python tools/test_ca_bundle.py --build-dir "$1"' \
   qa-build "/project/$QA_BUILD_REL" "$QA_VERSION" "$QA_DEFAULT_CONFIG"
 "$QA_TEST_PYTHON" test/host/render_display_native.py
 "$QA_TEST_PYTHON" test/host/render_candidate_native.py

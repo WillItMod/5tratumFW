@@ -140,6 +140,23 @@ def cache_values(path: Path) -> dict[str, str]:
     return values
 
 
+def verified_display_profiles(identity: BuildIdentity, cache: dict[str, str], commands: list[dict]) -> dict:
+    """Bind update metadata to the actual public display-driver compilation."""
+    wide = identity == QA
+    if (cache.get("FIVETRATUM_DISPLAY_PROFILE") != "TDISPLAY_S3_320X170"
+        or cache.get("FIVETRATUM_RUNTIME_DISPLAY_SELECTOR") != ("ON" if wide else "OFF")):
+        raise ValueError("Public display build must preserve the stock default and exact runtime selector")
+    driver = next((c.get("command", "") for c in commands
+                   if c.get("file", "").endswith("/main/displays/displayDriver.cpp")), "")
+    for flag, value in (("FIVETRATUM_LCD_PROFILE", 0), ("FIVETRATUM_RUNTIME_WIDE_DISPLAY", int(wide))):
+        found = re.findall(rf"(?:^|\s)-D{flag}=([^\s]+)", driver)
+        if found != [str(value)]:
+            raise ValueError("Display compiler flags differ from the public selector contract")
+    profiles = ["320x170", "480x320-rgb", "480x320-bgr"] if wide else ["320x170"]
+    return {"schemaVersion": 1, "defaultProfile": "320x170", "supportedProfiles": profiles,
+            "persistentSelection": True, "experimentalProfiles": profiles[1:]}
+
+
 def package(build: Path, output: Path, identity: BuildIdentity = QA) -> dict:
     checked_identity(identity)
     commit, sources, submodules, prefix = source_receipt(identity)
@@ -159,6 +176,7 @@ def package(build: Path, output: Path, identity: BuildIdentity = QA) -> dict:
         if cache.get(flag) != "OFF":
             raise ValueError("Public builds require diagnostic driver, passive capture and serial capture logs OFF")
     commands = json.loads((build / "compile_commands.json").read_text())
+    display_profiles = verified_display_profiles(identity, cache, commands)
     main_command = next((c.get("command", "") for c in commands if c.get("file", "").endswith("/main/main.cpp")), "")
     board_flags = set(re.findall(r"(?:^|\s)-D((?:NERD|Q13)[A-Z0-9_]+)(?:\s|$)", main_command))
     if board_flags != {identity.board}:
@@ -265,12 +283,13 @@ def package(build: Path, output: Path, identity: BuildIdentity = QA) -> dict:
                     "otaSlotBytes": APP_BYTES, "physicalLayoutVerified": False},
                 "imageType": "Paired application and WWW OTA images; no factory or NVS image",
                 "idfVersion": idf_version[1:], "idfImage": IDF_IMAGE, "nodeVersion": "24.14.0", "pinnedSubmodules": submodules,
-                "upstream": {"repository": "https://github.com/shufps/ESP-Miner-NerdQAxePlus", "tag": "v1.1.0-rc1-test1",
-                             "commit": "8b45522a6695c6bbccc3d032370fe08a29856d80"},
+                "upstream": {"repository": "https://github.com/shufps/ESP-Miner-NerdQAxePlus", "tag": "v1.1.1-rc1",
+                             "commit": "bfd07393918ce1b464faf1b7bd1ecd11343197f4"},
                 "independentWorkAssignment": False, "workTargeting": "chain-broadcast", "nativePoolStreamAgentVersion": 1,
                 "diagnosticDriver": False, "passiveCapture": False, "captureLogs": False,
                 "automaticTrialRollback": bool(config.get("BOOTLOADER_APP_ROLLBACK_ENABLE", False)),
                 "hardwareTested": False, "qualification": "Build/package checks only; consult this version's separate physical validation record",
+                "displayProfiles": display_profiles,
                 "unsupportedModels": ["Bitaxe Gamma", "NerdQAxe+", "NerdOctAxe", "other Nerd board profiles",
                     OCT.model if identity == QA else QA.model],
                 "images": {app_name: {"partitionBytes": APP_BYTES}, "www.bin": {"partitionBytes": WWW_BYTES}}}

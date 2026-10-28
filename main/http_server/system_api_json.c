@@ -1,10 +1,15 @@
 #include <stdio.h>
+#include <string.h>
+#include "esp_partition.h"
+#include "esp_image_format.h"
 #include "esp_wifi.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "global_state.h"
 #include "system_api_json.h"
+#include "system.h"
 #include "nvs_config.h"
 #include "sv2_protocol.h"
 #include "vcore.h"
@@ -13,6 +18,7 @@
 #include "cjson_utils.h"
 #include "statistics_task.h"
 #include "stratum_v2_task.h"
+#include "asic.h"
 
 
 static const char *get_reset_reason_str(esp_reset_reason_t reason)
@@ -63,12 +69,14 @@ static void system_api_add_telemetry(cJSON *root, GlobalState *g) {
     cJSON_AddFloatToObject(root, "errorPercentage", g->SYSTEM_MODULE.error_percentage);
     cJSON_AddNumberToObject(root, "sharesAccepted", g->SYSTEM_MODULE.shares_accepted);
     cJSON_AddNumberToObject(root, "sharesRejected", g->SYSTEM_MODULE.shares_rejected);
+    cJSON_AddNumberToObject(root, "sharesPending", g->SYSTEM_MODULE.shares_pending);
     cJSON_AddNumberToObject(root, "bestDiff", g->SYSTEM_MODULE.best_nonce_diff);
     cJSON_AddNumberToObject(root, "bestSessionDiff", g->SYSTEM_MODULE.best_session_nonce_diff);
     cJSON_AddNumberToObject(root, "poolDifficulty", g->pool_difficulty);
     cJSON_AddFloatToObject(root, "responseTime", g->SYSTEM_MODULE.response_time);
     cJSON_AddNumberToObject(root, "responseShareBatch", g->SYSTEM_MODULE.response_share_batch);
     cJSON_AddFloatToObject(root, "processTime", g->SYSTEM_MODULE.process_time);
+    cJSON_AddNumberToObject(root, "workReceived", g->SYSTEM_MODULE.work_received);
 
     // Dynamic Block Info
     cJSON_AddNumberToObject(root, "blockFound", g->SYSTEM_MODULE.block_found);
@@ -85,7 +93,12 @@ static void system_api_add_telemetry(cJSON *root, GlobalState *g) {
     cJSON_AddNumberToObject(root, "freeHeap", esp_get_free_heap_size());
     cJSON_AddNumberToObject(root, "freeHeapInternal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     cJSON_AddNumberToObject(root, "freeHeapSpiram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    cJSON_AddNumberToObject(root, "uptimeSeconds", (uint32_t)((esp_timer_get_time() - g->SYSTEM_MODULE.start_time) / 1000000));
+    cJSON_AddNumberToObject(root, "minFreeHeap", esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(root, "maxAllocHeap", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    cJSON_AddNumberToObject(root, "uptimeSeconds", g->SYSTEM_MODULE.uptime_seconds);
+    cJSON_AddNumberToObject(root, "totalUptimeSeconds", SYSTEM_noinit_get_total_uptime_seconds());
+    cJSON_AddNumberToObject(root, "totalHashes", SYSTEM_noinit_get_total_hashes());
+    cJSON_AddNumberToObject(root, "totalLog2Work", SYSTEM_noinit_get_total_log2_work());
     cJSON_AddFloatToObject(root, "cpuUsage", g->SYSTEM_MODULE.cpu_usage);
     cJSON_AddBoolToObject(root, "miningPaused", g->SYSTEM_MODULE.mining_paused);
     cJSON_AddNumberToObject(root, "overheat_mode", g->SYSTEM_MODULE.overheat_mode ? 1 : 0);
@@ -201,7 +214,11 @@ static void system_api_add_config(cJSON *root, GlobalState *g) {
     cJSON_AddStringToObject(root, "fallbackStratumProtocol", fallback_proto ? fallback_proto : STRATUM_V1);
     free(fallback_proto);
 
+    cJSON_AddBoolToObject(root,"stratumV2RequireAuth",nvs_config_get_bool(NVS_CONFIG_SV2_REQUIRE_AUTH));
+    cJSON_AddBoolToObject(root,"fallbackStratumV2RequireAuth",nvs_config_get_bool(NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH));
+
     // User Preferences
+    cJSON_AddNumberToObject(root, "useCustomWWW", nvs_config_get_bool(NVS_CONFIG_USE_CUSTOM_WWW) ? 1 : 0);
     cJSON_AddNumberToObject(root, "overclockEnabled", nvs_config_get_bool(NVS_CONFIG_OVERCLOCK_ENABLED) ? 1 : 0);
     char *disp_name = nvs_config_get_string(NVS_CONFIG_DISPLAY);
     cJSON_AddStringToObject(root, "display", disp_name ? disp_name : "");
@@ -241,7 +258,9 @@ static void system_api_add_hashrate_monitor(cJSON *root, GlobalState *g) {
         cJSON *domains = cJSON_CreateArray();
         cJSON_AddItemToObject(asic, "domains", domains);
         for (int j = 0; j < hash_domains; j++) {
-            cJSON_AddItemToArray(domains, cJSON_CreateNumber(g->HASHRATE_MONITOR_MODULE.domain_measurements[i][j].hashrate));
+            asic_domain_measurement_t measurement = {0};
+            ASIC_get_domain_measurement(g, i, j, &measurement);
+            cJSON_AddItemToArray(domains, cJSON_CreateNumber(measurement.hashrate));
         }
     }
 }
@@ -287,18 +306,53 @@ static void system_api_add_block_info(cJSON *root, GlobalState *g) {
     }
 }
 
-cJSON* system_api_get_full_json(GlobalState *g) {
-    if (!g) return NULL;
+static void system_api_add_partitions(cJSON *root, GlobalState * GLOBAL_STATE) {
+    if (!root || !GLOBAL_STATE) return;
+
+    cJSON *partitions_array = cJSON_CreateArray();
+    cJSON_AddItemToObject(root, "partitions", partitions_array);
+
+    for (int i = 0; i < GLOBAL_STATE->SYSTEM_MODULE.cached_partitions_count; i++) {
+        cached_partition_t *cp = &GLOBAL_STATE->SYSTEM_MODULE.cached_partitions[i];
+        if (cp->part == NULL) continue;
+
+        cJSON *p_obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(p_obj, "label", cp->part->label);
+        cJSON_AddBoolToObject(p_obj, "isCurrent", cp->isCurrent);
+        cJSON_AddBoolToObject(p_obj, "isFactory", cp->part->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY);
+
+        if (cp->version[0] != '\0') {
+            cJSON_AddStringToObject(p_obj, "version", cp->version);
+            cJSON_AddStringToObject(p_obj, "compileDate", cp->compileDate);
+            cJSON_AddStringToObject(p_obj, "compileTime", cp->compileTime);
+            if (cp->usagePercent >= 0) {
+                cJSON_AddNumberToObject(p_obj, "usagePercent", cp->usagePercent);
+            } else {
+                cJSON_AddNullToObject(p_obj, "usagePercent");
+            }
+        } else {
+            cJSON_AddNullToObject(p_obj, "version");
+            cJSON_AddNullToObject(p_obj, "compileDate");
+            cJSON_AddNullToObject(p_obj, "compileTime");
+            cJSON_AddNullToObject(p_obj, "usagePercent");
+        }
+        cJSON_AddItemToArray(partitions_array, p_obj);
+    }
+}
+
+cJSON* system_api_get_full_json(GlobalState * GLOBAL_STATE) {
+    if (!GLOBAL_STATE) return NULL;
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) return NULL;
 
-    system_api_add_telemetry(root, g);
-    system_api_add_config(root, g);
-    system_api_add_hashrate_monitor(root, g);
+    system_api_add_telemetry(root, GLOBAL_STATE);
+    system_api_add_config(root, GLOBAL_STATE);
+    system_api_add_hashrate_monitor(root, GLOBAL_STATE);
+    system_api_add_partitions(root, GLOBAL_STATE);
 
     // Arrays that involve global state loops (not simple addition)
-    system_api_add_rejected_reasons(root, g);
-    system_api_add_block_info(root, g);
+    system_api_add_rejected_reasons(root, GLOBAL_STATE);
+    system_api_add_block_info(root, GLOBAL_STATE);
 
     return root;
 }

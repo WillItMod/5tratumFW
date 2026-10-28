@@ -20,6 +20,7 @@ HARNESS = r'''
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
 #define ESP_LOGW(...) ((void)0)
+#define ESP_LOGD(...) ((void)0)
 #define BUFFER_SIZE 1024
 #define TRANSPORT_TIMEOUT_MS 5000
 #define REQUIRE(x) do { if (!(x)) { fprintf(stderr,"line %d: %s\n",__LINE__,#x); exit(1); } } while (0)
@@ -233,7 +234,9 @@ static void subscribe_optin(void) {
     puts("PASS: production SV1 subscribe advertises the explicit 5tratumFW/ opt-in prefix");
 }
 int main(void) {
+    request_timings=calloc(MAX_REQUEST_IDS,sizeof(*request_timings)); REQUIRE(request_timings);
     notifications(); lifetime(); share_interception(); locked_snapshot(); subscribe_optin();
+    free(request_timings);
     puts("Gamma MUX: 5 production host scenarios passed (ASan/UBSan)");
 }
 '''
@@ -244,18 +247,24 @@ def run():
     start = source.index('void STRATUM_V1_reset_message(')
     stamp = source.index('static void stamp_tx(', start)
     methods = source[start:stamp]
-    timing_start = source.index('static RequestTiming request_timings')
+    timing_start = source.index('static RequestTiming *request_timings')
     timing_end = source.index('esp_transport_handle_t STRATUM_V1_transport_init', timing_start)
     timing = source[timing_start:timing_end]
     sender = source[stamp:source.index('int STRATUM_V1_suggest_difficulty(', stamp)]
     api = (ROOT / 'components/stratum/include/stratum_api.h').read_text()
     types = api[api.index('#define MAX_MERKLE_BRANCHES'):api.index('esp_transport_handle_t STRATUM_V1_transport_init')]
     task = (ROOT / 'main/tasks/stratum_v1_task.c').read_text()
-    reserved_start = task.index('if (stratum_api_v1_message.method == MINING_5TRATUM_STATUS)')
-    reserved_end = task.index('} else if (stratum_api_v1_message.method == MINING_NOTIFY)', reserved_start)
-    result_start = task.index('} else if (stratum_api_v1_message.method == STRATUM_RESULT)', reserved_end)
-    result_end = task.index('} else if (stratum_api_v1_message.method == STRATUM_RESULT_SETUP)', result_start)
-    dispatch = DISPATCH_PREFIX + task[reserved_start:reserved_end] + task[result_start:result_end] + '\n}\n}\n'
+    reserved_start = task.index('                case MINING_5TRATUM_STATUS:')
+    reserved_end = task.index('                case METHOD_UNKNOWN:', reserved_start)
+    result_case = task.index('                case STRATUM_RESULT:', reserved_end)
+    result_start = task.index('                        float response_time_ms =', result_case)
+    share_if = task.index('                        if (response_time_ms >= 0)', result_start)
+    opening = task.index('{',share_if)
+    depth,end = 1,opening+1
+    while depth:
+        depth += (task[end] == '{') - (task[end] == '}')
+        end += 1
+    dispatch = DISPATCH_PREFIX + 'switch(stratum_api_v1_message.method) {\n' + task[reserved_start:reserved_end] + 'case STRATUM_RESULT: {\n' + task[result_start:end] + '\n} break; default:break;\n}\n}\n'
     (ROOT / 'build').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='mux-host-') as value:
         folder = Path(value)

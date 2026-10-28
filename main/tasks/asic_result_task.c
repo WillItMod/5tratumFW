@@ -8,8 +8,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include "esp_log.h"
-#include "nvs_config.h"
 #include "utils.h"
+#include "global_state.h"
+#include "mining.h"
+#include "stratum_api.h"
+#include "stratum_v1_task.h"
 #include "stratum_v2_task.h"
 #include "sv2_protocol.h"
 #include "hashrate_monitor_task.h"

@@ -169,6 +169,7 @@ components:
         channelType: {type: string, enum: [standard, extended]}
         authorityPubkey: {type: string, maxLength: 52}
         decodeCoinbase: {type: boolean}
+        sv2RequireAuth: {type: boolean, description: Absent in legacy saved slots; applying those preserves destination authentication policy.}
     ProfileSaveRequest:
       type: object
       additionalProperties: false
@@ -194,6 +195,7 @@ components:
         channelType: {type: string, enum: [standard, extended]}
         authorityPubkey: {type: string, maxLength: 52}
         decodeCoinbase: {type: boolean}
+        sv2RequireAuth: {type: boolean, description: Omitted on edits to preserve an existing saved-slot setting.}
     ProfileApplyRequest:
       type: object
       additionalProperties: false
@@ -251,6 +253,32 @@ components:
             poolTarget: {type: string, const: primary}
             maxEvents: {type: integer, const: 16}
             storageValid: {type: boolean, description: False disables a corrupt stored routing schedule while retaining current route and API recovery.}
+    TuningScheduleConfig:
+      allOf:
+        - $ref: '#/components/schemas/PoolScheduleConfig'
+      description: Recurring saved-tuning time points. An enabled schedule needs at least one enabled event. Every referenced tuning slot must exist, including disabled events. Overlapping enabled day/time points are rejected.
+    TuningScheduleSnapshot:
+      allOf:
+        - $ref: '#/components/schemas/FirmwareBinding'
+        - type: object
+          required: [schemaVersion, enabled, utcOffsetMinutes, events, supported, clockValid, selectedSlot, appliedSlot, timezoneMode, maxEvents, status, error]
+          properties:
+            schemaVersion: {type: integer, const: 1}
+            enabled: {type: boolean}
+            utcOffsetMinutes: {type: integer, minimum: -720, maximum: 840, multipleOf: 15}
+            events:
+              type: array
+              maxItems: 16
+              items: {$ref: '#/components/schemas/PoolScheduleEvent'}
+            supported: {type: boolean}
+            clockValid: {type: boolean}
+            selectedSlot: {type: [integer, 'null'], minimum: 0, maximum: 9}
+            appliedSlot: {type: [integer, 'null'], minimum: 0, maximum: 9, description: Last scheduled profile accepted by the normal guarded power controller; not a measurement of physical ASIC settings.}
+            timezoneMode: {type: string, const: fixed-utc-offset}
+            maxEvents: {type: integer, const: 16}
+            storageValid: {type: boolean}
+            status: {type: string, enum: [disabled, waiting-clock, waiting-runtime, paused, pending, applied, error]}
+            error: {type: [string, 'null']}
     GenericResponse:
       type: object
       required:
@@ -334,6 +362,80 @@ components:
         mode:
           type: string
           enum: [schedule]
+    UpdateSettingsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        redirect:
+          type: object
+          properties:
+            url:
+              type: string
+            delay:
+              type: number
+            message:
+              type: string
+    Pool:
+      type: object
+      required:
+        - stratumURL
+        - stratumPort
+        - stratumUser
+      properties:
+        stratumProtocol:
+          type: string
+          enum: [SV1, SV2]
+          description: Stratum protocol
+        stratumURL:
+          type: string
+          description: Stratum server URL
+        stratumPort:
+          type: integer
+          description: Stratum server port
+          minimum: 1
+          maximum: 65535
+        stratumUser:
+          type: string
+          description: Stratum username
+        stratumPassword:
+          type: string
+          description: Stratum password
+          writeOnly: true
+        stratumSuggestedDifficulty:
+          type: number
+          description: Suggested difficulty
+        stratumExtranonceSubscribe:
+          type: boolean
+          description: Enable extranonce subscribe
+        stratumTLS:
+          type: integer
+          description: Enable stratum TLS (0=disabled, 1=enabled, 2=enabled with verification)
+          minimum: 0
+          maximum: 2
+        stratumCert:
+          type: string
+          description: Stratum TLS cert
+        stratumDecodeCoinbase:
+          type: boolean
+          description: Enable pool coinbase transaction decoding
+        stratumV2ChannelType:
+          type: string
+          enum: [standard, extended]
+          description: SV2 channel type
+        stratumV2AuthorityPubkey:
+          type: string
+          description: SV2 authority public key for certificate verification (base58-encoded)
+          pattern: "^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]*$"
+        stratumV2RequireAuth:
+          type: boolean
+          description: Refuse to connect unless the SV2 server certificate is verified against the authority pubkey
+        id:
+          type: integer
+          description: Pool NVS slot index (0 to 7)
+          minimum: 0
+          maximum: 7
     SharesRejectedReason:
       type: object
       required:
@@ -419,6 +521,39 @@ components:
           description: Number of errors
           type: number
 
+    SystemPartition:
+      type: object
+      required:
+        - label
+        - isCurrent
+        - isFactory
+      properties:
+        label:
+          type: string
+          description: Partition label (e.g., ota_0, ota_1, factory)
+        version:
+          type: string
+          nullable: true
+          description: Firmware version on this partition
+        compileDate:
+          type: string
+          nullable: true
+          description: Compile date of the firmware on this partition
+        compileTime:
+          type: string
+          nullable: true
+          description: Compile time of the firmware on this partition
+        isCurrent:
+          type: boolean
+          description: Whether this is the currently running partition
+        isFactory:
+          type: boolean
+          description: Whether this is a factory partition
+        usagePercent:
+          type: integer
+          nullable: true
+          description: Partition space usage percentage (0-100)
+
     SystemInfo:
       type: object
       required:
@@ -449,6 +584,8 @@ components:
         - freeHeap
         - freeHeapInternal
         - freeHeapSpiram
+        - minFreeHeap
+        - maxAllocHeap
         - frequency
         - actualFrequency
         - hashRate
@@ -508,13 +645,19 @@ components:
         - networkDifficulty
         - blockSignals
         - blockFound
-        - coinbaseOutputs
         - coinbaseValueTotalSatoshis
         - coinbaseValueUserSatoshis
-        - hashrateMonitor
         - miningPaused
         - statsLimit
+        - partitions
+        - useCustomWWW
       properties:
+        stratumV2RequireAuth:
+          type: boolean
+          description: Refuse SV2 connections without a verified server certificate for the primary route.
+        fallbackStratumV2RequireAuth:
+          type: boolean
+          description: Refuse SV2 connections without a verified server certificate for the fallback route.
         ASICModel:
           type: string
           description: ASIC model identifier
@@ -613,6 +756,12 @@ components:
         freeHeapSpiram:
           type: number
           description: Available Spiram heap memory in bytes
+        minFreeHeap:
+          type: number
+          description: All-time low watermark for free heap memory in bytes
+        maxAllocHeap:
+          type: number
+          description: Largest contiguous free block of internal heap memory in bytes
         frequency:
           type: number
           description: ASIC frequency in MHz
@@ -640,6 +789,12 @@ components:
         hostname:
           type: string
           description: Device hostname
+        fullHostname:
+          type: string
+          description: Full hostname including .local domain for mDNS
+        mdnsHostname:
+          type: string
+          description: mDNS/Bonjour hostname for network discovery
         idfVersion:
           type: string
           description: ESP-IDF version
@@ -673,6 +828,21 @@ components:
         overclockEnabled:
           type: integer
           description: Set custom voltage/frequency in AxeOS
+        useCustomWWW:
+          type: integer
+          description: Whether to serve files from the SPIFFS www partition instead of the embedded Web UI (0=embedded, 1=custom/SPIFFS)
+          enum: [0, 1]
+        primaryPoolIndex:
+          type: integer
+          description: Index of the primary pool
+        secondaryPoolIndex:
+          type: integer
+          description: Index of the secondary pool (fallback)
+        pools:
+          type: array
+          description: Configured stratum pools
+          items:
+            $ref: '#/components/schemas/Pool'
         poolConnectionInfo:
           type: string
           description: Current pool address family
@@ -700,6 +870,18 @@ components:
         sharesRejected:
           type: number
           description: Number of rejected shares
+        totalUptimeSeconds:
+          type: number
+          description: Total uptime in seconds
+        totalHashes:
+          type: number
+          description: Total hashes done by the device
+        totalLog2Work:
+          type: number
+          description: Log2 of total hashes
+        sharesPending:
+          type: number
+          description: Shares submitted but not yet resolved by the pool (SV2; 0 for SV1). Rises while the pool batches/buffers acks, drops to 0 once it catches up.
         sharesRejectedReasons:
           type: array
           description: Reason(s) shares were rejected
@@ -843,6 +1025,14 @@ components:
         statsLimit:
           type: integer
           description: Maximum number of statistics data points
+        workReceived:
+          type: integer
+          description: Total number of mining jobs received from the pool
+        partitions:
+          type: array
+          description: List of available app partitions and their firmware versions
+          items:
+            $ref: '#/components/schemas/SystemPartition'
 
     SystemASIC:
       type: object
@@ -863,6 +1053,7 @@ components:
             - BM1366
             - BM1368
             - BM1370
+            - BM1373
             - BM1397
           examples:
             - "BM1366"
@@ -966,9 +1157,26 @@ components:
     Settings:
       type: object
       properties:
+        stratumV2RequireAuth:
+          type: boolean
+          description: Refuse SV2 connections without a verified server certificate for the primary route.
+        fallbackStratumV2RequireAuth:
+          type: boolean
+          description: Refuse SV2 connections without a verified server certificate for the fallback route.
         useFallbackStratum:
           type: number
           description: Forces the use the fallback stratum pool
+        primaryPoolIndex:
+          type: integer
+          description: Index of the primary pool
+        secondaryPoolIndex:
+          type: integer
+          description: Index of the secondary pool (fallback)
+        pools:
+          type: array
+          description: Configured stratum pools
+          items:
+            $ref: '#/components/schemas/Pool'
         stratumURL:
           type: string
           description: Primary stratum server URL
@@ -1105,6 +1313,12 @@ components:
           enum: [0,1]
           examples:
             - 0
+        useCustomWWW:
+          type: integer
+          description: Whether to serve files from the SPIFFS www partition instead of the embedded Web UI (0=embedded, 1=custom/SPIFFS)
+          enum: [0, 1]
+          examples:
+            - 0
         invertscreen:
           type: integer
           description: Whether to invert screen colors (0=normal, 1=inverted)
@@ -1117,7 +1331,7 @@ components:
           enum: [0, 1]
           examples:
             - 1
-        fanspeed:
+        manualFanSpeed:
           type: integer
           description: Manual fan speed percentage when autofanspeed is disabled
           minimum: 0
@@ -1272,6 +1486,39 @@ paths:
         '409': {description: Empty or referenced slot}
         '500': {description: Allocation or read failure}
         '507': {description: Storage commit failure; previous settings retained}
+  /api/5tratum/tuning-schedule:
+    get:
+      operationId: getTuningSchedule
+      tags: [system]
+      summary: Read the saved tuning schedule and observed status without changing tuning or persistent settings.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TuningScheduleSnapshot'}
+        '401': {description: Unauthorized network client}
+        '500': {description: Allocation or read failure}
+    post:
+      operationId: saveTuningSchedule
+      tags: [system]
+      summary: Atomically store a recurring tuning schedule. Saving does not apply a tuning profile; runtime activation waits for trusted time and safe mining state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TuningScheduleConfig'}
+      responses:
+        '200':
+          description: Saved. Read GET for the stored policy and current runtime status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileResult'}
+        '400': {description: Invalid schedule}
+        '401': {description: Unauthorized network client}
+        '409': {description: Empty or invalid referenced tuning slot}
+        '500': {description: Allocation or read failure}
+        '507': {description: Storage commit failure; previous policy retained}
   /api/system/wifi/scan:
     get:
       summary: Scan for available WiFi networks
@@ -1506,6 +1753,39 @@ paths:
         '500':
           description: Internal server error
 
+  /api/system/boot:
+    post:
+      summary: Set next boot partition
+      description: Sets the partition to be used for the next system boot
+      operationId: setBootPartition
+      tags:
+        - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - partition
+              properties:
+                partition:
+                  type: string
+                  description: Partition label to boot from (e.g., ota_0, ota_1, factory)
+      responses:
+        '200':
+          description: Boot partition set successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Invalid partition label
+        '401':
+          description: Unauthorized - Client not in allowed network range
+        '500':
+          description: Internal server error
+
   /api/system/restart:
     post:
       summary: Restart the system
@@ -1588,6 +1868,10 @@ paths:
       responses:
         '200':
           description: Settings updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateSettingsResponse'
         '400':
           description: Invalid settings provided
         '401':

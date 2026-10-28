@@ -1,4 +1,4 @@
-export interface ProfileSlot { slot: number; configured: boolean; name: string | null; frequencyMHz?: number; coreVoltageMv?: number; host?: string; port?: number; user?: string; passwordConfigured?: boolean; protocol?: number; tls?: boolean; extranonceSubscribe?: boolean; authorityPubkey?: string; channelType?: number; }
+export interface ProfileSlot { slot: number; configured: boolean; name: string | null; frequencyMHz?: number; coreVoltageMv?: number; host?: string; port?: number; user?: string; passwordConfigured?: boolean; protocol?: number; tls?: boolean; extranonceSubscribe?: boolean; authorityPubkey?: string; channelType?: number; sv2RequireAuth?: boolean; }
 export interface FiveTratumProfiles {
   schemaVersion: 1;
   tuning: ProfileSlot[]; pools: ProfileSlot[];

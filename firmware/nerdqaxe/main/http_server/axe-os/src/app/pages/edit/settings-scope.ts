@@ -3,11 +3,11 @@
 export const SECTION_FIELDS: Record<string, readonly string[]> = {
   performance: ['frequency','coreVoltage','jobInterval','vrFrequency'],
   pool: ['poolMode','poolBalance','stratumKeep','stratumDifficulty',
-    'stratumURL','stratumPort','stratumUser','stratumPassword','stratumProtocol','stratumTLS','stratumEnonceSubscribe','sv2AuthorityPubkey','sv2ChannelType','coinbaseVerifyMode','coinbaseMaxFee','coinbaseVerifyForce',
-    'fallbackStratumURL','fallbackStratumPort','fallbackStratumUser','fallbackStratumPassword','fallbackStratumProtocol','fallbackStratumTLS','fallbackStratumEnonceSubscribe','fallbackSv2AuthorityPubkey','fallbackSv2ChannelType','fallbackCoinbaseVerifyMode','fallbackCoinbaseMaxFee','fallbackCoinbaseVerifyForce'],
+    'stratumURL','stratumPort','stratumUser','stratumPassword','stratumProtocol','stratumTLS','stratumEnonceSubscribe','sv2AuthorityPubkey','sv2ChannelType','sv2RequireAuth','coinbaseVerifyMode','coinbaseMaxFee','coinbaseVerifyForce',
+    'fallbackStratumURL','fallbackStratumPort','fallbackStratumUser','fallbackStratumPassword','fallbackStratumProtocol','fallbackStratumTLS','fallbackStratumEnonceSubscribe','fallbackSv2AuthorityPubkey','fallbackSv2ChannelType','fallbackSv2RequireAuth','fallbackCoinbaseVerifyMode','fallbackCoinbaseMaxFee','fallbackCoinbaseVerifyForce'],
   cooling: ['autofanspeed','manualFanSpeed','overheat_temp','pidTargetTemp','pidP','pidI','pidD','invertFanPolarity','pidUseMax','fan1Mode','fan1ManualSpeed','fan1OverheatTemp','fan1PidTargetTemp','fan1PidP','fan1PidI','fan1PidD'],
   network: ['hostname','ssid','wifiPass'],
-  display: ['flipScreen','invertScreen','autoScreenOff','timeFormat'],
+  display: ['displayProfile','flipScreen','invertScreen','autoScreenOff','timeFormat'],
   advanced: ['canMaster','customMempoolEnabled','mempoolUrl'],
 };
 export function sectionFields(section: string, fanCount = 2): readonly string[] {
@@ -16,13 +16,16 @@ export function sectionFields(section: string, fanCount = 2): readonly string[] 
 export function changedFields(values: Record<string, any>, baseline: Record<string, any>, section: string, fanCount = 2): string[] {
   return sectionFields(section,fanCount).filter(key => values[key] !== baseline[key]);
 }
-export function settingsPatch(values: Record<string, any>, baseline: Record<string, any>, section: string, fanCount = 2): Record<string, any> {
+export function settingsPatch(values: Record<string, any>, baseline: Record<string, any>, section: string, fanCount = 2, displayProfiles: readonly string[] = []): Record<string, any> {
   const changed = new Set(changedFields(values,baseline,section,fanCount));
   const out: Record<string, any> = {};
   const copy=(source:string,target=source,bool=false,into=out)=>{if(changed.has(source) && values[source] !== '*****')into[target]=bool ? !!values[source] : values[source];};
   if(section === 'performance')sectionFields(section).forEach(k=>copy(k));
   if(section === 'network')sectionFields(section).forEach(k=>copy(k));
-  if(section === 'display') ['flipScreen','invertScreen','autoScreenOff'].forEach(k=>copy(k,k,true));
+  if(section === 'display') {
+    ['flipScreen','invertScreen','autoScreenOff'].forEach(k=>copy(k,k,true));
+    if (displayProfiles.includes(values.displayProfile)) copy('displayProfile');
+  }
   if(section === 'advanced') {
     copy('canMaster','canMaster',true); copy('customMempoolEnabled','mempoolCustom',true);
     if(changed.has('customMempoolEnabled') || changed.has('mempoolUrl'))out.mempoolUrl=values.customMempoolEnabled ? values.mempoolUrl : '';
@@ -34,7 +37,7 @@ export function settingsPatch(values: Record<string, any>, baseline: Record<stri
     const targets=['url','port','user','password','protocol','tls','enonceSubscribe'];
     pools.forEach((pool,i)=>{
       names.forEach((name,j)=>copy((i ? 'fallbackStratum' : 'stratum')+name,targets[j],j>=5,pool));
-      ['sv2AuthorityPubkey','sv2ChannelType','coinbaseVerifyMode','coinbaseMaxFee','coinbaseVerifyForce'].forEach(k=>copy(i ? 'fallback'+k[0].toUpperCase()+k.slice(1) : k,k,k==='coinbaseVerifyForce',pool));
+      ['sv2AuthorityPubkey','sv2ChannelType','sv2RequireAuth','coinbaseVerifyMode','coinbaseMaxFee','coinbaseVerifyForce'].forEach(k=>copy(i ? 'fallback'+k[0].toUpperCase()+k.slice(1) : k,k,k==='coinbaseVerifyForce' || k==='sv2RequireAuth',pool));
     });
     if(pools.some(p=>Object.keys(p).length))out.pools=pools;
   }

@@ -1,4 +1,5 @@
 <form *ngIf="form" [formGroup]="form" class="routing-console routing-network">
+    <p *ngIf="savedHostnameUrl" class="routing-notice" role="status">Hostname saved. <a [href]="savedHostnameUrl">Open the miner at its new address</a>.</p>
     <section class="routing-editor" aria-labelledby="networkIdentityHeading">
         <div class="routing-editor-intro">
             <h2 id="networkIdentityHeading">Device identity</h2>

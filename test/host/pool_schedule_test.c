@@ -52,6 +52,8 @@ bool operating_profile_pool_hash(unsigned slot, uint32_t *hash)
 { if (!(slots & (1u<<slot))) return false; *hash=100+slot; return true; }
 bool operating_profile_current_pool_hash(bool fallback, uint32_t *hash)
 { assert(!fallback); *hash=current_hash; return true; }
+bool operating_profile_pool_matches(unsigned slot, bool fallback, bool *matches)
+{ assert(!fallback); if (!(slots & (1u<<slot))) return false; *matches=current_hash==100+slot; return true; }
 esp_err_t operating_profiles_with_pool_slots(uint16_t mask, esp_err_t (*commit)(void *), void *context)
 { if (mask & ~slots) return ESP_ERR_NVS_NOT_FOUND; return commit(context); }
 esp_err_t operating_profile_apply_pool_guarded(unsigned slot, bool fallback, bool (*allow)(void *), void *context)

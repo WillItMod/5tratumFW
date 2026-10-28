@@ -1,6 +1,6 @@
 # Attribution and licensing
 
-5tratumFW is a modified version of [Bitaxe ESP-Miner](https://github.com/bitaxeorg/ESP-Miner), using release **v2.14.2**, upstream commit **64680f8a4da0b9a3b532051f0aa18429fcf04e82**, as its source baseline.
+5tratumFW is a modified version of [Bitaxe ESP-Miner](https://github.com/bitaxeorg/ESP-Miner), using release **v2.15.4**, upstream commit **d212a0f948cb3ffd90c7ca9572e9b2cf2d865d80**, as its current Gamma source baseline. Earlier qualified releases retain their original provenance. The Nerd families use their separate shufps RC1 baseline; see the [migration record](upstream-migration-20261028.md).
 
 The firmware and web interface retain the upstream [GNU General Public License version 3](../LICENSE) and existing copyright notices. 5tratumFW changes include the Gamma-only startup guard, settings-preserving boot, interface design, operating-settings export, scheduler/power controls, OLED layout and optional MUX peer status receiver. The repository history retains the upstream baseline; Gamma additions are recorded in separate commits.
 

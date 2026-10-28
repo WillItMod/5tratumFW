@@ -6,6 +6,14 @@
 #include "bm1368.h"
 #include "nvs_config.h"
 #include "../pid/PID_v1_bc.h"
+#include "driver/gpio.h"
+
+// Ethernet (W5500 interposer) pin map, per board. GPIO_NUM_NC = not wired / not used.
+// rst = NC means the board resets the W5500 by RC (no GPIO); irq = NC means polling.
+struct EthPins {
+    gpio_num_t sclk = GPIO_NUM_NC, mosi = GPIO_NUM_NC, miso = GPIO_NUM_NC,
+               cs = GPIO_NUM_NC, rst = GPIO_NUM_NC, irq = GPIO_NUM_NC;
+};
 
 class Board {
 public:
@@ -50,6 +58,11 @@ public:
     // Index 0: ASIC/chip-temp PID (fan 0).  Index 1: VR-temp PID (fan 1).
     // ch1 base defaults (overridden in subclass ctors where needed): 65°C, p=6, i=0.1, d=10.
     PidSettings m_pidSettings[2] = {{}, {65, 600, 10, 1000}};
+
+    // Fan control mode per channel (0=manual, 2=PID, 3=linked). Initialized to
+    // the default here and overwritten from NVS in loadSettings() — same
+    // handling as m_pidSettings. ch0 = global Kconfig default, ch1 = linked.
+    int m_fanMode[2] = {CONFIG_AUTO_FAN_SPEED_VALUE, 3};
 
     // Human-readable connector labels shown in the web UI
     const char* m_fanLabels[2] = {"Fan 1", "Fan 2"};
@@ -319,6 +332,10 @@ public:
         return &m_pidSettings[ch];
     }
 
+    int getFanMode(int ch) {
+        return m_fanMode[ch];
+    }
+
     const char* getFanLabel(int ch) const {
         if (ch < 0 || ch >= m_numFans) return "";
         return m_fanLabels[ch];
@@ -343,6 +360,19 @@ public:
     virtual bool hasEthernet() {
         return false;
     }
+
+    // W5500 ethernet pin map for this board; nullptr = board has no ethernet wiring.
+    virtual const EthPins *getEthPins() {
+        return nullptr;
+    }
+
+    // Called once after initBoard(): boards with a pluggable W5500 HAT probe for it
+    // here, once everything that may share its pins is known.
+    virtual void detectEthernet() {
+    }
+
+    // True if a W5500 interposer is present on this board's eth pins (via getEthPins()).
+    bool isEthConnected();
 
     virtual bool hasCanExtension() {
         return false;

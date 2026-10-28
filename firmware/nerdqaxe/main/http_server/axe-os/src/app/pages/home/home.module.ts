@@ -1,8 +1,11 @@
-import { RouterModule } from '@angular/router';
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { HomeComponent } from './home.component';
-import { NbCardModule, NbTooltipModule, NbBadgeModule, NbAlertModule, NbButtonModule, NbThemeModule, NbIconModule } from '@nebular/theme';
+import { HomeGaiaComponent } from './home-gaia.component';
+import { HomeShellComponent } from './home-shell.component';
+import { NbCardModule, NbTooltipModule, NbBadgeModule, NbAlertModule, NbButtonModule, NbThemeModule, NbIconModule, NbCheckboxModule } from '@nebular/theme';
 import { SystemService } from '../../services/system.service';
 import { GaugeModule } from '../../components/gauge/gauge.module';
 import { PipesModule} from '../../pipes/pipes.module';
@@ -12,12 +15,16 @@ import { AsicTempBarsModule } from 'src/app/components/asic-temp-bars/asic-temp-
 @NgModule({
   declarations: [
     HomeComponent,
+    HomeGaiaComponent,
+    HomeShellComponent,
   ],
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     NbCardModule,
     NbButtonModule,
+    NbCheckboxModule,
     NbIconModule,
     NbThemeModule,
     GaugeModule,

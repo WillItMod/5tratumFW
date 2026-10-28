@@ -71,6 +71,10 @@ int main(int argc, char **argv) {
         const bool initialized = board.initBoard();
         assert(initialized == mockParentInit);
         allZero(board);
+        if (initialized) {
+            const bool hasMux = mockMuxInit[0] == ESP_OK || mockMuxInit[1] == ESP_OK;
+            assert((board.getEthPins() == nullptr) == hasMux); // RC mux pin ownership blocks Ethernet probing.
+        }
         if (scenario == "parent-failure") {
             assert(mockMuxProbeCalls[0] == 0 && mockMuxProbeCalls[1] == 0);
             assert(mockUartTemperatureRequests == 0);

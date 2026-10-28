@@ -11,10 +11,14 @@ bool operating_profile_pool_exists(unsigned slot);
 bool operating_profile_pool_name(unsigned slot, char *name, size_t size);
 bool operating_profile_pool_hash(unsigned slot, uint32_t *hash);
 bool operating_profile_current_pool_hash(bool fallback, uint32_t *hash);
+bool operating_profile_pool_matches(unsigned slot, bool fallback, bool *matches);
 esp_err_t operating_profile_apply_pool(unsigned slot, bool fallback);
 esp_err_t operating_profile_apply_pool_guarded(unsigned slot, bool fallback, bool (*allow)(void *), void *context);
 esp_err_t operating_profiles_with_pool_slots(uint16_t slot_mask, esp_err_t (*commit)(void *), void *context);
+esp_err_t operating_profiles_with_tuning_slots(uint16_t slot_mask, esp_err_t (*commit)(void *), void *context);
+esp_err_t operating_profile_apply_tuning_guarded(unsigned slot, bool (*allow)(void *), void *context);
 // Scheduler supplies this guard; a referenced slot cannot be changed/deleted.
 bool operating_profile_pool_referenced(unsigned slot);
+bool operating_profile_tuning_referenced(unsigned slot);
 cJSON *operating_profiles_binding(void);
 #endif

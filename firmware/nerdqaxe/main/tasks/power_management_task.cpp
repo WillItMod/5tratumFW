@@ -68,34 +68,42 @@ uint16_t PowerManagementTask::getFanRPM(int channel)
     return m_fanController.getRPM(channel);
 }
 
-void PowerManagementTask::checkCoreVoltageChanged()
+void PowerManagementTask::acknowledgeAsicSettings(uint16_t frequency, uint16_t millivolts)
 {
-    static uint16_t last_core_voltage = 0;
-
-    uint16_t core_voltage = m_board->getAsicVoltageMillis();
-
-    if (core_voltage != last_core_voltage) {
-        ESP_LOGI(TAG, "setting new vcore voltage to %umV", core_voltage);
-        m_board->setVoltage((float) core_voltage / 1000.0);
-        last_core_voltage = core_voltage;
-    }
+    m_appliedAsicFrequency = frequency;
+    m_appliedCoreVoltage = millivolts;
 }
 
-void PowerManagementTask::checkAsicFrequencyChanged()
+bool PowerManagementTask::checkCoreVoltageChanged()
 {
-    static uint16_t last_asic_frequency = 0;
+    uint16_t core_voltage = m_board->getAsicVoltageMillis();
 
+    if (core_voltage != m_appliedCoreVoltage) {
+        ESP_LOGI(TAG, "setting new vcore voltage to %umV", core_voltage);
+        if (!m_board->setVoltage((float) core_voltage / 1000.0)) {
+            ESP_LOGE(TAG, "ASIC voltage update failed; remaining settings deferred");
+            return false;
+        }
+        m_appliedCoreVoltage = core_voltage;
+    }
+    return true;
+}
+
+bool PowerManagementTask::checkAsicFrequencyChanged()
+{
     uint16_t asic_frequency = m_board->getAsicFrequency();
 
-    if (asic_frequency != last_asic_frequency) {
+    if (asic_frequency != m_appliedAsicFrequency) {
         ESP_LOGI(TAG, "setting new asic frequency to %uMHz", asic_frequency);
         const bool updated = FiveTratumMining::controlSupported() ?
             FiveTratumMining::applyFrequency(asic_frequency) : m_board->setAsicFrequency((float) asic_frequency);
         if (!updated) {
             ESP_LOGE(TAG, "pll setting not found for %uMHz", asic_frequency);
+            return false;
         }
-        last_asic_frequency = asic_frequency;
+        m_appliedAsicFrequency = asic_frequency;
     }
+    return true;
 }
 
 void PowerManagementTask::checkVrFrequencyChanged()
@@ -220,11 +228,20 @@ void PowerManagementTask::applyAsicSettings()
         return;
     }
 
-    // check if asic voltage changed
-    checkCoreVoltageChanged();
-
-    // check if asic frequency changed
-    checkAsicFrequencyChanged();
+    // Finish the requested PLL transition at the existing higher voltage
+    // before reducing VCORE. A failed/cancelled ramp cannot lower voltage.
+    // In the opposite direction, a successful voltage write precedes a ramp.
+    const bool loweringVoltage = m_appliedCoreVoltage != 0 &&
+        m_board->getAsicVoltageMillis() < m_appliedCoreVoltage;
+    if (loweringVoltage) {
+        if (!checkAsicFrequencyChanged()) return;
+        if (!m_board->isInitialized() ||
+            (FiveTratumMining::controlSupported() && !FiveTratumMining::miningWritesAllowed())) return;
+        if (!checkCoreVoltageChanged()) return;
+    } else {
+        if (!checkCoreVoltageChanged()) return;
+        if (!checkAsicFrequencyChanged()) return;
+    }
 
     // A cancelled/failed guarded ramp may have powered the chain down.
     if (!m_board->isInitialized() ||
@@ -328,6 +345,8 @@ bool PowerManagementTask::refreshProtectionForMining() {
 void PowerManagementTask::task()
 {
     m_board = SYSTEM_MODULE.getBoard();
+    if (!FiveTratumMining::controlSupported() && m_board->isInitialized())
+        acknowledgeAsicSettings(m_board->getAsicFrequency(), m_board->getAsicVoltageMillis());
 
     // use manual invert polarity setting
     bool invert = m_board->isInvertFanPolarityEnabled();

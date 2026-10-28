@@ -28,6 +28,8 @@ inline std::vector<std::string> mockOperations;
 constexpr int ESP_OK = 0;
 constexpr int ESP_FAIL = -1;
 using gpio_num_t = int;
+struct EthPins {};
+inline EthPins mockEthPins;
 constexpr int GPIO_NUM_2 = 2, GPIO_NUM_3 = 3, GPIO_NUM_12 = 12;
 constexpr int GPIO_MODE_INPUT = 1, GPIO_PULLDOWN_ONLY = 2;
 inline void gpio_reset_pin(int pin) { mockOperations.push_back("reset-" + std::to_string(pin)); }
@@ -84,6 +86,7 @@ inline int getAsicJobInterval(int value) { return value; }
 inline bool isFanPolarity(bool value) { return value; }
 inline bool isFlipScreenEnabled(bool value) { return value; }
 inline int getVrFrequency(int) { return savedVr; }
+inline int getFanMode(int, int value) { return value; }
 inline int getFanPidTargetTemp(int ch, int) { return ch ? 65 : 55; }
 inline int getFanPidP(int, int value) { return value; }
 inline int getFanPidI(int, int value) { return value; }
@@ -107,6 +110,7 @@ protected:
     std::vector<int> m_asicFrequencies{500, 515, 525, 550, 575, 590, 600};
     std::vector<int> m_asicVoltages{1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200};
     MockPid m_pidSettings[2];
+    int m_fanMode[2] = {2, 3};
     std::array<float, 8> m_chipTemps{};
     Asic *m_asics = &mockAsic;
     MockBuck *m_tps = new MockBuck();
@@ -115,6 +119,7 @@ public:
     virtual bool initBoard() { ++mockParentInitCalls; return mockParentInit; }
     virtual void requestChipTemps() {}
     virtual float getVRTemp() { return 0; }
+    virtual const EthPins *getEthPins() { return nullptr; }
     void setChipTemp(int index, float value) { m_chipTemps.at(index) = value; }
     float getChipTemp(int index) const { return m_chipTemps.at(index); }
     void loadSettings();
@@ -123,5 +128,6 @@ class NerdQaxePlus : public Board {
 public:
     void requestChipTemps() override;
     float getVRTemp() override;
+    const EthPins *getEthPins() override { return &mockEthPins; }
 };
 class NerdQaxePlus2 : public NerdQaxePlus {};

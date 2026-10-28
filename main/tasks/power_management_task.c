@@ -14,6 +14,7 @@
 #include "serial.h"
 #include "mining_schedule.h"
 #include "mining_state.h"
+#include <math.h>
 
 #define POLL_RATE 100
 #define MAX_TEMP 90.0
@@ -30,6 +31,7 @@
 #define ASIC_REDUCTION 100.0
 
 static const char * TAG = "power_management";
+static void initialize_requested_frequency(GlobalState *state, float frequency);
 
 static bool current_stop_request(GlobalState *state)
 {
@@ -55,6 +57,7 @@ static esp_err_t mining_stop(GlobalState * GLOBAL_STATE)
 
     // Cut ASIC power and hold in reset
     esp_err_t power_ret = VCORE_set_voltage(GLOBAL_STATE, 0.0f);
+    if (power_ret == ESP_OK) GLOBAL_STATE->POWER_MANAGEMENT_MODULE.applied_core_voltage_mv = 0;
     esp_err_t reset_ret = asic_hold_reset_low();
 
     // Give tasks time to complete any in-progress UART operation
@@ -95,12 +98,19 @@ static uint8_t mining_start(GlobalState * GLOBAL_STATE)
     }
 
     // Restore voltage from NVS
-    uint16_t voltage = nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE);
+    uint16_t voltage;
+    float frequency;
+    if (!nvs_config_get_tuning_pair(&voltage, &frequency)) {
+        latch_power_fault(GLOBAL_STATE, "ASIC settings snapshot unavailable on resume");
+        mining_stop(GLOBAL_STATE);
+        return 0;
+    }
     if (VCORE_set_voltage(GLOBAL_STATE, (double) voltage / 1000.0) != ESP_OK) {
         latch_power_fault(GLOBAL_STATE, "ASIC voltage restore failed");
         mining_stop(GLOBAL_STATE);
         return 0;
     }
+    GLOBAL_STATE->POWER_MANAGEMENT_MODULE.applied_core_voltage_mv = voltage;
     // A successful voltage restore means the ASIC is no longer confirmed off.
     mining_schedule_report_power(false, NULL);
 
@@ -116,7 +126,7 @@ static uint8_t mining_start(GlobalState * GLOBAL_STATE)
         return 0;
     }
 
-    POWER_MANAGEMENT_init_frequency(GLOBAL_STATE);
+    initialize_requested_frequency(GLOBAL_STATE, frequency);
     // Stabilization delay of 2000ms prevents race conditions where tasks are
     // just starting to use the ASIC while power management tries to change frequency
     uint8_t chip_count = asic_initialize(GLOBAL_STATE, ASIC_INIT_RECOVERY, 0);
@@ -150,12 +160,42 @@ static float expected_hashrate(GlobalState * GLOBAL_STATE)
     return GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value * GLOBAL_STATE->DEVICE_CONFIG.family.asic.small_core_count * GLOBAL_STATE->DEVICE_CONFIG.family.asic_count / 1000.0;
 }
 
-void POWER_MANAGEMENT_init_frequency(void * pvParameters)
+static bool apply_requested_frequency(GlobalState *state, float requested, float *last_requested)
 {
-    GlobalState * GLOBAL_STATE = (GlobalState *) pvParameters;
+    PowerManagementModule *power = &state->POWER_MANAGEMENT_MODULE;
+    // This is the driver's reported solver result, not a measured PLL readback.
+    // A zero/invalid/out-of-range result cannot authorize a voltage reduction.
+    const bool current_valid = isfinite(power->actual_frequency) && power->actual_frequency > 0 &&
+                               fabsf(power->actual_frequency - requested) <= 2.0f;
+    if (*last_requested == requested && current_valid) return true;
+    if (current_stop_request(state)) return false;
+    power->frequency_value = requested;
+    power->expected_hashrate = expected_hashrate(state);
+    ASIC_set_frequency(state);
+    if (current_stop_request(state) || !isfinite(power->actual_frequency) || power->actual_frequency <= 0 ||
+        fabsf(power->actual_frequency - requested) > 2.0f) return false;
+    ASIC_set_nonce_space(state);
+    *last_requested = requested;
+    return true;
+}
 
-    float frequency = nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY);
+static bool apply_requested_settings(GlobalState *state, uint16_t voltage, float frequency, float *last_frequency)
+{
+    PowerManagementModule *power = &state->POWER_MANAGEMENT_MODULE;
+    if (!isfinite(frequency) || frequency <= 0 || !voltage || current_stop_request(state)) return false;
+    const bool lowering_voltage = power->applied_core_voltage_mv != 0 && voltage < power->applied_core_voltage_mv;
+    if (lowering_voltage && !apply_requested_frequency(state, frequency, last_frequency)) return false;
+    if (current_stop_request(state)) return false;
+    if (voltage != power->applied_core_voltage_mv) {
+        ESP_LOGI(TAG, "setting new vcore voltage to %umV", voltage);
+        if (VCORE_set_voltage(state, (float)voltage / 1000.0f) != ESP_OK) return false;
+        power->applied_core_voltage_mv = voltage;
+    }
+    return lowering_voltage || apply_requested_frequency(state, frequency, last_frequency);
+}
 
+static void initialize_requested_frequency(GlobalState *GLOBAL_STATE, float frequency)
+{
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = frequency;
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency = 50.0;
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate = expected_hashrate(GLOBAL_STATE);
@@ -163,6 +203,11 @@ void POWER_MANAGEMENT_init_frequency(void * pvParameters)
     char expected_hashrate_str[16] = {0};
     suffixString(GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate * 1e6, expected_hashrate_str, sizeof(expected_hashrate_str), 0);
     ESP_LOGI(TAG, "ASIC Frequency: %g MHz, Expected hashrate: %sH/s", frequency, expected_hashrate_str);
+}
+
+void POWER_MANAGEMENT_init_frequency(GlobalState *state)
+{
+    initialize_requested_frequency(state, nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY));
 }
 
 void POWER_MANAGEMENT_task(void * pvParameters)
@@ -179,7 +224,6 @@ void POWER_MANAGEMENT_task(void * pvParameters)
     float last_asic_frequency = power_management->frequency_value;
 
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    uint16_t last_core_voltage = 0.0;
 
     uint16_t last_known_asic_voltage = 0;
     float last_known_asic_frequency = 0.0;
@@ -306,33 +350,21 @@ void POWER_MANAGEMENT_task(void * pvParameters)
             }
         }
 
-        uint16_t core_voltage = GLOBAL_STATE->SELF_TEST_MODULE.is_active
-                                 ? GLOBAL_STATE->DEVICE_CONFIG.family.asic.default_voltage_mv
-                                 : nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE);
-        float asic_frequency = GLOBAL_STATE->SELF_TEST_MODULE.is_active
-                                 ? GLOBAL_STATE-> DEVICE_CONFIG.family.asic.default_frequency_mhz
-                                 : nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY);
-
-        if (core_voltage != last_core_voltage) {
-            ESP_LOGI(TAG, "setting new vcore voltage to %umV", core_voltage);
-            if (VCORE_set_voltage(GLOBAL_STATE, (double) core_voltage / 1000.0) != ESP_OK) {
-                latch_power_fault(GLOBAL_STATE, "ASIC voltage update failed");
-                is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
-                continue;
-            }
-            last_core_voltage = core_voltage;
+        uint16_t core_voltage;
+        float asic_frequency;
+        if (GLOBAL_STATE->SELF_TEST_MODULE.is_active) {
+            core_voltage = GLOBAL_STATE->DEVICE_CONFIG.family.asic.default_voltage_mv;
+            asic_frequency = GLOBAL_STATE->DEVICE_CONFIG.family.asic.default_frequency_mhz;
+        } else if (!nvs_config_get_tuning_pair(&core_voltage, &asic_frequency)) {
+            latch_power_fault(GLOBAL_STATE, "ASIC settings snapshot unavailable");
+            is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+            continue;
         }
-
-        if (asic_frequency != last_asic_frequency) {
-            ESP_LOGI(TAG, "New ASIC frequency requested: %g MHz (current: %g MHz)", asic_frequency, last_asic_frequency);
-            
-            power_management->frequency_value = asic_frequency;
-            power_management->expected_hashrate = expected_hashrate(GLOBAL_STATE);
-
-            ASIC_set_frequency(GLOBAL_STATE);
-            ASIC_set_nonce_space(GLOBAL_STATE);
-            
-            last_asic_frequency = asic_frequency;
+        if (!apply_requested_settings(GLOBAL_STATE, core_voltage, asic_frequency, &last_asic_frequency)) {
+            // A new pause is cancellation; solver/regulator failure is latched.
+            if (!current_stop_request(GLOBAL_STATE)) latch_power_fault(GLOBAL_STATE, "ASIC operating-point update failed");
+            is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
+            continue;
         }
 
         // Check for changing of overheat mode

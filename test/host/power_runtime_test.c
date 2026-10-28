@@ -20,17 +20,22 @@ static bool serial_ready, applied, pause_on_cooling, overheat_enabled;
 static char reported_error[96];
 static unsigned delay_count, exit_delay, cooling_count;
 static unsigned pause_at_delay;
+static bool frequency_failure, pause_on_frequency;
+static char settings_events[64];
+static size_t settings_event_count;
 static jmp_buf task_exit;
+static void setting_event(char event) { assert(settings_event_count < sizeof(settings_events) - 1); settings_events[settings_event_count++] = event; }
 
 const char *esp_err_to_name(esp_err_t value) { (void)value; return "host error"; }
 uint16_t nvs_config_get_u16(NvsConfigKey key) { return key == NVS_CONFIG_ASIC_VOLTAGE ? saved_voltage : 100; }
 float nvs_config_get_float(NvsConfigKey key) { assert(key == NVS_CONFIG_ASIC_FREQUENCY); return saved_frequency; }
+bool nvs_config_get_tuning_pair(uint16_t *voltage, float *frequency) { *voltage = saved_voltage; *frequency = saved_frequency; return true; }
 bool nvs_config_get_bool(NvsConfigKey key) { (void)key; return false; }
 void nvs_config_set_u16(NvsConfigKey key, uint16_t value) { setting_writes++; if (key == NVS_CONFIG_ASIC_VOLTAGE) saved_voltage = value; }
 void nvs_config_set_float(NvsConfigKey key, float value) { assert(key == NVS_CONFIG_ASIC_FREQUENCY); setting_writes++; saved_frequency = value; }
 void nvs_config_set_bool(NvsConfigKey key, bool value) { (void)key; (void)value; setting_writes++; }
 esp_err_t VCORE_set_voltage(GlobalState *state, float voltage) {
-    (void)state; voltage_calls++; last_voltage = voltage;
+    (void)state; voltage_calls++; last_voltage = voltage; setting_event('v');
     if (voltage == 0 && off_failures_remaining) { off_failures_remaining--; return ESP_FAIL; }
     return voltage == 0 ? off_result : restore_result;
 }
@@ -39,13 +44,18 @@ esp_err_t VCORE_check_fault(GlobalState *state) { (void)state; return ESP_OK; }
 esp_err_t asic_hold_reset_low(void) { reset_calls++; return reset_result; }
 bool SERIAL_is_initialized(void) { return serial_ready; }
 esp_err_t uart_flush(int uart) { assert(serial_ready && uart == UART_NUM_1); flush_calls++; return ESP_OK; }
-void ASIC_set_frequency(GlobalState *state) { assert(state->ASIC_initalized); assert(state->POWER_MANAGEMENT_MODULE.frequency_value == 50); frequency_calls++; }
-void ASIC_set_nonce_space(GlobalState *state) { assert(state->ASIC_initalized); nonce_calls++; }
+void ASIC_set_frequency(GlobalState *state) {
+    assert(state->ASIC_initalized); frequency_calls++; setting_event('f');
+    state->POWER_MANAGEMENT_MODULE.actual_frequency = frequency_failure ? 0 : state->POWER_MANAGEMENT_MODULE.frequency_value;
+    if (pause_on_frequency) state->SYSTEM_MODULE.mining_paused = true;
+}
+void ASIC_set_nonce_space(GlobalState *state) { assert(state->ASIC_initalized); nonce_calls++; setting_event('n'); }
 uint8_t asic_initialize(GlobalState *state, asic_init_mode_t mode, uint32_t wait) {
     assert(mode == ASIC_INIT_RECOVERY && wait == 0);
     assert(fabsf(last_voltage - saved_voltage / 1000.0f) < 0.00001f);
     assert(state->POWER_MANAGEMENT_MODULE.frequency_value == saved_frequency);
     init_calls++; state->ASIC_initalized = detected_chips > 0;
+    if (detected_chips) state->POWER_MANAGEMENT_MODULE.actual_frequency = state->POWER_MANAGEMENT_MODULE.frequency_value;
     return detected_chips;
 }
 void suffixString(uint64_t value, char *buffer, size_t size, int digits) { (void)value; (void)digits; snprintf(buffer, size, "host"); }
@@ -74,12 +84,44 @@ int main(int argc, char **argv) {
     global.POWER_MANAGEMENT_MODULE.frequency_value = saved_frequency;
     global.POWER_MANAGEMENT_MODULE.expected_hashrate = 1275;
     const char *scenario = argv[1];
-    if (strcmp(scenario, "stop") == 0) {
+    if (strncmp(scenario, "settings-", 9) == 0) {
+        float last_frequency = saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.actual_frequency = saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv = saved_voltage;
+        const bool raising = strcmp(scenario, "settings-up") == 0 || strcmp(scenario, "settings-up-voltage-fail") == 0;
+        const uint16_t target_voltage = saved_voltage + (raising ? 100 : -100);
+        const float target_frequency = saved_frequency + (raising ? 100 : -100);
+        if (strcmp(scenario, "settings-down-pll-fail") == 0) frequency_failure = true;
+        if (strcmp(scenario, "settings-up-voltage-fail") == 0) restore_result = ESP_FAIL;
+        if (strcmp(scenario, "settings-down-pause") == 0) pause_on_frequency = true;
+        const bool success = apply_requested_settings(&global, target_voltage, target_frequency, &last_frequency);
+        if (frequency_failure || pause_on_frequency) {
+            assert(!success && strcmp(settings_events, "f") == 0);
+            assert(last_frequency == saved_frequency && global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == saved_voltage);
+            frequency_failure = false; pause_on_frequency = false; global.SYSTEM_MODULE.mining_paused = false;
+            settings_events[0] = 0; settings_event_count = 0;
+            assert(apply_requested_settings(&global, target_voltage, target_frequency, &last_frequency));
+            assert(strcmp(settings_events, "fnv") == 0);
+        } else if (restore_result != ESP_OK) {
+            assert(!success && strcmp(settings_events, "v") == 0 && frequency_calls == 0);
+            assert(last_frequency == saved_frequency && global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == saved_voltage);
+            restore_result = ESP_OK; settings_events[0] = 0; settings_event_count = 0;
+            assert(apply_requested_settings(&global, target_voltage, target_frequency, &last_frequency));
+            assert(strcmp(settings_events, "vfn") == 0);
+        } else {
+            assert(success && strcmp(settings_events, raising ? "vfn" : "fnv") == 0);
+        }
+        assert(last_frequency == target_frequency && global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == target_voltage);
+        const size_t before = settings_event_count;
+        assert(apply_requested_settings(&global, target_voltage, target_frequency, &last_frequency));
+        assert(settings_event_count == before && setting_writes == 0);
+    } else if (strcmp(scenario, "stop") == 0) {
         serial_ready = true;
         assert(mining_stop(&global) == ESP_OK && applied && !global.ASIC_initalized);
         assert(last_voltage == 0 && reset_calls == 1 && frequency_calls == 1 && nonce_calls == 1 && flush_calls == 1);
         assert(global.POWER_MANAGEMENT_MODULE.frequency_value == 50 && global.POWER_MANAGEMENT_MODULE.expected_hashrate == 0);
         assert(saved_voltage == 1173 && saved_frequency == 625.125f && setting_writes == 0);
+        assert(global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == 0);
     } else if (strcmp(scenario, "stop-fail") == 0 || strcmp(scenario, "reset-fail") == 0) {
         if (strcmp(scenario, "stop-fail") == 0) off_result = ESP_FAIL; else reset_result = ESP_FAIL;
         assert(mining_stop(&global) == ESP_FAIL && !applied && !global.ASIC_initalized && reported_error[0]);
@@ -89,6 +131,7 @@ int main(int argc, char **argv) {
         assert(mining_start(&global) == 1 && !applied && global.ASIC_initalized);
         assert(init_calls == 1 && flush_calls == 0 && global.POWER_MANAGEMENT_MODULE.frequency_value == saved_frequency);
         assert(saved_voltage == 1173 && saved_frequency == 625.125f && setting_writes == 0);
+        assert(global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == saved_voltage);
     } else if (strcmp(scenario, "restore-fail") == 0 || strcmp(scenario, "init-fail") == 0) {
         global.ASIC_initalized = false;
         if (strcmp(scenario, "restore-fail") == 0) restore_result = ESP_FAIL; else detected_chips = 0;

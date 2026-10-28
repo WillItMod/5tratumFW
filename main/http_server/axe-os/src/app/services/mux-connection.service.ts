@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { SystemInfo } from '../generated/models';
 import { SystemApiService } from './system.service';
 
@@ -170,6 +170,6 @@ export class MuxConnectionService {
 
   save(input: MuxConnectionInput): Observable<void> {
     // No fallback, Wi-Fi, clocks or fan fields are included in this patch.
-    return this.systemApi.updateSystem('', buildMuxConnectionPatch(input));
+    return this.systemApi.updateSystem('', buildMuxConnectionPatch(input)).pipe(map(() => undefined));
   }
 }

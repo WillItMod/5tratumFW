@@ -9,8 +9,8 @@ namespace FiveTratumCapabilities {
 constexpr int MAX_ASICS = 64;
 constexpr size_t DEVICE_ID_SIZE = 38;
 constexpr size_t MAX_JSON_BYTES = 32768;
-constexpr const char *UPSTREAM_TAG = "v1.1.0-rc1-test1";
-constexpr const char *UPSTREAM_REVISION = "8b45522a6695c6bbccc3d032370fe08a29856d80";
+constexpr const char *UPSTREAM_TAG = "v1.1.1-rc1";
+constexpr const char *UPSTREAM_REVISION = "bfd07393918ce1b464faf1b7bd1ecd11343197f4";
 constexpr const char *EXTENSION_BUILD = "5tratumfw-nerd-capabilities-a1";
 
 // Read-only snapshot: no board, UART, regulator, NVS, or network operations here.

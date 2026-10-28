@@ -22,9 +22,20 @@ inline int64_t now_us() { return fixtureNow; }
 #define ESP_LOGI(...) ((void)0)
 #define pdMS_TO_TICKS(ms) (ms)
 inline void vTaskDelay(uint32_t) {}
-struct PThreadGuard { explicit PThreadGuard(int &) {} };
+struct PThreadGuard {
+    int &state;
+    explicit PThreadGuard(int &value) : state(value) { assert(state == 0); state = 1; }
+    ~PThreadGuard() { assert(state == 1); state = 0; }
+};
 inline struct { bool shutdown = false; bool isShutdown() const { return shutdown; } } POWER_MANAGEMENT_MODULE;
-inline struct { bool active = false; bool isEnrollmentActive() const { return active; } } otp;
+inline struct { bool active = false; bool isEnrollmentActive() const { return active; } void disableEnrollment() { active = false; } } otp;
+static constexpr uint32_t BTN_EVENT_SHORTPRESS = 1, BTN_EVENT_PRESSED = 2;
+struct Button {
+    uint32_t event = 0;
+    void update() {}
+    uint32_t getEvent() const { return event; }
+    void clearEvent() { event = 0; }
+};
 
 class UI {
 public:
@@ -49,8 +60,10 @@ public:
     bool m_showFoundBlockEnabled = true, m_shutdownCountdownActive = false;
     bool m_animationsEnabled = false, m_isActiveOverlay = false, displayIsOn = false;
     bool m_powerShutdownRequested = false;
+    bool m_foundBlockOverlay = false;
     uint32_t m_identifyDuration_ms = 60000;
     int64_t m_shutdownStartTime = 0;
+    int64_t m_lastKeypressTime = 0, m_buttonIgnoreUntil_us = 0;
     lv_obj_t *m_shutdownLabel = nullptr;
     UiState m_state = UiState::Mining;
     void showFoundBlockOverlay();
@@ -61,16 +74,14 @@ public:
     void hideShutdownCountdown();
     uint32_t handleLvglTick(int32_t &elapsed_Ani_cycles);
     void fixtureEnterPriorityState(UiState state, int64_t now);
+    void fixtureProcessOverlayButtons(Button &, Button &, int64_t, bool &, bool &, bool &);
     void safe_screen_change(lv_obj_t *screen, lv_scr_load_anim_t, uint32_t, uint32_t) { lv_scr_load(screen); }
     void increaseLvglTick() { lv_tick_inc(30); }
     void enableLvglAnimations(bool enable) { m_animationsEnabled = enable; }
     void enterState(UiState state, int64_t) { m_state = state; }
     void refreshScreen() {}
     void displayTurnOn() { displayIsOn = true; }
-    void updateOverlayPriority() {
-        m_isActiveOverlay = m_ui->ui_errOverlayContainer || m_ui->ui_imageOverlayContainer ||
-                            m_shutdownCountdownActive;
-    }
+    void updateOverlayPriority();
 };
 #include "candidate_methods.inc"
 
@@ -190,13 +201,17 @@ int main(int argc, char **argv) {
     DisplayDriver driver;
     driver.m_ui = &ui;
     driver.showFoundBlockOverlay();
-    assert(ui.ui_imageOverlayContainer && driver.displayIsOn && driver.m_isActiveOverlay);
+    assert(ui.ui_imageOverlayContainer && driver.displayIsOn && driver.m_isActiveOverlay && driver.m_foundBlockOverlay);
     const unsigned stableVariant = ui.m_candidatePresentation.variant;
     int32_t cycles = 0;
     for (unsigned i = 0; i < 100; ++i) driver.handleLvglTick(cycles);
     assert(ui.m_candidatePresentation.variant == stableVariant && ui.m_candidatePresentation.motionFinished);
     assert(!driver.m_animationsEnabled && descendants(lv_layer_top()) > baselineWidgets);
-    driver.hideFoundBlockOverlay();
+    Button button1, button2;
+    bool press1 = false, press2 = false, both = false;
+    button1.event = BTN_EVENT_SHORTPRESS;
+    { PThreadGuard timerLock(driver.m_lvglMutex); driver.fixtureProcessOverlayButtons(button1, button2, fixtureNow, press1, press2, both); }
+    assert(!driver.m_foundBlockOverlay && !ui.ui_imageOverlayContainer && !button1.event);
     assert(!driver.m_isActiveOverlay && descendants(lv_layer_top()) == baselineWidgets);
     previous = stableVariant;
     for (unsigned i = 0; i < 512; ++i) {
@@ -211,7 +226,10 @@ int main(int argc, char **argv) {
     }
     driver.showFoundBlockOverlay();
     driver.showError("MINER OVERHEATED", 1);
-    assert(!ui.ui_imageOverlayContainer && !ui.m_candidatePresentation.container && ui.ui_errOverlayContainer);
+    assert(!ui.ui_imageOverlayContainer && !ui.m_candidatePresentation.container && ui.ui_errOverlayContainer && !driver.m_foundBlockOverlay);
+    button2.event = BTN_EVENT_SHORTPRESS;
+    { PThreadGuard timerLock(driver.m_lvglMutex); driver.fixtureProcessOverlayButtons(button1, button2, fixtureNow, press1, press2, both); }
+    assert(ui.ui_errOverlayContainer && !button2.event); // Safety cannot be dismissed as a candidate.
     driver.showFoundBlockOverlay();
     assert(!ui.ui_imageOverlayContainer); // Thermal/error warning outranks a new event.
     capture(output + "/candidate-" + std::to_string(width) + "x" + std::to_string(height) + "-safety.ppm");
@@ -242,7 +260,7 @@ int main(int argc, char **argv) {
         driver.showFoundBlockOverlay();
         assert(ui.ui_imageOverlayContainer);
         driver.fixtureEnterPriorityState(state, fixtureNow);
-        assert(!ui.ui_imageOverlayContainer && !ui.m_candidatePresentation.container);
+        assert(!ui.ui_imageOverlayContainer && !ui.m_candidatePresentation.container && !driver.m_foundBlockOverlay);
         assert(driver.m_powerShutdownRequested == (state == DisplayDriver::UiState::PowerOff));
     }
     assert(descendants(lv_layer_top()) == baselineWidgets && timers() == baselineTimers);
@@ -254,5 +272,5 @@ int main(int argc, char **argv) {
     lv_mem_free(display.draw_ctx);
     display.draw_ctx = nullptr;
     std::cout << "{\"passed\":true,\"resolution\":[" << width << ',' << height << "],\"images\":"
-              << captures << ",\"productionMethods\":12,\"productionPriorityCases\":3,\"replacementEvents\":1024,\"fixtureOnly\":true}\n";
+              << captures << ",\"productionMethods\":13,\"productionOverlayButtonHandling\":true,\"productionPriorityCases\":3,\"replacementEvents\":1024,\"fixtureOnly\":true}\n";
 }

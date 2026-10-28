@@ -18,6 +18,9 @@
 #include "http_utils.h"
 #include "macros.h"
 #include "psram_allocator.h"
+#include "nvs_config.h"
+#include "displays/display_profile.h"
+#include "display_ota_compatibility.h"
 
 #define GITHUB_REPO "https://github.com/shufps/"
 
@@ -41,6 +44,15 @@
     } while (0)
 
 static const char *TAG = "http_ota";
+
+static bool requires_display_profile_support()
+{
+    char *saved = Config::getDisplayProfile();
+    const bool required = FiveTratumDisplayOta::requiresProfileSupport(
+        saved, FiveTratumDisplay::displayProfileRuntime.active().id);
+    free(saved);
+    return required;
+}
 
 // --- HTTP event: capture Location header when requested (per-client via user_data)
 esp_err_t http_evt_capture_location(esp_http_client_event_t *evt)
@@ -269,6 +281,13 @@ esp_err_t FactoryOTAUpdate::erase_nvs_partition()
 
 esp_err_t FactoryOTAUpdate::ota_update_from_factory(const char *start_url, bool keep_config)
 {
+    // Upstream factory images do not promise to consume our saved display
+    // profile. Refuse before downloads, power changes, flash writes or erasure.
+    if (requires_display_profile_support()) {
+        setStep(OtaStep::ERROR, "OTA: use a profile-aware QAxe application for 480x320");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     // use PSRAM for the long URL and WWW buffer
     char *url = (char *) MALLOC(URL_SIZE);
     CHECK_ALLOC(url);
@@ -346,6 +365,12 @@ esp_err_t FactoryOTAUpdate::ota_update_from_factory(const char *start_url, bool 
         ESP_LOGE(TAG, "error reading stream");
         setStep(OtaStep::ERROR, "OTA: error");
         return err;
+    }
+
+    // A display setting may have changed while the HTTP download was running.
+    if (requires_display_profile_support()) {
+        setStep(OtaStep::ERROR, "OTA: use a profile-aware QAxe application for 480x320");
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     {
@@ -655,6 +680,12 @@ esp_err_t POST_OTA_update_from_url(httpd_req_t *req)
 
     if (validateOTP(req) != ESP_OK) {
         return ESP_FAIL;
+    }
+
+    if (requires_display_profile_support()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req,
+            "480x320 requires a profile-aware QAxe application; upstream factory updates are unavailable");
     }
 
     // Read body into PSRAM or heap buffer

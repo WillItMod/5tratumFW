@@ -17,6 +17,7 @@ import { PoolComponent } from './components/pool/pool.component';
 import { PoolScheduleComponent } from './components/pool-schedule/pool-schedule.component';
 import { OperatingProfilesComponent } from './components/operating-profiles/operating-profiles.component';
 import { SchedulerComponent } from './components/scheduler/scheduler.component';
+import { TuningScheduleComponent } from './components/tuning-schedule/tuning-schedule.component';
 import { MiningControlsComponent } from './components/mining-controls/mining-controls.component';
 import { NetworkEditComponent } from './components/network-edit/network.edit.component';
 import { HomeComponent } from './components/home/home.component';
@@ -65,6 +66,7 @@ const components = [
   UpdateComponent,
   PoolComponent,
   SchedulerComponent,
+  TuningScheduleComponent,
   MiningControlsComponent,
   OperatingProfilesComponent,
   PoolScheduleComponent

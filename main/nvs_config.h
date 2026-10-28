@@ -84,6 +84,36 @@ typedef enum {
     NVS_CONFIG_SELF_TEST_TEMP_WARMUP,
     NVS_CONFIG_SELF_TEST_TEMP_MAX,
     NVS_CONFIG_MINING_SCHEDULE,
+
+
+    // Append new upstream keys: persisted operating journal enum IDs stay stable.
+    NVS_CONFIG_POOL,
+    NVS_CONFIG_PRIMARY_POOL_INDEX,
+    NVS_CONFIG_SECONDARY_POOL_INDEX,
+    NVS_CONFIG_USE_CUSTOM_WWW,
+    NVS_CONFIG_LAST_FW_FINGERPRINT,
+    NVS_CONFIG_THEME_COLOR,
+    NVS_CONFIG_TOTAL_UPTIME,
+    NVS_CONFIG_CUMULATIVE_HASHES_HIGH,
+    NVS_CONFIG_CUMULATIVE_HASHES_LOW,
+    NVS_CONFIG_SELF_TEST_FAN_SPEED,
+    NVS_CONFIG_TPS546_PHASE,
+    NVS_CONFIG_TPS546_VIN_ON,
+    NVS_CONFIG_TPS546_VIN_OFF,
+    NVS_CONFIG_TPS546_VIN_UV_WARN,
+    NVS_CONFIG_TPS546_VIN_OV_FAULT,
+    NVS_CONFIG_TPS546_SCALE_LOOP,
+    NVS_CONFIG_TPS546_VOUT_MIN,
+    NVS_CONFIG_TPS546_VOUT_MAX,
+    NVS_CONFIG_TPS546_VOUT_COMMAND,
+    NVS_CONFIG_TPS546_IOUT_OC_WARN,
+    NVS_CONFIG_TPS546_IOUT_OC_FAULT,
+    NVS_CONFIG_TPS546_STACK_CONFIG,
+    NVS_CONFIG_TPS546_SYNC_CONFIG,
+    NVS_CONFIG_TPS546_FREQUENCY,
+    NVS_CONFIG_NOMINAL_VOLTAGE,
+    NVS_CONFIG_SV2_REQUIRE_AUTH,
+    NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH,
     NVS_CONFIG_COUNT
 } NvsConfigKey;
 
@@ -114,6 +144,7 @@ typedef struct {
     const char *rest_name;
     int min;
     int max;
+    bool is_set;
 } Settings;
 
 typedef struct {
@@ -141,9 +172,12 @@ void nvs_config_set_i32(NvsConfigKey key, int32_t value);
 uint64_t nvs_config_get_u64(NvsConfigKey key);
 void nvs_config_set_u64(NvsConfigKey key, uint64_t value);
 float nvs_config_get_float(NvsConfigKey key);
+// One cache snapshot prevents a power transition mixing two tuning transactions.
+bool nvs_config_get_tuning_pair(uint16_t *voltage_mv, float *frequency_mhz);
 void nvs_config_set_float(NvsConfigKey key, float value);
 bool nvs_config_get_bool(NvsConfigKey key);
 void nvs_config_set_bool(NvsConfigKey key, bool value);
+bool nvs_config_has_key(NvsConfigKey key);
 Settings *nvs_config_get_settings(NvsConfigKey key);
 
 #endif // MAIN_NVS_CONFIG_H
