@@ -8,6 +8,8 @@
 | **NerdQAxe++** | [Beta 6](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.6) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
 | **NerdOctAxe Gamma** | [Beta 4](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.4) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 
+Uninstalled development candidates: Gamma Beta10 on v2.15.4, QAxe Beta8 and OctAxe Beta5 on RC1. See [aligned changes](../aligned-tuning-update.md) and [local validation](../validation-aligned-20261028.md). These have not replaced the qualified downloads above.
+
 Use both BIN files from one model's release. [Firmware selection](../firmware-selection.md) records the exact model and PCB coverage.
 
 <details>

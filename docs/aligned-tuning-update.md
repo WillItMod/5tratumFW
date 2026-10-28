@@ -61,6 +61,8 @@ records the source evidence, missing proof and bounded capture tool for a future
 hardware investigation. This work is outstanding, not implemented by the
 tuning schedule or screen selector.
 
+See the [dated build and package validation](validation-aligned-20261028.md) for exact source revisions, checksums and remaining physical tests.
+
 ## Release boundary
 
 The candidates require separate matching build/package receipts and explicit
