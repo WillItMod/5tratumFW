@@ -177,6 +177,7 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_NOMINAL_VOLTAGE]                       = {.nvs_key_name = "nominal_voltage", .type = TYPE_U16},
     [NVS_CONFIG_SV2_REQUIRE_AUTH] = {.nvs_key_name="sv2reqauth",.type=TYPE_BOOL,.rest_name="stratumV2RequireAuth",.min=0,.max=1},
     [NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH] = {.nvs_key_name="fbsv2reqauth",.type=TYPE_BOOL,.rest_name="fallbackStratumV2RequireAuth",.min=0,.max=1},
+    [NVS_CONFIG_ETHERNET_ENABLED] = {.nvs_key_name="5fw_eth_en",.type=TYPE_BOOL,.default_value={.b=false},.rest_name="ethernetEnabled",.min=0,.max=1},
 };
 
 Settings *nvs_config_get_settings(NvsConfigKey key)
@@ -677,6 +678,10 @@ esp_err_t nvs_config_init(void)
                 case TYPE_BOOL: {
                     uint16_t val;
                     ret = nvs_get_u16(handle, nvs_key, &val);
+                    if (key == NVS_CONFIG_ETHERNET_ENABLED && ret == ESP_OK && val > 1) {
+                        ESP_LOGW(TAG, "Invalid optional Ethernet flag; keeping Ethernet disabled");
+                        ret = ESP_ERR_INVALID_STATE;
+                    }
                     setting->value[idx].b = (ret == ESP_OK) ? (val != 0) : setting->default_value.b;
                     break;
                 }
@@ -959,6 +964,25 @@ void nvs_config_set_bool(NvsConfigKey key, bool value)
 
     ConfigUpdate update = { .key = key, .type = TYPE_BOOL, .value.b = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
+}
+
+esp_err_t nvs_config_set_ethernet_enabled(bool value)
+{
+    if (!nvs_cache_mutex) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+    nvs_handle_t writer;
+    esp_err_t error = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &writer);
+    if (error == ESP_OK) {
+        error = nvs_set_u16(writer, "5fw_eth_en", value ? 1 : 0);
+        if (error == ESP_OK) error = nvs_commit(writer);
+        nvs_close(writer);
+    }
+    if (error == ESP_OK) {
+        settings[NVS_CONFIG_ETHERNET_ENABLED].value[0].b = value;
+        settings[NVS_CONFIG_ETHERNET_ENABLED].is_set = true;
+    }
+    xSemaphoreGive(nvs_cache_mutex);
+    return error;
 }
 
 bool nvs_config_has_key(NvsConfigKey key)

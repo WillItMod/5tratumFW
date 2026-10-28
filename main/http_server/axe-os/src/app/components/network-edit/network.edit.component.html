@@ -44,14 +44,38 @@
         </div>
     </section>
 
+    <section *ngIf="ethernet" class="routing-editor" aria-labelledby="networkEthernetHeading">
+        <div class="routing-editor-intro">
+            <h2 id="networkEthernetHeading">Wired Ethernet · Experimental</h2>
+        </div>
+        <div class="routing-editor-body">
+            <div class="routing-field">
+                <label class="routing-ethernet-option" for="ethernetEnabled">
+                    <input id="ethernetEnabled" type="checkbox" formControlName="ethernetEnabled" aria-describedby="ethernetHint" />
+                    <span>Enable wired Ethernet (W5500)</span>
+                </label>
+                <small id="ethernetHint">Uses a W5500 adapter on the accessory port. Testing with a physical adapter is still pending. Save and restart to apply. Wi-Fi remains available as fallback.</small>
+                <small>Ethernet is preferred when connected.</small>
+            </div>
+            <div class="routing-ethernet-status" role="status" aria-live="polite">
+                <strong>{{ ethernetStatusLabel }}</strong>
+                <span>Saved: {{ ethernet.enabled ? 'On' : 'Off' }} · At startup: {{ ethernet.driverEnabled ? 'On' : 'Off' }}</span>
+                <span *ngIf="ethernet.ip && !ethernetReadError">Ethernet address: {{ ethernet.ip }}</span>
+                <span *ngIf="!ethernetReadError">Active connection: {{ activeNetworkLabel }}</span>
+                <small *ngIf="ethernetRestartPending">Saved Ethernet changes take effect after a restart.</small>
+                <small *ngIf="ethernetReadError">Check the connection before saving Ethernet changes.</small>
+            </div>
+        </div>
+    </section>
+
     <footer class="routing-save-bar">
         <div>
-            <strong>{{ savedChanges ? 'Restart required' : 'Apply configuration' }}</strong>
-            <p>{{ savedChanges ? 'Saved Wi-Fi changes take effect after a restart.' : 'Wi-Fi changes require a restart. Reconnect to the device on the new network.' }}</p>
+            <strong>{{ restartRequested ? 'Restart requested' : savedChanges ? 'Restart required' : 'Apply configuration' }}</strong>
+            <p>{{ restartRequested ? 'Waiting for the device to return. Reconnect using its current network address.' : savedChanges ? 'Saved network changes take effect after a restart.' : 'Save network changes, then restart to apply. Wi-Fi settings remain available.' }}</p>
         </div>
         <div class="routing-save-actions">
-            <button type="button" class="routing-button routing-button-primary" [disabled]="!form.dirty || form.invalid" (click)="updateSystem()">Save network settings</button>
-            <button type="button" class="routing-button" [disabled]="!savedChanges" (click)="restart()">Restart device</button>
+            <button type="button" class="routing-button routing-button-primary" [disabled]="busy || restartRequested || !form.dirty || !networkSettingsValid" (click)="updateSystem()">Save network settings</button>
+            <button type="button" class="routing-button" [disabled]="busy || restartRequested || !savedChanges" (click)="restart()">Restart device</button>
         </div>
     </footer>
 </form>

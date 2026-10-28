@@ -114,6 +114,8 @@ typedef enum {
     NVS_CONFIG_NOMINAL_VOLTAGE,
     NVS_CONFIG_SV2_REQUIRE_AUTH,
     NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH,
+    // Append only: operating journal key numbers must stay compatible.
+    NVS_CONFIG_ETHERNET_ENABLED,
     NVS_CONFIG_COUNT
 } NvsConfigKey;
 
@@ -177,6 +179,8 @@ bool nvs_config_get_tuning_pair(uint16_t *voltage_mv, float *frequency_mhz);
 void nvs_config_set_float(NvsConfigKey key, float value);
 bool nvs_config_get_bool(NvsConfigKey key);
 void nvs_config_set_bool(NvsConfigKey key, bool value);
+// Only the opt-in network flag; commit precedes acknowledgement/cache change.
+esp_err_t nvs_config_set_ethernet_enabled(bool value);
 bool nvs_config_has_key(NvsConfigKey key);
 Settings *nvs_config_get_settings(NvsConfigKey key);
 

@@ -147,6 +147,16 @@ static void system_api_add_config(cJSON *root, GlobalState *g) {
     cJSON_AddStringToObject(root, "hostname", hostname ? hostname : "Unknown");
     free(hostname);
 
+    if (network_ethernet_supported(g)) {
+        network_info_t network;
+        network_get_info(&network);
+        cJSON_AddBoolToObject(root, "ethernetEnabled", network.ethernetEnabled);
+        cJSON_AddBoolToObject(root, "ethernetDriverEnabled", network.ethernetDriverEnabled);
+        cJSON_AddStringToObject(root, "ethernetStatus", network.ethernetStatus);
+        cJSON_AddStringToObject(root, "ethernetIP", network.ethernetIP);
+        cJSON_AddStringToObject(root, "activeNetwork", network.activeNetwork);
+    }
+
     // Network Config
     char *ssid = nvs_config_get_string(NVS_CONFIG_WIFI_SSID);
     cJSON_AddStringToObject(root, "ssid", ssid ? ssid : "Unknown");

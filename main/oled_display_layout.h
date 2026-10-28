@@ -12,6 +12,7 @@ LV_FONT_DECLARE(lv_font_portfolio_6x8);
 typedef struct {
     lv_obj_t *screen, *title, *rows[3], *rate, *unit, *temperature, *power, *thermal_fill, *qr;
     lv_obj_t *donut, *sprinkles[4];
+    lv_obj_t *wifi_icon;
     FiveTratumOledPage page;
 } FiveTratumOledView;
 
@@ -43,11 +44,12 @@ static inline lv_obj_t *oled_label(lv_obj_t *parent, int x, int y, int width, co
     lv_label_set_text(label, text);
     return label;
 }
-static inline void oled_image(lv_obj_t *parent, int x, int y, const lv_image_dsc_t *asset)
+static inline lv_obj_t *oled_image(lv_obj_t *parent, int x, int y, const lv_image_dsc_t *asset)
 {
     lv_obj_t *image = lv_image_create(parent);
     lv_image_set_src(image, asset);
     lv_obj_set_pos(image, x, y);
+    return image;
 }
 static inline FiveTratumOledView oled_create_view_on(lv_obj_t *parent, FiveTratumOledPage page)
 {
@@ -113,7 +115,7 @@ static inline FiveTratumOledView oled_create_view_on(lv_obj_t *parent, FiveTratu
             lv_obj_set_x(v.rows[0], 10); lv_obj_set_width(v.rows[0], 118);
             lv_obj_set_x(v.rows[1], 10); lv_obj_set_width(v.rows[1], 118);
         } else if (page == OLED_WIFI) {
-            oled_image(v.screen, 0, 8, &oled_glyphs[4]);
+            v.wifi_icon = oled_image(v.screen, 0, 8, &oled_glyphs[4]);
             lv_obj_set_x(v.rows[0], 10); lv_obj_set_width(v.rows[0], 118);
         } else if (page == OLED_SETUP || page == OLED_CONNECTION) {
             lv_obj_add_flag(v.title, LV_OBJ_FLAG_HIDDEN);

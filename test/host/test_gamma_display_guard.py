@@ -34,6 +34,7 @@ class GammaDisplayGuardTests(unittest.TestCase):
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "display.h"
 #include "nvs_config.h"
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -51,15 +52,21 @@ static Settings settings[NVS_CONFIG_COUNT] = {
 // cache. Validation and the complete validate-then-mutate loops are production.
 enum {JSON_OBJECT,JSON_STRING,JSON_NUMBER,JSON_BOOL};
 typedef struct cJSON {int type,valueint;double valuedouble;const char *string,*valuestring;struct cJSON *child,*next;} cJSON;
+#define cJSON_ArrayForEach(item, root) for ((item)=(root)->child; (item); (item)=(item)->next)
 static cJSON *cJSON_GetObjectItem(const cJSON *root,const char *name) {
     for(cJSON *item=root->child;item;item=item->next)if(!strcmp(item->string,name))return item;
     return NULL;
 }
 static bool cJSON_IsString(const cJSON *item){return item && item->type==JSON_STRING;}
+static bool cJSON_IsObject(const cJSON *item){return item && item->type==JSON_OBJECT;}
+static cJSON *cJSON_GetObjectItemCaseSensitive(const cJSON *root,const char *name){return cJSON_GetObjectItem(root,name);}
 static bool cJSON_IsNumber(const cJSON *item){return item && item->type==JSON_NUMBER;}
 static bool cJSON_IsBool(const cJSON *item){return item && item->type==JSON_BOOL;}
 static bool cJSON_IsTrue(const cJSON *item){return cJSON_IsBool(item) && item->valueint!=0;}
 static bool cJSON_IsFalse(const cJSON *item){return cJSON_IsBool(item) && item->valueint==0;}
+static bool network_ethernet_supported(const GlobalState *state){(void)state;return false;}
+static bool network_ethernet_pins_available(const GlobalState *state){(void)state;return false;}
+esp_err_t nvs_config_set_ethernet_enabled(bool value){(void)value;assert(!"unexpected Ethernet mutation in display test");return ESP_OK;}
 Settings *nvs_config_get_settings(NvsConfigKey key){assert(key>=0 && key<NVS_CONFIG_COUNT);return &settings[key];}
 void nvs_config_set_string(NvsConfigKey key,const char *value){(void)key;assert(value);++setting_writes;}
 void nvs_config_set_u16(NvsConfigKey key,uint16_t value){(void)key;(void)value;++setting_writes;}

@@ -14,6 +14,8 @@
 
 static time_t now = 1767571200; // 2026-01-05 Monday 00:00 UTC.
 static bool synchronized, auto_exit = true, unauthorized, fail_apply;
+static bool network_connected;
+static unsigned probe_attempts;
 static unsigned commits, writes, applies, protocol_starts, job_clears, closes;
 static unsigned fail_commit, allocations, fail_allocation;
 static uint16_t slots = 0x3ff;
@@ -96,12 +98,12 @@ void queue_clear(void *value) { (void)value; job_clears++; }
 void SYSTEM_clean_jobs_queue(GlobalState *state) { (void)state; job_clears++; }
 int64_t esp_timer_get_time(void) { return 1000000; }
 void mux_peer_status_disconnect(void) {}
-bool wifi_is_connected(void) { return false; }
+bool network_is_connected(void) { return network_connected; }
 int esp_transport_close(esp_transport_handle_t value) { (void)value; closes++; return ESP_OK; }
 int esp_transport_destroy(esp_transport_handle_t value) { (void)value; assert(!atomic_load(&share_holding)); return ESP_OK; }
 void sv2_noise_destroy(void *value) { (void)value; assert(!atomic_load(&share_holding)); }
 int esp_transport_connect(esp_transport_handle_t v,const char *h,int p,int timeout)
-{ (void)v;(void)h;(void)p;(void)timeout; return ESP_FAIL; }
+{ (void)v;(void)h;(void)p;(void)timeout; probe_attempts++; return ESP_FAIL; }
 int esp_transport_read(esp_transport_handle_t v,char *b,int size,int timeout)
 { (void)v;(void)b;(void)size;(void)timeout; return -1; }
 esp_transport_handle_t esp_transport_tcp_init(void) { return (void *)1; }
@@ -245,6 +247,68 @@ int main(int argc,char **argv)
         unsigned failures=s_consecutive_pool_failures;handle_event(&state,(coordinator_event_t){.type=COORD_EVENT_PROTOCOL_FAILED,.generation=old_generation});assert(s_consecutive_pool_failures==failures && s_state==COORD_STATE_RUNNING_PRIMARY && protocol_starts==2);
         auto_exit=false;protocol_coordinator_request_primary_reload(&state);char *before=state.SYSTEM_MODULE.pool_url;assert(!apply_primary_reload(&state) && state.SYSTEM_MODULE.pool_url==before && protocol_starts==2);unchanged_power(&state);
         auto_exit=true;assert(apply_primary_reload(&state));unsigned starts=protocol_starts;s_state=COORD_STATE_RUNNING_FALLBACK;state.SYSTEM_MODULE.is_using_fallback=true;protocol_coordinator_request_primary_reload(&state);assert(apply_primary_reload(&state) && protocol_starts==starts && state.SYSTEM_MODULE.is_using_fallback);s_state=COORD_STATE_PAUSED;protocol_coordinator_request_primary_reload(&state);assert(apply_primary_reload(&state) && protocol_starts==starts);unchanged_power(&state);
+    } else if (!strcmp(scenario,"network-coordinator")) {
+        // Requests made before init/start coalesce and require no connection or
+        // settings reload. The first actual task already uses the chosen route.
+        protocol_coordinator_request_network_reconnect();
+        protocol_coordinator_request_network_reconnect();
+        protocol_coordinator_init(&state);
+        assert(apply_network_reconnect(&state) && protocol_starts==0 && allocations==0);
+        assert(s_network_reconnect_applied==2 && !strcmp(state.SYSTEM_MODULE.pool_url,"old-pool.invalid"));
+        s_primary_protocol=STRATUM_PROTOCOL_V1;
+        s_running_protocol=STRATUM_PROTOCOL_V1;
+        s_state=COORD_STATE_RUNNING_PRIMARY;
+        s_primary_url=state.SYSTEM_MODULE.pool_url;
+        s_primary_port=state.SYSTEM_MODULE.pool_port;
+        state.SYSTEM_MODULE.pools[0]=(PoolConfig){.url=state.SYSTEM_MODULE.pool_url,
+            .port=state.SYSTEM_MODULE.pool_port,.protocol=STRATUM_PROTOCOL_V1};
+        s_consecutive_pool_failures=1;
+        state.SYSTEM_MODULE.shares_accepted=123;
+        state.SYSTEM_MODULE.shares_rejected=4;
+        state.SYSTEM_MODULE.work_received=56;
+        start_protocol_task(&state,s_running_protocol);
+        unsigned old_generation=atomic_load(&s_running_generation);
+        protocol_coordinator_request_network_reconnect();
+        protocol_coordinator_request_network_reconnect();
+        assert(apply_network_reconnect(&state) && protocol_starts==2 && job_clears==1);
+        assert(s_network_reconnect_applied==4 && s_running_protocol==STRATUM_PROTOCOL_V1);
+        assert(atomic_load(&s_running_generation)!=old_generation);
+        assert(apply_network_reconnect(&state) && protocol_starts==2); // No duplicate restart.
+        handle_event(&state,(coordinator_event_t){.type=COORD_EVENT_PROTOCOL_FAILED,.generation=old_generation});
+        assert(s_consecutive_pool_failures==1 && s_state==COORD_STATE_RUNNING_PRIMARY);
+        // A healthy generic network, independently of Wi-Fi, enables probes.
+        do_heartbeat_probe(&state); assert(probe_attempts==0);
+        network_connected=true;
+        do_heartbeat_probe(&state); assert(probe_attempts==1);
+        // A fallback SV2 session stays on that same fallback. A missing shutdown
+        // acknowledgement keeps the generation pending and cannot start a peer.
+        assert(stop_running_task(&state));
+        s_state=COORD_STATE_RUNNING_FALLBACK;
+        s_running_protocol=STRATUM_PROTOCOL_V2;
+        state.stratum_protocol=STRATUM_PROTOCOL_V2;
+        state.SYSTEM_MODULE.is_using_fallback=true;
+        s_heartbeat_enabled=true;
+        start_protocol_task(&state,s_running_protocol);
+        protocol_coordinator_request_network_reconnect();
+        auto_exit=false;
+        assert(!apply_network_reconnect(&state) && protocol_starts==3);
+        assert(s_network_reconnect_applied==4 && atomic_load(&s_v2_active));
+        assert(state.SYSTEM_MODULE.is_using_fallback && s_running_protocol==STRATUM_PROTOCOL_V2);
+        handle_event(&state,(coordinator_event_t){.type=COORD_EVENT_PROTOCOL_FAILED,
+            .generation=atomic_load(&s_running_generation)});
+        assert(s_consecutive_pool_failures==1 && s_state==COORD_STATE_RUNNING_FALLBACK && protocol_starts==3);
+        auto_exit=true;
+        assert(apply_network_reconnect(&state) && protocol_starts==4 && job_clears==2);
+        assert(s_network_reconnect_applied==5 && s_state==COORD_STATE_RUNNING_FALLBACK && s_heartbeat_enabled);
+        assert(s_consecutive_pool_failures==1 && state.SYSTEM_MODULE.shares_accepted==123 &&
+               state.SYSTEM_MODULE.shares_rejected==4 && state.SYSTEM_MODULE.work_received==56);
+        assert(allocations==0 && writes==0 && commits==0 && !strcmp(state.SYSTEM_MODULE.pool_url,"old-pool.invalid"));
+        unchanged_power(&state);
+        assert(stop_running_task(&state));
+        s_state=COORD_STATE_PAUSED;
+        protocol_coordinator_request_network_reconnect();
+        assert(apply_network_reconnect(&state) && protocol_starts==4 && s_state==COORD_STATE_PAUSED);
+        unchanged_power(&state);
     } else assert(!"unknown scenario");
     free_state(&state);puts("PASS");return 0;
 }

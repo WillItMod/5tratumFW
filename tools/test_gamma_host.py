@@ -10,7 +10,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     directory = root / "test/host"
     boot = directory / "run_gamma_boot_tests.py"
-    scripts = [boot, *sorted(directory.glob("test_*.py"))]
+    scripts = [boot, *sorted(directory.glob("test_*.py")), root / "tools/test_gamma_ethernet.py"]
     if not boot.is_file() or len(scripts) < 2:
         raise SystemExit("Expected Gamma boot tests and test/host/test_*.py scripts")
     for script in scripts:

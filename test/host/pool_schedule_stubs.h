@@ -60,7 +60,7 @@ esp_transport_handle_t STRATUM_V1_transport_init(tls_mode, char *);
 int STRATUM_V1_subscribe(esp_transport_handle_t, int, const char *);
 int STRATUM_V1_authorize(esp_transport_handle_t, int, const char *, const char *);
 void sv2_noise_destroy(void *);
-bool wifi_is_connected(void);
+bool network_is_connected(void);
 esp_err_t httpd_resp_send_500(httpd_req_t *);
 esp_err_t httpd_resp_set_status(httpd_req_t *, const char *);
 #endif

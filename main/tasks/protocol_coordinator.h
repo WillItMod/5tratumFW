@@ -11,6 +11,10 @@ void protocol_coordinator_init(GlobalState *gs);
 // Queue a primary pool config reload; safe before the coordinator task starts.
 // Does not reboot or change the miner's power/ASIC state.
 void protocol_coordinator_request_primary_reload(GlobalState *gs);
+// Reopen the current pool on the selected network without changing settings,
+// pool selection, statistics or the existing pause/recovery policy.
+// Safe before the coordinator task starts.
+void protocol_coordinator_request_network_reconnect(void);
 unsigned protocol_coordinator_work_generation(void);
 // Connection close invalidates captured ASIC work; caller holds Stratum I/O lock.
 void protocol_coordinator_invalidate_work(void);

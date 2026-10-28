@@ -61,7 +61,7 @@ class PoolScheduleTests(unittest.TestCase):
             raise RuntimeError(result.stderr)
 
     def test_actual_firmware_scenarios(self):
-        for scenario in ("selector", "invalid", "json-oom", "clock", "reconcile", "failure", "http", "corrupt", "reload", "readers", "close-hooks", "coordinator"):
+        for scenario in ("selector", "invalid", "json-oom", "clock", "reconcile", "failure", "http", "corrupt", "reload", "readers", "close-hooks", "coordinator", "network-coordinator"):
             with self.subTest(scenario=scenario):
                 result = subprocess.run([str(self.binary), scenario], text=True, capture_output=True,
                                         env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})

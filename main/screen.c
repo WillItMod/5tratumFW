@@ -164,6 +164,7 @@ static uint64_t current_shares_accepted;
 static uint64_t current_shares_rejected;
 static uint64_t current_work_received;
 static int8_t current_rssi_value;
+static bool current_wired_network;
 static int current_block_height;
 
 static screen_t get_current_screen() {
@@ -725,8 +726,9 @@ static FiveTratumOledData compact_data(void)
     const SystemModule *s = &GLOBAL_STATE->SYSTEM_MODULE;
     const PowerManagementModule *p = &GLOBAL_STATE->POWER_MANAGEMENT_MODULE;
     FiveTratumMuxSnapshot mux = mux_peer_status_snapshot();
+    bool wifi_connected = wifi_is_connected();
     int8_t rssi = -128;
-    if (s->is_connected) get_wifi_current_rssi(&rssi);
+    if (wifi_connected) get_wifi_current_rssi(&rssi);
     int64_t now_us = esp_timer_get_time();
     uint64_t presentation_now = now_us > 0 ? (uint64_t)now_us : 0;
     uint32_t candidate_count = (uint32_t)s->block_found;
@@ -749,7 +751,7 @@ static FiveTratumOledData compact_data(void)
         .rssi=rssi, .block_height=GLOBAL_STATE->block_height, .initialized=GLOBAL_STATE->ASIC_initalized,
         .runtime_ready=s->mining_runtime_ready, .requested_paused=mining_state_should_stop(GLOBAL_STATE),
         .applied_paused=mining_schedule_applied_paused(), .pools_unavailable=s->pools_unavailable,
-        .wifi_connected=s->is_connected, .fallback=s->is_using_fallback,
+        .wifi_connected=wifi_connected, .fallback=s->is_using_fallback,
         .sv2=GLOBAL_STATE->stratum_protocol == STRATUM_PROTOCOL_V2,
         .tls=pool_tls != 0,
         .mux_connected=mux.connected, .mux_acknowledged=mux.acknowledged,
@@ -793,7 +795,7 @@ static void compact_update(void)
         display_on(true);
         return;
     }
-    if (!s->ssid || !s->ssid[0]) forced = SCR_WELCOME;
+    if ((!s->ssid || !s->ssid[0]) && !s->is_connected) forced = SCR_WELCOME;
     else if (s->ap_enabled || !s->is_connected) { d.message=s->wifi_status; forced=SCR_CONNECTION; }
     if (forced != MAX_SCREENS) {
         oled_render_view(&compact_views[forced], &d);
@@ -801,6 +803,12 @@ static void compact_update(void)
         return;
     }
     for (screen_t page=SCR_URLS; page<MAX_SCREENS; ++page) oled_render_view(&compact_views[page], &d);
+    FiveTratumOledView *network_view = &compact_views[SCR_WIFI];
+    lv_obj_set_flag(network_view->wifi_icon, LV_OBJ_FLAG_HIDDEN, !d.wifi_connected);
+    if (s->is_connected && !d.wifi_connected) {
+        lv_label_set_text(network_view->rows[0], "Ethernet");
+        lv_label_set_text(network_view->rows[1], "Wired connection");
+    }
     if (s->show_new_block) {
         oled_render_view(&compact_views[SCR_CANDIDATE], &d);
         screen_show(SCR_CANDIDATE);
@@ -913,7 +921,7 @@ static void screen_update_cb(lv_timer_t * timer)
         return;
     }
 
-    if (module->ssid[0] == '\0') {
+    if (module->ssid[0] == '\0' && !module->is_connected) {
         screen_show(SCR_WELCOME);
         return;
     }
@@ -1013,12 +1021,16 @@ static void screen_update_cb(lv_timer_t * timer)
 
     // Update WiFi RSSI periodically
     int8_t rssi_value = -128;
-    if (module->is_connected) {
+    bool wifi_connected = wifi_is_connected();
+    bool wired_network = module->is_connected && !wifi_connected;
+    if (wifi_connected) {
         get_wifi_current_rssi(&rssi_value);
     }
 
-    if (rssi_value != current_rssi_value) {
-        if (rssi_value > -50) {
+    if (rssi_value != current_rssi_value || wired_network != current_wired_network) {
+        if (wired_network) {
+            lv_label_set_text(wifi_signal_strength_label, "Network: Ethernet");
+        } else if (rssi_value > -50) {
             lv_label_set_text(wifi_signal_strength_label, "Signal: Excellent");
         } else if (rssi_value > -60) {
             lv_label_set_text(wifi_signal_strength_label, "Signal: Good");
@@ -1030,12 +1042,15 @@ static void screen_update_cb(lv_timer_t * timer)
             lv_label_set_text(wifi_signal_strength_label, "Signal: --");
         }
 
-        if (rssi_value > -128) {
+        if (wired_network) {
+            lv_label_set_text(wifi_rssi_value_label, "Wired connection");
+        } else if (rssi_value > -128) {
             lv_label_set_text_fmt(wifi_rssi_value_label, "RSSI: %d dBm", rssi_value);
         } else {
             lv_label_set_text(wifi_rssi_value_label, "RSSI: -- dBm");
         }
         current_rssi_value = rssi_value;
+        current_wired_network = wired_network;
     }
 
     uint64_t shares_accepted = module->shares_accepted;

@@ -53,3 +53,12 @@ CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE_PATH="certificates/cacert-2026-10-20.pe
 # CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEPRECATED_LIST is not set
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64=y
+
+# Keep DHCP DNS with its selected Ethernet/Wi-Fi uplink.
+CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=y
+
+# STA, AP, optional predefined ETH, and our custom W5500 interface.
+CONFIG_MDNS_MAX_INTERFACES=4
+
+# Keep SPI completion serviceable during application/WWW flash writes.
+CONFIG_SPI_MASTER_ISR_IN_IRAM=y

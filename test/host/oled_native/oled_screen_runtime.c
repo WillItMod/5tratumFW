@@ -3,6 +3,8 @@
 #include <assert.h>
 int64_t host_now=10000000;
 bool host_applied, host_display_on;
+bool host_wifi_connected=true;
+unsigned host_rssi_reads;
 int host_lock_depth;
 int host_display_timeout=-1;
 FiveTratumMuxSnapshot host_mux;
@@ -168,8 +170,27 @@ int main(void)
     assert(!strcmp(lv_label_get_text(compact_views[SCR_STATS].rate),"--"));
     host_rate_sample_us=0; state.SYSTEM_MODULE.mining_paused=false; host_applied=false;
     update(); assert(!strcmp(lv_label_get_text(compact_views[SCR_STATS].title),"NO DATA"));
+    // Wired-only startup must leave the setup screen even with no saved SSID,
+    // and must never read/display a fabricated Wi-Fi signal or Wi-Fi icon.
+    state.SYSTEM_MODULE.ssid="";
+    host_wifi_connected=false;
+    unsigned rssi_reads=host_rssi_reads;
+    screen_show(SCR_WIFI);
+    update(); assert(get_current_screen()==SCR_WIFI);
+    assert(!compact_data().wifi_connected && compact_data().rssi==-128 && host_rssi_reads==rssi_reads);
+    assert(!strcmp(lv_label_get_text(compact_views[SCR_WIFI].rows[0]),"Ethernet"));
+    assert(!strcmp(lv_label_get_text(compact_views[SCR_WIFI].rows[1]),"Wired connection"));
+    assert(lv_obj_has_flag(compact_views[SCR_WIFI].wifi_icon,LV_OBJ_FLAG_HIDDEN));
+    state.SYSTEM_MODULE.is_connected=false;
+    update(); assert(get_current_screen()==SCR_WELCOME);
+    state.SYSTEM_MODULE.ssid="Simulated Wi-Fi";
+    state.SYSTEM_MODULE.is_connected=true;
+    host_wifi_connected=true;
+    update();
+    assert(!lv_obj_has_flag(compact_views[SCR_WIFI].wifi_icon,LV_OBJ_FLAG_HIDDEN));
+    assert(strstr(lv_label_get_text(compact_views[SCR_WIFI].rows[1]),"RSSI -58dBm"));
     assert(host_lock_depth==0);
-    puts("PASS: actual screen.c candidate lifecycle/no repeats/bounded animation/identify separation, startup/carousel, safety priority, pause transitions, stale rates and MUX fallback");
+    puts("PASS: actual screen.c candidate lifecycle/no repeats/bounded animation/identify separation, startup/carousel, safety priority, pause transitions, stale rates, MUX fallback and wired-only network display");
     lv_deinit();
     return 0;
 }

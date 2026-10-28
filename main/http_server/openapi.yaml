@@ -893,6 +893,23 @@ components:
         ssid:
           type: string
           description: Connected WiFi network SSID
+        ethernetEnabled:
+          type: boolean
+          description: Saved W5500 enable option; takes effect after restart. Gamma 601/602 only.
+        ethernetDriverEnabled:
+          type: boolean
+          description: W5500 option captured at startup, independent of adapter detection.
+        ethernetStatus:
+          type: string
+          enum: [disabled, starting, not-detected, link-down, connecting, connected, error]
+          description: Current W5500 interface status.
+        ethernetIP:
+          type: string
+          description: Current W5500 IPv4 address, or an empty string.
+        activeNetwork:
+          type: string
+          enum: [wifi, ethernet, none]
+          description: Selected usable uplink. Wi-Fi credentials remain saved for fallback.
         ipv4:
           type: string
           description: IPv4 address
@@ -1262,6 +1279,9 @@ components:
           maxLength: 52
           examples:
             - ""
+        ethernetEnabled:
+          type: boolean
+          description: Enable W5500 Ethernet on Gamma 601/602 after restart; defaults off. Wi-Fi credentials are preserved.
         ssid:
           type: string
           description: WiFi network SSID
