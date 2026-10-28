@@ -4,8 +4,8 @@ The fixed compile-time profiles below were the private 480×320 experiments used
 before QAxe Beta7. **Public QAxe Beta8 carries those panel settings in one firmware as a
 saved runtime selector:** see [Screen selection](display-settings.md). Its default
 remains 320×170; both 3.5-inch choices remain experimental rather than physically
-qualified by a compile or a guessed PCB revision. **Public OctAxe Beta5 retains
-only 320×170.** The separate [local OctAxe Beta6 candidate](octaxe-480-display.md)
+qualified by a compile or a guessed PCB revision. **Earlier OctAxe Beta5 retains
+only 320×170.** The separate [public experimental OctAxe Beta6](octaxe-480-display.md)
 uses 480×320 (153,600 pixels) as a working assumption and adds saved RGB/BGR
 choices without claiming physical panel or vendor-layout compatibility.
 Public helpers still reject a fixed experimental compile-time default; the
@@ -24,8 +24,9 @@ unified QAxe image is built with the standard default and verified runtime suppo
 The BGR reference originally left both mirror axes off. Current source permits
 180-degree rotation on both larger profiles. The package restriction in this
 table concerns a fixed compile-time experimental QAxe default, rather than the
-standard-default firmware with saved runtime choices. OctAxe Beta6 remains a
-local test candidate; these QAxe references do not qualify an OctAxe screen.
+standard-default firmware with saved runtime choices. Public OctAxe Beta6 uses
+that standard-default/runtime-choice approach; these QAxe references do not
+qualify an OctAxe screen.
 
 All profiles preserve the existing 8-bit Intel 8080 bus: data GPIOs
 39/40/41/42/45/46/47/48, RD9, power15, WR8, CS6, DC7, reset5 and backlight38;
@@ -92,15 +93,16 @@ No factory/NVS image or public release asset is produced for these profiles.
 
 The runtime selector introduced in unpublished QAxe Beta7 and published in Beta8
 persists the user's selection and advertises saved/active profile metadata.
-Its manifest declares the supported runtime profiles. The local OctAxe Beta6
-candidate has its own family identity and matching pair; build it with the
+Its manifest declares the supported runtime profiles. OctAxe Beta6
+has its own family identity and matching pair; build it with the
 standard default, following the [OctAxe build guide](build-5tratumfw-oct.md),
 rather than selecting a fixed QAxe experimental build. Known legacy application
 and upstream factory updates are rejected while a larger profile is saved or
 active, preventing an automatic return to the old standard-only application.
 Central OS/MUX controls still require their own exact version/source admission;
 profile metadata does not widen physical-board qualification or independent
-ASIC assignment. Earlier Beta6 and its downloads remain standard-only images.
+ASIC assignment. Earlier **QAxe Beta6** and **OctAxe Beta5** downloads remain
+standard-only images.
 
 `test/host/test_display_profiles.py` executes the real CMake selection policy and
 compiled production constexpr profiles, including negative/reconfiguration
@@ -109,5 +111,6 @@ variants. These checks establish source/layout behavior, not physical support fo
 an unidentified seller screen. Board, regulator, clock/voltage settings, existing
 non-display settings, NVS layout and partition geometry remain unchanged. The
 runtime selector adds only the saved display-profile value within the existing
-settings store. Existing QAxe build/render evidence is not a completed local
-OctAxe Beta6 build or physical-display test.
+settings store. The separate [OctAxe Beta6 validation](validation-oct-beta6.md)
+records its completed build and software checks. Those checks and the earlier
+QAxe evidence do not establish a physical Beta6 installation or panel test.

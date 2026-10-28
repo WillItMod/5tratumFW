@@ -1,9 +1,10 @@
-# OctAxe Beta6 local candidate validation — 28 October 2026
+# OctAxe Beta6 experimental release validation — 28 October 2026
 
 Version **`5tratumFW-oct-0.1.0-beta.6`**, compiled and packaged from clean source
-`5567a2d6c1f59808f197062e565fa6525a93f97b`. This is a local experimental candidate, not a
-new public release or an installed-device qualification. Later documentation
-commits do not relabel its images or corresponding source.
+`5567a2d6c1f59808f197062e565fa6525a93f97b`. The public experimental BETA
+uses this exact locally verified package. Publication is not an installed-device
+qualification. Later documentation commits do not relabel its images or
+corresponding source.
 
 The user accepted **480×320 (153,600 pixels)** as the working assumption for
 an unidentified larger OctAxe panel. This enables an explicit saved display
@@ -43,8 +44,24 @@ and restart. [Operation and reference limits](octaxe-480-display.md).
 Local preflight caught a frontend array-type error, which was corrected before
 the successful checks above. The Mac helper also initially selected the system
 LibreSSL; its successful run explicitly selected OpenSSL 3. These local failures
-were resolved before producing the candidate. No new GitHub workflow or firmware
-publication was run for this candidate.
+were resolved before producing the package. The later public experimental
+release retains these exact files. Its GitHub checks are recorded separately
+from the local build and do not relabel the compiled source receipt.
+
+## GitHub publication checks
+
+All three push workflows completed successfully at
+`9aa01916a24d614eec918a0f2fd8d254ae0947b1`:
+[Gamma](https://github.com/WillItMod/5tratumFW/actions/runs/40740167750),
+[QAxe](https://github.com/WillItMod/5tratumFW/actions/runs/40740167749) and
+[OctAxe](https://github.com/WillItMod/5tratumFW/actions/runs/40740167703).
+Run and job conclusions were independently verified. No run failed or was rerun.
+
+The production source at that commit is identical to compiled revision
+`5567a2d6`; the intervening commit changes documentation only. The separate CI
+builds are not asserted byte-identical to the local package. Publication uses
+the immutable local images and source archive listed below. Later publication
+edits change documentation only and do not relabel those receipts.
 
 ## Exact matched images
 
@@ -71,5 +88,7 @@ The established software target is NERDOCTAXEGAMMA / NerdOCTAXE-γ / BM1370×8,
 with the existing 16 MiB flash, 3 MiB WWW and two 4 MiB OTA-slot contract. This
 assumption does not add support for a vendor's different flash/partition layout.
 Board guards, clocks, voltage, cooling, pools, slots and schedules are unchanged.
-Independent per-chip routing remains disabled. Public Gamma Beta10, QAxe Beta8
-and OctAxe Beta5 downloads remain unchanged.
+Independent per-chip routing remains disabled. Public Gamma Beta10 and QAxe
+Beta8 downloads remain unchanged. Previous OctAxe Beta5 files remain available
+with their own standard-screen installed-device evidence; publication of Beta6
+does not transfer that physical qualification to the new pair.

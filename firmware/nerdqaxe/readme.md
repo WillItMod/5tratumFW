@@ -4,9 +4,11 @@ This source builds the QAxe-specific paired OTA images for **NerdQAxe++ / NERDQA
 
 Current QAxe BETA pair: `5tratumFW-qa-0.1.0-beta.8`, with the standard **320×170 display** and an explicit experimental **480×320 RGB/BGR screen selector**. This image is separate from Gamma 601/602 and OctAxe. The exact standard-screen pair completed a short supervised bench on the owned test unit, whose PCB revision remains unidentified. Read [Beta8 release notes](docs/releases/qaxe-v0.1.0-beta.8.md) and the [28 October validation](../../docs/validation-aligned-20261028.md). Earlier records retain their own release evidence.
 
-The current QAxe Beta8 and OctAxe Beta5 pairs were compiled and packaged from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d`. Both use the shufps **v1.1.1-rc1** base (`bfd07393918ce1b464faf1b7bd1ecd11343197f4`), pinned ESP-IDF 5.5.3 and the pinned certificate-bundle update. Family CI and offline checks passed. Both standard 320×170 pairs completed supervised OTA, all 108 packaged web-record and retained-settings checks on 28 October 2026. Pause/resume and a temporary tuning schedule using each miner's existing operating point passed; original settings, slots and policies were restored. Accepted shares progressed, and the owner confirmed normal screens and both fans. The Oct scope remains the owned PCB 2.2 unit. These short checks do not qualify new operating points, sustained thermal stability or every protection/recovery case. Six animated donut candidate celebrations and existing connection/slot controls are retained.
+QAxe Beta8 and the previous OctAxe Beta5 pairs were compiled and packaged from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d`. Both use the shufps **v1.1.1-rc1** base (`bfd07393918ce1b464faf1b7bd1ecd11343197f4`), pinned ESP-IDF 5.5.3 and the pinned certificate-bundle update. Family CI and offline checks passed. Both standard 320×170 pairs completed supervised OTA, all 108 packaged web-record and retained-settings checks on 28 October 2026. Pause/resume and a temporary tuning schedule using each miner's existing operating point passed; original settings, slots and policies were restored. Accepted shares progressed, and the owner confirmed normal screens and both fans. The Oct scope remains the owned PCB 2.2 unit. These short checks do not qualify new operating points, sustained thermal stability or every protection/recovery case. Six animated donut candidate celebrations and existing connection/slot controls are retained.
 
-QAxe Beta8 includes the [saved screen selector](docs/display-settings.md) in its public standard-default image: **Miner controls → Display → Screen**, choose **3.5-inch RGB** or **3.5-inch BGR**, click **Save this section**, then **Restart device** and refresh. The larger profiles correct viewport size, offset and mirroring together. The [480×320 profiles](docs/experimental-480-display.md) remain **experimental and physically unqualified**; the owned standard-screen bench does not qualify another panel or vendor flash layout. OctAxe retains only its standard 320×170 screen.
+The current public OctAxe pair is **Beta6 — EXPERIMENTAL**, compiled from clean source `5567a2d6c1f59808f197062e565fa6525a93f97b` on the same RC1/SDK base. It adds saved 480×320 RGB/BGR choices with Standard 320×170 as the default. Full local build and software checks passed, but **neither a standard-screen Beta6 installation nor its unidentified larger panel has been physically checked**. See [Beta6 validation](docs/validation-oct-beta6.md). The previous physically checked standard-screen [Beta5 pair](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.5) remains available; its evidence does not qualify Beta6 or another PCB/flash layout.
+
+QAxe Beta8 and OctAxe Beta6 include the [saved screen selector](docs/display-settings.md) in their separate public standard-default images. Install the correct model's application first, wait for its restart, then install the same release's matching `www.bin` and reload. Open **Miner controls → Display → Screen**, choose **3.5-inch 480×320 RGB** or **3.5-inch 480×320 BGR**, select **Save this section**, then **Restart device** and refresh. The larger profiles correct viewport size, offset and mirroring together. They remain **experimental and physically unqualified**. OctAxe's 480×320 geometry is an accepted working assumption, not an identified controller or vendor flash layout. Before returning from OctAxe Beta6 to Beta5, select **Standard 320×170**, save and restart, then install both Beta5 files. See [OctAxe screen and downgrade instructions](docs/installation-5tratumfw-oct.md#select-the-experimental-larger-screen).
 
 ## Choose the correct firmware
 
@@ -14,7 +16,7 @@ QAxe Beta8 includes the [saved screen selector](docs/display-settings.md) in its
 | --- | --- | --- |
 | Bitaxe Gamma PCB 601/602 | Gamma images in the parent 5tratumFW repository; never these QAxe images | Beta10 on ESP-Miner v2.15.4; separate short checks on both models. [Release notes](../../docs/releases/v0.1.0-beta.10.md) · [Validation](../../docs/validation-aligned-20261028.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370 ×4 | This QAxe paired BETA | Beta8; standard 320×170 display bench completed, experimental saved 480×320 selector remains physically unqualified. PCB revision remains unknown. [Release notes](docs/releases/qaxe-v0.1.0-beta.8.md) · [Validation](../../docs/validation-aligned-20261028.md) |
-| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370 ×8 | Separate OctAxe pair in this subtree | Beta5; standard 320×170 display, limited to one owned PCB 2.2 unit. No other revision qualified. [Release notes](docs/releases/octaxe-v0.1.0-beta.5.md) · [Validation](../../docs/validation-aligned-20261028.md) · [OctAxe guide](../../docs/nerdoctaxe.md) |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370 ×8 | Separate OctAxe pair in this subtree | Beta6 **EXPERIMENTAL**; Standard 320×170 default with saved 480×320 choices. Software/build checks only; prior Beta5 physical scope remains one owned PCB 2.2 unit. [Release notes](docs/releases/octaxe-v0.1.0-beta.6.md) · [Validation](docs/validation-oct-beta6.md) · [OctAxe guide](../../docs/nerdoctaxe.md) |
 | QAxe+, other QAxe/OctAxe revisions, NerdQX, GT800 and other devices | No supported image in this QAxe release | Do not infer compatibility from shared upstream driver definitions |
 
 ## Included
@@ -27,7 +29,7 @@ QAxe Beta8 includes the [saved screen selector](docs/display-settings.md) in its
 - Separate native A/B network sessions through 5tratMUX, with independent MUX routing/accounting and one physical-parent card.
 - Per-session fresh MUX coin identity, candidate height, nBits, bdiff and current forwarded job. Mixed dual mining has separate coin/job information; no single aggregate chain is invented.
 - Physical screen branding, scrolling startup progress and recurring large 5tratumFW logo, plus route/job and shared board/regulator readings. Thermal, shutdown and enrollment overlays take priority.
-- [Saved QAxe screen selection](docs/display-settings.md) for the standard screen and explicit experimental 480×320 RGB/BGR choices. Save and restart to apply; OctAxe remains standard 320×170 only.
+- [Saved screen selection](docs/display-settings.md) in QAxe Beta8 and OctAxe Beta6 for the standard screen and explicit experimental 480×320 RGB/BGR choices. Save and restart to apply; each model keeps its own firmware pair.
 
 The two sessions share the ASIC chain's existing job selector. This release does **not** prove or implement independent physical-ASIC work ownership; `independentWorkAssignment` remains false. Advertised controller/session identity is a peer report rather than authentication.
 
@@ -43,8 +45,10 @@ Use both `esp-miner-NerdQAxe++.bin` and `www.bin` from the same QAxe package. Co
 - [QAxe screen size, position and colour selection](docs/display-settings.md)
 - [Pinned build and packaging](docs/build-5tratumfw-qa.md)
 - [Current QAxe Beta8 release notes](docs/releases/qaxe-v0.1.0-beta.8.md)
-- [Current OctAxe Beta5 release notes](docs/releases/octaxe-v0.1.0-beta.5.md)
-- [Current aligned build and owned-device validation](../../docs/validation-aligned-20261028.md)
+- [Current OctAxe Beta6 experimental release notes](docs/releases/octaxe-v0.1.0-beta.6.md)
+- [OctAxe Beta6 software/build validation](docs/validation-oct-beta6.md)
+- [Gamma Beta10, QAxe Beta8 and previous OctAxe Beta5 owned-device validation](../../docs/validation-aligned-20261028.md)
+- [Previous OctAxe Beta5 release notes](docs/releases/octaxe-v0.1.0-beta.5.md)
 - [Earlier QAxe Beta6 validation](docs/validation-qa-beta6.md)
 - [Earlier OctAxe Beta4 validation](docs/validation-oct-beta4.md)
 - [Earlier QAxe Beta5 validation](docs/validation-qa-beta5.md)
