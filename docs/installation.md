@@ -26,6 +26,12 @@ Both images are needed to install a complete release when its application and we
 4. Confirm the existing partition layout is compatible. The intended baseline is upstream ESP-Miner v2.14.2 with its standard 16 MiB ESP32-S3 layout: 4 MiB application slots and a 3 MiB WWW partition. Devices with custom partition maps need a separate recovery plan.
 5. Connect to the miner through its configured Wi-Fi network. These firmware upload endpoints refuse uploads while the miner is in AP or AP+station mode. Finish network setup first.
 
+## Update through 5tratumOS
+
+For an existing compatible **Bitaxe Gamma 601 or 602** running 5tratumFW, update 5tratumOS to **0.8.48** through **Settings → Updates** and reload the portal. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. On the correct Gamma, select **Firmware update → BETA → Check for updates** and confirm the model-labelled **Bitaxe Gamma 601/602 Beta 10** release. Select **Install firmware → Confirm install** and keep the miner powered until **Firmware installation verified** appears. The OS installs both matching images, handles restarts and verifies versions and retained settings. See the [complete one-click instructions](../DOWNLOADS.md#update-through-5tratumos).
+
+Future compatible releases are discovered without another OS update for each firmware version; BETA also includes compatible stable releases. Firmware-update eligibility is independent of separate central miner-control qualification, including Power. Hardware, identity, package and API checks still apply; new hardware or a breaking contract can require an adapter. The one-click updater does not perform the initial conversion from stock firmware.
+
 ## Upload the paired release
 
 Follow any order stated in the release notes. Otherwise:
