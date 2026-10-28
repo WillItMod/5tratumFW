@@ -6,18 +6,18 @@
 
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Qualified Beta9 BETA pair; separate short checks on both models. [Gamma guide](docs/installation.md) · [Beta9 validation](docs/validation-beta9.md) |
-| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Qualified Beta6 BETA pair; standard 320×170 display, test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Beta6 validation](firmware/nerdqaxe/docs/validation-qa-beta6.md) |
-| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | OctAxe `esp-miner-NerdOCTAXE-Gamma.bin` + matching OctAxe `www.bin` | Qualified Beta4 BETA pair; standard 320×170 display, limited to one owned PCB 2.2 unit. [OctAxe guide](docs/nerdoctaxe.md) · [Beta4 validation](firmware/nerdqaxe/docs/validation-oct-beta4.md) |
+| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Beta10 public BETA pair; separate short checks on both models. [Gamma guide](docs/installation.md) · [Validation](docs/validation-aligned-20261028.md) |
+| NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Beta8 public BETA pair; standard 320×170 display checked, experimental 480×320 selector, test PCB revision unknown. [QAxe guide](docs/nerdqaxe.md) · [Validation](docs/validation-aligned-20261028.md) |
+| NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | OctAxe `esp-miner-NerdOCTAXE-Gamma.bin` + matching OctAxe `www.bin` | Beta5 public BETA pair; standard 320×170 display, limited to one owned PCB 2.2 unit. [OctAxe guide](docs/nerdoctaxe.md) · [Validation](docs/validation-aligned-20261028.md) |
 | QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
 
 Start with the [three-model download page](DOWNLOADS.md) or [firmware selection and repository layout](docs/firmware-selection.md). Use a complete matching image pair, manifest, checksums and corresponding source. [All GitHub releases](https://github.com/WillItMod/5tratumFW/releases) remain available for history. Recovery backups/NVS/factory images are never published.
 
 The root source/build remains Gamma. QAxe source is in [`firmware/nerdqaxe`](firmware/nerdqaxe/readme.md), with its own build/package helpers. The unified interface has Overview, Miner controls, Scheduler, Pool routing, Network and Updates; QAxe retains its extra hardware, protocol/security and integration settings.
 
-The current pairs are Gamma `5tratumFW-0.1.0-beta.9`, QAxe `5tratumFW-qa-0.1.0-beta.6` and OctAxe `5tratumFW-oct-0.1.0-beta.4`, compiled from clean source `689b2c8fcd01c4b507be102bb1caed22f4552738`. Full pinned builds, package checks and exact-source CI passed. All four owned miners completed paired OTA and exported-settings checks on 14 October 2026, with normal physical screens/fans confirmed by the owner. Six randomized animated donut candidate celebrations are included; their graphics and lifecycle were tested in native fixtures without fabricated live blocks. See the [release index](docs/releases/README.md) for scoped evidence. The 480×320 QAxe profiles remain experimental and have no public download or automatic-update path.
+The current public BETA prereleases are Gamma `5tratumFW-0.1.0-beta.10` on ESP-Miner v2.15.4, QAxe `5tratumFW-qa-0.1.0-beta.8` and OctAxe `5tratumFW-oct-0.1.0-beta.5` on shufps v1.1.1-rc1. They add saved tuning-profile schedules while retaining the existing interface and candidate celebrations. All four owned miners completed supervised updates, preserved-settings checks, pause/resume and a temporary schedule at their existing operating point; the owner confirmed normal physical screens and fans. Both Gammas also passed a subsequent normal software restart. See [dated validation](docs/validation-aligned-20261028.md), the [release index](docs/releases/README.md) and [upstream migration](docs/upstream-migration-20261028.md).
 
-The development candidates are Gamma Beta10 on ESP-Miner v2.15.4, QAxe Beta8 and OctAxe Beta5 on shufps v1.1.1-rc1. They add saved tuning-profile schedules; QAxe includes the experimental larger-screen selector. They have separate build evidence and scoped installed-device checks; the larger panel still needs its own physical check. See the [aligned update](docs/aligned-tuning-update.md) and [upstream migration](docs/upstream-migration-20261028.md).
+Gamma's published pair was compiled from clean source `1645747dfc46a83c52e27c567d43be3f0b53a035`; both Nerd pairs were compiled from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d`. Full builds, package checks and all six final GitHub family runs passed. Later documentation commits do not relabel these images or their corresponding source. QAxe's 480×320 RGB/BGR selector changes size, offset and mirror orientation, but remains **experimental until the actual larger panel is checked**. OctAxe remains 320×170 only. See the [aligned update](docs/aligned-tuning-update.md) and [display settings](firmware/nerdqaxe/docs/display-settings.md).
 
 Pool routing now places Primary and Secondary connection editors above the ten named slots. **Save pool settings** saves that connection; **Save to slot** captures its saved configuration into the selected named slot. Each configured slot has explicit **Apply to Primary** and **Apply to Secondary** actions. Opening the page or selecting a slot does not apply it. Invalid, missing or ambiguous acknowledgments leave the operation unconfirmed, with no automatic write retry. Clocks, voltage, cooling, network, credentials and schedules are not changed by this layout update.
 
@@ -25,7 +25,7 @@ QAxe's native A/B MUX connections have independently configured routes and fresh
 
 ## Gamma family
 
-**Gamma BETA — root-source images accept Gamma 601/602 only. The current qualified pair is `5tratumFW-0.1.0-beta.9`. Earlier pairs retain their own validation records.**
+**Gamma BETA — root-source images accept Gamma 601/602 only. The current public pair is `5tratumFW-0.1.0-beta.10`. Earlier pairs retain their own validation records.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.15.4](https://github.com/bitaxeorg/ESP-Miner/tree/v2.15.4), maintained by [WillItMod](https://github.com/WillItMod).
@@ -34,8 +34,8 @@ A GPLv3 derivative of [Bitaxe ESP-Miner v2.15.4](https://github.com/bitaxeorg/ES
 
 | Hardware | This image | Validation |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta9 matching app/web and all 11 served records verified; exported settings, 20 slots and both schedules retained; normal display/fan confirmation, cold-start and pause/resume checks. |
-| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Separate Beta9 pair and all 11 served records verified; exported settings, 20 slots and both schedules retained; normal display/fan confirmation, cold-start and pause/resume checks. |
+| Bitaxe Gamma PCB 601 | Supported by the explicit stored-identity guard | Beta10 matching app/web and all 11 served records verified; original settings, 20 slots and policies retained; normal display/fan confirmation, pause/resume, same-point tuning schedule and normal software-restart checks. |
+| Bitaxe Gamma PCB 602 | Supported by the explicit stored-identity guard | Separate Beta10 matching app/web and all 11 served records verified; original settings, 20 slots and policies retained; normal display/fan confirmation, pause/resume, same-point tuning schedule and normal software-restart checks. |
 | Other Bitaxe PCBs, GT800, NerdQAxe, NerdOctAxe and other miners (use their separately qualified family, where available) | Incompatible | Do not flash these Gamma images. |
 
 The guard validates an existing NVS board identity; it does not physically identify a PCB. Confirm the physical board revision and existing identity before installing. A missing, unreadable or unsupported identity stops startup before hardware initialization.
@@ -50,6 +50,7 @@ The guard validates an existing NVS board identity; it does not physically ident
 - Gamma OLED mining/health views and fresh peer-advertised MUX status, exposed read-only to OS inventory at `/api/5tratum/status`.
 - Ten named pool slots with direct Apply, ten named tuning slots, and fine manual clock/voltage requests.
 - Weekly pool-switch time points saved on the miner alongside the independent power scheduler.
+- Weekly tuning-profile time points select saved clock/voltage slots; tuning and pool schedules use an explicit fixed UTC offset without automatic daylight-saving changes.
 
 No autotuning, clock presets, authenticated native MUX management or independent per-chip mining are implemented or validated. Existing thermal protection remains active and may change operating settings after overheating.
 
@@ -69,7 +70,7 @@ Use the matched **application** `esp-miner.bin` and **web interface** `www.bin` 
 
 The reserved `mining.5tratum.status` receiver is informational: it cannot confirm payouts or make routing decisions. A MUX label requires a valid advertisement received from the current peer within 90 seconds. Direct pools and older MUX servers remain ordinary Stratum connections. The test MUX candidate advertises live status to the Gamma 601. This Gamma receiver currently supports the legacy status acknowledgment; the QAxe's richer coin/block metadata protocol is a separate firmware capability.
 
-See [Beta9 validation](docs/validation-beta9.md) for the candidate-celebration pair and separate completed 601/602 checks. [Beta7](docs/validation-beta7.md), [Beta6](docs/validation-beta6.md), [Beta5](docs/validation-beta5.md), [Beta4](docs/validation-beta4.md) and [Beta3](docs/validation-beta3.md) remain historical records for their own images. The owner confirmed normal physical screens and fans. Candidate animations were checked in native fixtures; sustained operation and complete fault recovery remain outside these short checks.
+See [aligned Beta10 validation](docs/validation-aligned-20261028.md) for the separate completed 601/602 checks. [Beta9](docs/validation-beta9.md), [Beta7](docs/validation-beta7.md), [Beta6](docs/validation-beta6.md), [Beta5](docs/validation-beta5.md), [Beta4](docs/validation-beta4.md) and [Beta3](docs/validation-beta3.md) remain historical records for their own images. Candidate animations were checked in native fixtures; controlled cold power-cycles, different operating points, sustained operation and complete fault recovery remain outside the current short checks. Gamma's new pool-authentication settings have a [documented older-firmware journal limit](docs/upstream-migration-20261028.md); keep a unit-specific recovery backup.
 
 ## Build
 

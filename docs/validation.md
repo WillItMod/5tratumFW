@@ -1,4 +1,4 @@
-Current development evidence: [28 October aligned candidates](validation-aligned-20261028.md). The record below remains specific to BETA 1.
+Current BETA evidence: [28 October aligned releases](validation-aligned-20261028.md). The record below remains specific to BETA 1.
 
 # BETA 1 validation record
 

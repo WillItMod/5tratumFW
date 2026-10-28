@@ -1,6 +1,6 @@
 # Saved tuning profiles by time of day
 
-QAxe Beta8 adds **Scheduler → Tuning profile schedule**. This is independent of
+Gamma Beta10, QAxe Beta8 and OctAxe Beta5 add **Scheduler → Tuning profile schedule**. This is independent of
 the pool-switch schedule and the mining pause/resume windows. It selects the
 whole miner's saved frequency and core voltage; it does not tune individual
 chips or choose new operating values automatically.
@@ -73,7 +73,10 @@ separate settings.
 
 ## Validation boundary
 
-Beta8 is a new paired test candidate. Its tests/build and any physical evidence
-belong in a separate dated validation record. Beta6's earlier installed-device
-observations and the online display references do not qualify Beta8's scheduled
-tuning boundaries or tadets' larger panel.
+The three public BETA pairs have their own [dated build and installed-device
+record](../../../docs/validation-aligned-20261028.md). All four owned miners
+reported the selected and applied slot during temporary schedules using their
+existing operating point; original slots, schedules and overrides were restored.
+That short check does not establish a different operating point, sustained
+thermal stability or every protection boundary. Tadets' larger panel remains
+physically unqualified; online display references are separate evidence.

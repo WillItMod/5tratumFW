@@ -1,6 +1,6 @@
 # QAxe paired OTA installation and recovery
 
-**Display: this published pair uses the standard 320×170 screen. The 480×320 QAxe profiles remain experimental; no public larger-screen package is available.**
+**QAxe Beta8 defaults to the standard 320×170 screen and includes experimental 480×320 RGB/BGR choices under Miner controls → Display → Screen. Save this section, restart the device, then refresh to confirm the active choice. The larger panel has not been physically qualified; see [screen selection](display-settings.md).**
 
 ## Identify before choosing
 
@@ -8,7 +8,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download one **QAxe-specific matched pair** from the [model-labelled prereleases](https://github.com/WillItMod/5tratumFW/releases), with its `manifest.json`, `SHA256SUMS` and corresponding source. The current Beta6 pair passed its scoped installed qualification; read [Beta6 validation](validation-qa-beta6.md) before selecting that version. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
+Download one **QAxe-specific matched pair** from the [model-labelled prereleases](https://github.com/WillItMod/5tratumFW/releases), with its `manifest.json`, `SHA256SUMS` and corresponding source. The current Beta8 pair passed its own short supervised check on the standard-screen owned unit; read [the dated validation](../../../docs/validation-aligned-20261028.md) before selecting it. The [Beta6 record](validation-qa-beta6.md) remains evidence for that earlier pair. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
 
 ## Installation FAQ
 
@@ -62,7 +62,7 @@ Beta 2 reads update identity through the shared v1 endpoint, separates identity 
 
 Use two SV1 connections to the same MUX Stratum host/port, with distinct worker names. Select **Dual pool**, retain the desired whole-chain job balance and save. Changing pool mode requires a restart; review the saved/runtime state rather than assuming the request acknowledgement proves Dual is running.
 
-**Current central management:** Central Dual pool and Power controls require a matching OS/MUX release explicitly admitting QAxe Beta6 and OctAxe Beta4 at source `689b2c8fcd01c4b507be102bb1caed22f4552738`. Earlier central versions admit their earlier exact pairs. Admission requires fresh capability/identity and matching app/web source reports; a similar name, count or prefix is insufficient. The miner’s own controls remain available under its security policy. PCB/display scope and shared-chain A/B mining are unchanged.
+**Central management:** An OS/MUX release must explicitly admit the exact installed family, version and source for its central Dual pool, Power or paired-update controls. The previously qualified QAxe Beta6 / OctAxe Beta4 admission at `689b2c8fcd01c4b507be102bb1caed22f4552738` does not automatically admit QAxe Beta8 / OctAxe Beta5 at `1a34b24100e1238e331d8145a70f6b08f85f943d`. This firmware publication does not update central admission. Native A/B sessions and the miner’s own controls remain available under their security policy. Fresh capability/identity and matching app/web reports remain required; a similar name, count or prefix is insufficient.
 
 Earlier central qualification (8 October 2026): MUX 0.9.75 passed its sampled live acceptance. 5tratumOS 0.8.31 completed the normal system update with settings/state preserved, followed by separate installed-file verification and seven GET-only observations over sixty seconds. The qualified QAxe Beta5 and OctAxe Beta3 miners reported both native streams, running Dual mode with 50% job allocation, and bound pool, power and paired-updater admission. This is sampled API and control-admission evidence; the check did not exercise an authenticated portal UI, perform new miner-control writes or establish independent physical-ASIC assignment.
 

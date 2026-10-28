@@ -1,0 +1,24 @@
+# QAxe Beta8 — RC1, tuning schedules and a saved screen selector
+
+| Download both files | Purpose |
+| --- | --- |
+| [esp-miner-NerdQAxe++.bin](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.8/esp-miner-NerdQAxe%2B%2B.bin) | Miner firmware |
+| [www.bin](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.8/www.bin) | Matching web interface |
+
+Verify [SHA256SUMS](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.8/SHA256SUMS) and install the application first, then the matching web image.
+
+`5tratumFW-qa-0.1.0-beta.8` · `qaxe-v0.1.0-beta.8` · compiled/source revision `1a34b24100e1238e331d8145a70f6b08f85f943d`.
+
+**NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 / ESP32-S3 only.** The owned test unit's PCB revision remains unidentified. This public BETA updates the Nerd base to shufps **v1.1.1-rc1**, retains pinned ESP-IDF 5.5.3 and incorporates the pinned certificate-bundle update. It keeps 5tratumFW's controls, routing, displays and separate QAxe release identity.
+
+**Scheduler → Tuning profile schedule** selects whole-miner frequency/voltage from ten saved tuning slots at up to sixteen weekly time points. For example, select slot 3 at 00:00, slot 1 at 09:00 and slot 2 at 21:00. Save the operating points first, configure the days/times and enable the schedule. Synchronized network time and an explicit fixed UTC offset are required; tuning and pool schedules do not automatically follow daylight saving time. Manual/scheduled pauses and hardware protection retain priority. No operating point or schedule is installed automatically.
+
+**Miner controls → Display → Screen** now offers **Standard (320×170)**, **3.5-inch RGB (480×320)** and **3.5-inch BGR (480×320)** in one QAxe application. Choose the appropriate screen, click **Save this section**, then **Restart device** and refresh to confirm the active choice. The larger profiles change the viewport, panel offset and mirroring together; use the other colour-order option if needed. **Rotate miner screen** remains the separate 180-degree control. Existing installations default to Standard. This carries forward the unpublished Beta7 selector; no separate Beta7 update is needed.
+
+**The 480×320 options remain experimental.** They have online driver-reference, target-build and simulated-renderer evidence, but no physical large-panel qualification. The reported panel still needs full-screen position, unmirrored text, colour order, rotation, startup and refresh checks. Its controller cannot be identified from the photograph. This selector does not import another vendor's flash driver or partition layout. [Screen instructions and reference limits](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/display-settings.md).
+
+Use **`esp-miner-NerdQAxe++.bin` and this release's matching `www.bin`**, with `manifest.json`, `SHA256SUMS`, `web-budget.json` and `5tratumFW-NerdQAxe++-5tratumFW-qa-0.1.0-beta.8-source.zip`. Verify checksums, install the application first through the supported OTA uploader, wait for restart, then install WWW and refresh. These are OTA images, without factory/NVS or replacement partition images. Do not interchange QAxe, Gamma and OctAxe files. Existing identity, configured clock/voltage, both fan policies, network/pools, ten tuning slots, ten pool slots and original schedules are retained. [Installation guide](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/installation-5tratumfw-qa.md).
+
+Full target builds, browser/host checks, package/source checks and all six consolidated GitHub runs passed. The exact standard-screen pair completed a supervised update on the owned QAxe on 28 October 2026: all 108 packaged web records and saved settings matched; pause/resume and a temporary schedule at the **existing** operating point passed and were cleaned up. Accepted shares progressed, and the owner confirmed the physical screen and both fans normal. The manifest's original `hardwareTested: false` receipt is unchanged; the dated validation records this later, limited evidence.
+
+The short bench does not qualify the larger panel, another PCB, new operating points, sustained thermal stability or every protection/recovery case. Native A/B sessions still share the four-chip chain; **independent per-chip work routing remains unsupported and disabled**. Central OS/MUX controls require their own exact-release admission update; publication alone does not enable them. [Exact images, evidence and limitations](https://github.com/WillItMod/5tratumFW/blob/main/docs/validation-aligned-20261028.md).

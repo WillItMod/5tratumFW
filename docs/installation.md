@@ -38,4 +38,6 @@ Follow any order stated in the release notes. Otherwise:
 
 The **5tratumFW releases → Check releases** control opens the WillItMod/5tratumFW GitHub release channel, including BETA prereleases. Read the compatibility, release notes and validation record before selecting files. Obtain the paired images from that channel or build this repository yourself.
 
+Before downgrading Gamma Beta10 to Beta9, read the [authentication-journal compatibility limits](upstream-migration-20261028.md). Changing either saved pool authentication flag from its original individual-key baseline can require an extended journal that Beta9 cannot read. Restore both authentication flags to their original baseline while running Beta10 to regain the legacy journal format, or retain compatible firmware and the unit-specific recovery backup. An old app/WWW pair alone does not repair an extended journal. Ordinary tuning changes retain the legacy format when authentication still matches that baseline.
+
 If the web interface is damaged, follow [Recovery](recovery.md). Do not erase flash or write a factory configuration as a routine update step.
