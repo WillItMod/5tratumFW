@@ -34,6 +34,14 @@ Once the exact unit/layout and recovery path are established:
 
 If the page cannot identify an older application, inspect only the model/version/ASIC fields from `/api/system/info` locally. The full response may contain private network/pool data. Retry the identity read or use the original firmware's supported updater. Do not rename a different board's image or bypass authentication to pass a filename check.
 
+## Update from 5tratumOS
+
+For an existing compatible 5tratumFW OctAxe, open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. Find the OctAxe and select **Open miner**. Download the matched application and `www.bin` from the [OctAxe Beta6 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6).
+
+In the miner's **Updates** page, upload `esp-miner-NerdOCTAXE-Gamma.bin` first and wait for the restart. Then upload the same release's matching `www.bin` through the web-interface updater and refresh. Confirm both application and web versions are `5tratumFW-oct-0.1.0-beta.6`, then follow the display steps below. Keep the existing authentication and the unit/layout requirements above.
+
+The current public **5tratumOS v0.8.47** does **not** offer OctAxe Beta6 through **Firmware update → Check for updates**. Its central admission/catalogue has not been updated for this release; use **Open miner** instead. This does not convert stock Nerd firmware: follow the separate initial-installation instructions below for a stock unit.
+
 ## Select the experimental larger screen
 
 The reported larger panel is treated as **480×320 (153,600 pixels)** by accepted working assumption. Its controller, wiring and any vendor-specific flash layout remain unidentified. The application defaults to **Standard 320×170** and does not detect a larger panel automatically.

@@ -8,6 +8,15 @@
 
 Download this release's **[application — esp-miner-NerdOCTAXE-Gamma.bin](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.6/esp-miner-NerdOCTAXE-Gamma.bin)** and **[web interface — www.bin](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.6/www.bin)** together. Verify both against **[SHA256SUMS](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.6/SHA256SUMS)** and retain the manifest, web budget and corresponding GPL source archive. Use the supported application uploader **first**, wait for its restart, then install this matching WWW and refresh. Confirm both versions are Beta6. These are OTA partition images, without factory/NVS or replacement partition images. QAxe, single-chip Gamma and vendor merged firmware are different targets. Preserve the exact unit's identity, existing settings and recovery backup; follow the [OctAxe installation and layout requirements](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/installation-5tratumfw-oct.md).
 
+To update from **5tratumOS**:
+
+1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
+2. Find the OctAxe and click **Open miner**.
+3. On the miner's **Updates** page, upload this release's `esp-miner-NerdOCTAXE-Gamma.bin` first and wait for its restart. Then upload this release's matching `www.bin` through the web-interface updater and refresh.
+4. Confirm that both application and web interface report `5tratumFW-oct-0.1.0-beta.6`, then select the screen as below.
+
+The current public **5tratumOS v0.8.47** does not offer OctAxe Beta6 through its central one-click firmware installer. Use **Open miner** for this release; publishing the firmware does not change OS admission. These steps apply to an existing compatible 5tratumFW installation. For stock firmware, use the separate [initial-installation instructions](https://github.com/WillItMod/5tratumFW/blob/main/firmware/nerdqaxe/docs/installation-5tratumfw-oct.md#central-management-and-initial-installation).
+
 To enable and check the larger screen:
 
 1. Open **Miner controls → Display → Screen** and select **3.5-inch RGB**. Keep **Standard** for the original 320×170 screen.
