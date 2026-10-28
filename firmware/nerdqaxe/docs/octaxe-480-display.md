@@ -1,8 +1,8 @@
 # OctAxe Beta6 — local experimental 480×320 screen candidate
 
 **Beta6 is a local test candidate. Public OctAxe Beta5 remains unchanged and
-supports only the standard 320×170 screen.** No Beta6 build result, physical
-screen check or public release is established by this document.
+supports only the standard 320×170 screen.** The [dated local validation](validation-oct-beta6.md) records the completed build and software checks. No physical
+screen check or public Beta6 release is claimed.
 
 The accepted working assumption for the reported larger screen is a landscape
 **480×320 viewport: 480 × 320 = 153,600 pixels**. That pixel count agrees with

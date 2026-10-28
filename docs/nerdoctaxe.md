@@ -13,6 +13,7 @@ The compiled driver retains GPIO3 selection between the inherited four-phase TPS
 - [Choose the correct firmware family](firmware-selection.md)
 - [OctAxe source, pinned build and package](../firmware/nerdqaxe/docs/build-5tratumfw-oct.md)
 - [Local Beta6 experimental 480×320 screen candidate](../firmware/nerdqaxe/docs/octaxe-480-display.md)
+- [Local Beta6 build and software validation](../firmware/nerdqaxe/docs/validation-oct-beta6.md)
 - [Migration requirements, settings preservation and recovery](../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md)
 - [Current Beta5 installed-pair validation](validation-aligned-20261028.md)
 - [Earlier Beta4 installed-pair validation](../firmware/nerdqaxe/docs/validation-oct-beta4.md)
