@@ -16,7 +16,9 @@ void *display_host_alloc(size_t size) {
     p->bytes=size;account(0,size);return p+1;
 }
 void display_host_free(void *ptr) {
-    if(!ptr)return;Header *p=(Header *)ptr-1;account(p->bytes,0);free(p);
+    if(!ptr)return;
+    Header *p=(Header *)ptr-1;
+    account(p->bytes,0);free(p);
 }
 void *display_host_realloc(void *ptr,size_t size) {
     if(!ptr)return display_host_alloc(size);

@@ -8,11 +8,12 @@ firmware sources. Outputs are explicitly simulated and not physical evidence.
 """
 from pathlib import Path
 import json
+import os
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILD = ROOT / ".cache/display-native"
+BUILD = Path(os.environ.get("FIVETRATUM_DISPLAY_BUILD", str(ROOT / ".cache/display-native"))).resolve()
 OUTPUT = BUILD / "output"
 
 def run():

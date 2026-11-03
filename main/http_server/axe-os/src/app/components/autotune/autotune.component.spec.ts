@@ -412,4 +412,11 @@ describe('Dynamic tuning controls', () => {
     tick(1000);expect(component.busy).toBeFalse();expect(component.message).toContain('normal mining verified');expect(service.command.calls.count()).toBe(2);
   }));
 
+  it('shows automatic cooling and recovery while tuning itself remains off', () => {
+    report.status.active=false;report.status.ownsSettings=true;report.status.state='restoring';
+    report.status.recovery={requested:true,phase:'validating-off',reason:'Automatic soft-limit recovery waiting for cooling'};component.load();
+    expect(component.activityBanner.label).toBe('RECOVERING MINING · AUTO-TUNING OFF');expect(component.activityBanner.detail).toContain('waiting for cooling');
+    expect(component.canRestoreAndResume).toBeFalse();expect(report.status.active).toBeFalse();expect(service.command).not.toHaveBeenCalled();
+  });
+
 });

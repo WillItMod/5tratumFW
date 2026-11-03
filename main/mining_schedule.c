@@ -279,7 +279,7 @@ void mining_schedule_manual_override(bool paused)
     xSemaphoreGive(mutex);
 }
 
-bool mining_schedule_resume_if_unchanged(uint32_t revision)
+static bool override_if_unchanged(uint32_t revision, bool paused)
 {
     if (!mutex || revision==UINT32_MAX) return false;
     xSemaphoreTake(mutex,portMAX_DELAY);
@@ -288,15 +288,17 @@ bool mining_schedule_resume_if_unchanged(uint32_t revision)
         evaluate_locked();
         allowed=revision==atomic_load(&control_revision);
         if (allowed) {
-            mining_schedule_engine_set_override(&engine,false);
+            mining_schedule_engine_set_override(&engine,paused);
             evaluate_locked();
             set_override_deadline_locked();
-            allowed=!state->SYSTEM_MODULE.mining_paused;
+            allowed=state->SYSTEM_MODULE.mining_paused==paused;
         }
     }
     xSemaphoreGive(mutex);
     return allowed;
 }
+bool mining_schedule_resume_if_unchanged(uint32_t revision) {return override_if_unchanged(revision,false);}
+bool mining_schedule_pause_if_unchanged(uint32_t revision) {return override_if_unchanged(revision,true);}
 
 void mining_schedule_clear_override(void)
 {

@@ -39,6 +39,7 @@ typedef struct {
     bool restore_pending, restore_committed, confirming, commanded, frozen;
     bool rail_wait, rail_commanded;
     bool recovery_requested;
+    bool recovery_automatic, automatic_recovery_attempted;
     RecoveryPhase recovery_phase;
     const char *recovery_reason;
     uint32_t recovery_schedule_revision;
@@ -432,6 +433,25 @@ static bool recovery_off_state(GlobalState *state) {
     return !state->ASIC_initalized && mining_schedule_applied_paused() &&
         state->POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==0;
 }
+static void queue_automatic_recovery(void) {
+    const uint32_t revision=mining_schedule_control_revision();
+    pthread_mutex_lock(&wire_gate);
+    const bool current=tuner.owner_epoch==atomic_load(&manual_epoch) && !tuner.frozen;
+    const bool paused=current && mining_schedule_pause_if_unchanged(revision);
+    atomic_store(&transition_live,false); /* The serialized owner returned from the old point. */
+    pthread_mutex_unlock(&wire_gate);
+    if (!paused) return; /* A newer user/policy request wins. */
+    tuner.recovery_automatic=true;
+    if (tuner.automatic_recovery_attempted || !tuner.backup_available ||
+        tuner.backup[0].value.f>tuner.core.config.maxFrequencyMHz ||
+        tuner.backup[1].value.u16>tuner.core.config.maxVoltageMv) {
+        recovery_block("automatic-fallback-unavailable-within-saved-ceilings");return;
+    }
+    tuner.automatic_recovery_attempted=true;tuner.backup_restored=false;tuner.backup_matches=0;
+    tuner.recovery_requested=true;tuner.recovery_phase=RECOVERY_VALIDATING_OFF;
+    tuner.recovery_schedule_revision=revision;tuner.recovery_poll_at=0;
+    tuner.recovery_reason="automatic-soft-limit-recovery";
+}
 void autotune_gamma_recovery_tick(GlobalState *state) {
     if (!tuner.initialized || !tuner.supported) return;
     pthread_mutex_lock(&tuner_mutex);
@@ -459,6 +479,10 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
     }
     if (tuner.recovery_phase==RECOVERY_VALIDATING_OFF || tuner.recovery_phase==RECOVERY_RESTORING) {
         if (!recovery_off_state(state)) {
+            if (tuner.recovery_automatic) {
+                tuner.recovery_reason="automatic-waiting-for-asic-off";
+                pthread_mutex_unlock(&tuner_mutex);return;
+            }
             recovery_block("recovery-requires-confirmed-asic-off");
             pthread_mutex_unlock(&tuner_mutex);return;
         }
@@ -479,11 +503,13 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
             sample.status_iout || sample.status_input || sample.status_temperature || sample.status_cml) {
             recovery_block("recovery-regulator-fault");pthread_mutex_unlock(&tuner_mutex);return;
         }
-        if (temperature>=70 || sample.temperature_c>=95) {
-            tuner.recovery_phase=RECOVERY_VALIDATING_OFF;tuner.recovery_reason="recovery-waiting-for-cooling";
+        const double asic_limit=tuner.recovery_automatic?fmin(70,tuner.core.config.maxAsicTempC-5):70;
+        const double vrm_limit=tuner.recovery_automatic?fmin(95,tuner.core.config.maxVrmTempC-5):95;
+        if (temperature>=asic_limit || sample.temperature_c>=vrm_limit) {
+            tuner.recovery_phase=RECOVERY_VALIDATING_OFF;tuner.recovery_reason=tuner.recovery_automatic?"automatic-waiting-for-cooling":"recovery-waiting-for-cooling";
             pthread_mutex_unlock(&tuner_mutex);return;
         }
-        tuner.recovery_phase=RECOVERY_RESTORING;tuner.recovery_reason="recovery-verifying-original-settings";
+        tuner.recovery_phase=RECOVERY_RESTORING;tuner.recovery_reason=tuner.recovery_automatic?"automatic-restoring-original-settings":"recovery-verifying-original-settings";
         if (!original_backup_verified()) {
             recovery_block("recovery-original-backup-invalid");pthread_mutex_unlock(&tuner_mutex);return;
         }
@@ -503,7 +529,7 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         if (!resumed) {
             recovery_block("recovery-resume-cancelled");pthread_mutex_unlock(&tuner_mutex);return;
         }
-        tuner.recovery_phase=RECOVERY_RESUMING;tuner.recovery_reason="recovery-waiting-for-normal-start";
+        tuner.recovery_phase=RECOVERY_RESUMING;tuner.recovery_reason=tuner.recovery_automatic?"automatic-waiting-for-normal-start":"recovery-waiting-for-normal-start";
         tuner.recovery_started=now;tuner.recovery_confirmations=0;tuner.recovery_sample_at=0;
         pthread_mutex_unlock(&tuner_mutex);return;
     }
@@ -519,7 +545,7 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         tuner.recovery_reason="recovery-waiting-for-normal-start";
         pthread_mutex_unlock(&tuner_mutex);return;
     }
-    tuner.recovery_phase=RECOVERY_VERIFYING;tuner.recovery_reason="recovery-verifying-live-original-point";
+    tuner.recovery_phase=RECOVERY_VERIFYING;tuner.recovery_reason=tuner.recovery_automatic?"automatic-verifying-live-original-point":"recovery-verifying-live-original-point";
     if (tuner.input.fault || !tuner.input.fanOk) {
         recovery_block("recovery-live-protection-or-cooling-fault");mining_schedule_manual_override(true);
         pthread_mutex_unlock(&tuner_mutex);return;
@@ -527,13 +553,18 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
     if (tuner.sensor_at!=tuner.recovery_sample_at) {
         tuner.recovery_sample_at=tuner.sensor_at;
         bool verified=backup_matches_live(state,now) && tuner.strict.status_word==0 &&
-            tuner.input.asicTempC<70 && tuner.input.vrmTempC<95 &&
+            tuner.input.asicTempC<fmin(70,tuner.recovery_automatic?tuner.core.config.maxAsicTempC:70) &&
+            tuner.input.vrmTempC<fmin(95,tuner.recovery_automatic?tuner.core.config.maxVrmTempC:95) &&
+            (!tuner.recovery_automatic || tuner.input.powerW<=tuner.core.config.maxPowerW) &&
+            (!tuner.recovery_automatic || (tuner.input.errorPercentage<=FWT_BOARD_ERROR_LIMIT &&
+                tuner.input.worstErrorPercentage<=FWT_CHIP_ERROR_LIMIT)) &&
             nvs_config_verify_autotune_restore(tuner.backup,BACKUP_FIELDS)==ESP_OK;
         tuner.recovery_confirmations=verified?tuner.recovery_confirmations+1:0;
     }
     if (tuner.recovery_confirmations>=2) {
         tuner.recovery_requested=false;tuner.recovery_phase=RECOVERY_COMPLETE;
-        tuner.recovery_reason="original-settings-restored-and-mining-verified";
+        tuner.recovery_reason=tuner.recovery_automatic?"automatic-original-restored-mining-verified":"original-settings-restored-and-mining-verified";
+        if (tuner.recovery_automatic) fwt_cancel(&tuner.core,tuner.recovery_reason);
         tuner.override_reason=tuner.recovery_reason;tuner.backup_restored=true;
         tuner.backup_matches=2;tuner.backup_match_at=tuner.sensor_at;
         autotune_gamma_owner_idle();
@@ -655,8 +686,11 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
         fwt_history_capture(&tuner.history,&tuner.core);
         if (request.kind == FWT_REQUEST_PAUSE) {
             tuner.override_reason = tuner.core.reason;
+            const bool constraint_floor=!strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") &&
+                !tuner.input.fault && !state->SYSTEM_MODULE.hardware_fault && !state->SYSTEM_MODULE.overheat_mode;
+            if (constraint_floor) queue_automatic_recovery();
             pthread_mutex_unlock(&tuner_mutex);
-            POWER_MANAGEMENT_stop_for_fault(state,"Auto-tuning stopped: sensor, cooling or operating-point fault");
+            if (!constraint_floor) POWER_MANAGEMENT_stop_for_fault(state,"Auto-tuning stopped: sensor, cooling or operating-point fault");
             return false;
         }
         if (request.kind == FWT_REQUEST_APPLY) {
@@ -752,13 +786,24 @@ bool autotune_gamma_transition_finished(GlobalState *state, bool success) {
 }
 void autotune_gamma_interrupt(const char *reason) {
     if (!reason) reason="interrupted";
+    if (tuner.initialized && !strcmp(reason,"mining-paused-or-faulted")) {
+        pthread_mutex_lock(&tuner_mutex);
+        const bool expected_auto_stop=tuner.recovery_requested && tuner.recovery_automatic &&
+            tuner.recovery_phase==RECOVERY_VALIDATING_OFF && recovery_restore_allowed(NULL);
+        pthread_mutex_unlock(&tuner_mutex);
+        if (expected_auto_stop) return; /* This stop is the admitted fallback's first stage. */
+    }
     autotune_gamma_manual_override();
     if (!tuner.initialized) return;
     pthread_mutex_lock(&tuner_mutex);
     if (tuner.recovery_requested) recovery_block(reason);
-    fwt_cancel(&tuner.core,reason);
+    const bool constraint_pause=!strcmp(reason,"mining-paused-or-faulted") &&
+        tuner.core.state==FWT_FAULTED && tuner.core.reason &&
+        !strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") &&
+        tuner.device && !tuner.device->SYSTEM_MODULE.hardware_fault && !tuner.device->SYSTEM_MODULE.overheat_mode;
+    if (!constraint_pause) fwt_cancel(&tuner.core,reason);
     if (!strcmp(reason,"firmware-update") || !strcmp(reason,"restart")) tuner.frozen=true;
-    tuner.override_reason = reason;
+    tuner.override_reason = constraint_pause?tuner.core.reason:reason;
     tuner.confirming = tuner.commanded = tuner.restore_pending = tuner.rail_wait = false;
     /* Keep the old wire epoch armed until the power owner acknowledges it.
      * Otherwise a preflight-approved old command could run after revocation. */
@@ -923,6 +968,7 @@ static cJSON *report(void) {
     cJSON *recovery=cJSON_AddObjectToObject(status,"recovery");
     if (!recovery) goto failed;
     BOOL(recovery,"requested",tuner.recovery_requested);
+    BOOL(recovery,"automatic",tuner.recovery_automatic);
     STR(recovery,"phase",recovery_phase_name(tuner.recovery_phase));
     STR(recovery,"reason",tuner.recovery_reason?tuner.recovery_reason:"not-requested");
     NUM(status,"runId",tuner.core.runId); NUM(status,"experiments",tuner.core.experiments);
@@ -1046,6 +1092,7 @@ static const char *handle_action(const cJSON *json) {
         if (epoch != atomic_load(&manual_epoch)) error="manual-control-changed";
         else if (!fwt_start(&tuner.core,&tuner.input,esp_timer_get_time())) error="miner-not-ready";
         else {
+            tuner.recovery_automatic=false;tuner.automatic_recovery_attempted=false;
             tuner.owner_epoch=epoch; tuner.backup_restored=false; tuner.override_reason=NULL;
             tuner.backup_matches=0;tuner.backup_match_at=0;
             tuner.target=tuner.core.current; tuner.commanded=tuner.confirming=false;
@@ -1070,6 +1117,7 @@ static const char *handle_action(const cJSON *json) {
         tuner.owner_epoch=recovery_epoch;
         tuner.recovery_schedule_revision=mining_schedule_control_revision();
         tuner.recovery_requested=true;tuner.recovery_phase=RECOVERY_VALIDATING_OFF;
+        tuner.recovery_automatic=false;
         tuner.recovery_reason="recovery-validating-powered-off-miner";tuner.recovery_poll_at=0;
         tuner.override_reason=tuner.recovery_reason;
     } else if (!strcmp(action->valuestring,"stop")) {
@@ -1077,6 +1125,7 @@ static const char *handle_action(const cJSON *json) {
         if (!exact_fields(json,names,1)) {error="invalid-request"; goto done;}
         if (!tuner.backup_available) {error="backup-unavailable"; goto done;}
         if (tuner.recovery_requested) recovery_block("recovery-cancelled-by-stop");
+        tuner.recovery_automatic=false;
         autotune_gamma_manual_override();
         fwt_cancel(&tuner.core,"restore-requested");
         tuner.restore_pending=true; tuner.restore_committed=false; tuner.backup_restored=false;
@@ -1122,7 +1171,7 @@ static esp_err_t get_activity(httpd_req_t *req) {
         ok=ok && cJSON_AddBoolToObject(json,"supported",tuner.supported) &&
             cJSON_AddBoolToObject(json,"active",!revoked&&tuner.core.active) &&
             cJSON_AddBoolToObject(json,"ownsSettings",!revoked&&(tuner.core.owns||tuner.restore_pending||tuner.recovery_requested)) &&
-            cJSON_AddBoolToObject(json,"fault",current_fault()||tuner.core.state==FWT_FAULTED) &&
+            cJSON_AddBoolToObject(json,"fault",current_fault()||(tuner.core.state==FWT_FAULTED&&!tuner.recovery_requested)) &&
             cJSON_AddStringToObject(json,"state",tuner.restore_pending||tuner.recovery_requested?"restoring":fwt_state_name(tuner.core.state)) &&
             cJSON_AddStringToObject(json,"reason",presentation_reason(now)) &&
             cJSON_AddStringToObject(json,"priority",fwt_priority_name(tuner.core.config.priority)) &&

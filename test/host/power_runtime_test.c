@@ -173,6 +173,7 @@ int main(int argc, char **argv) {
         serial_ready = true;
         assert(mining_stop(&global) == ESP_OK && applied && !global.ASIC_initalized);
         assert(last_voltage == 0 && reset_calls == 1 && frequency_calls == 1 && nonce_calls == 1 && flush_calls == 1);
+        assert(!global.SYSTEM_MODULE.hardware_fault);
         assert(global.POWER_MANAGEMENT_MODULE.frequency_value == 50 && global.POWER_MANAGEMENT_MODULE.expected_hashrate == 0);
         assert(saved_voltage == 1173 && saved_frequency == 625.125f && setting_writes == 0);
         assert(global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv == 0);

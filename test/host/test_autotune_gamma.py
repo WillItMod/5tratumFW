@@ -97,5 +97,7 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_recovery_does_not_commit_or_resume_after_manual_epoch_changes(self): self.run_case('recovery-commit-race')
     def test_recovery_never_completes_bad_live_readback_and_requests_pause_without_retry(self): self.run_case('recovery-live-failure')
     def test_failed_limit_floor_conditions_remain_visible_through_explicit_recovery(self): self.run_case('recovery-floor-event')
+    def test_automatic_floor_fallback_is_cancelled_by_new_manual_intent_without_retry(self): self.run_case('automatic-floor-cancel')
+    def test_automatic_fallback_never_confirms_excessive_asic_errors(self): self.run_case('automatic-floor-errors')
     def test_recovery_reopens_legacy_and_extended_journal_and_rejects_corruption(self): self.run_case('recovery-durable-formats')
 if __name__=='__main__': unittest.main()

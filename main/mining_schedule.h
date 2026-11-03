@@ -19,6 +19,7 @@ void mining_schedule_manual_override(bool paused);
  * has occurred. Caller holds the tuner wire lease for its own owner epoch. */
 uint32_t mining_schedule_control_revision(void);
 bool mining_schedule_resume_if_unchanged(uint32_t revision);
+bool mining_schedule_pause_if_unchanged(uint32_t revision);
 void mining_schedule_clear_override(void);
 bool mining_schedule_applied_paused(void);
 void mining_schedule_report_power(bool applied_paused, const char *error);

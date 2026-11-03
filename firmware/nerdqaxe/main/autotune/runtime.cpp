@@ -46,7 +46,7 @@ bool storagePrepared=false,powerInitialized=false,baselineLoadError=false;
 BlobStatus optionsStatus=BlobStatus::Unloaded,baselineStatus=BlobStatus::Unloaded;
 JsonDocument bootOptions;
 bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
-bool recoveryRequested=false;
+bool recoveryRequested=false,recoveryAutomatic=false;
 const char *recoveryPhase="idle",*recoveryReason="No recovery requested";
 uint64_t recoveryPolicy=0,recoveryStarted=0,recoveryLastSample=0;
 unsigned recoverySamples=0;
@@ -391,6 +391,7 @@ bool recoverySensorsSafe(Board *board,bool requireOff) {
     if(hardRecoveryFault(board)||!revisionCurrent()||(requireOff&&!board->isRecoveryPowerOff())) return false;
     TuningSensors sample{};if(!board->readRecoverySensors(sample)) return false;
     const uint64_t now=esp_timer_get_time();
+    if(recoveryAutomatic && !(sample.asicTempC+5<controller.config.maxAsicTempC && sample.vrmTempC+5<controller.config.maxVrmTempC)) return false;
     const double asic=std::min(std::min(80.0,controller.limits.maxAsicTempC>0?controller.limits.maxAsicTempC:80.0),backup["settings"][NVS_CONFIG_OVERHEAT_TEMP].as<double>()-5);
     const double vrm=std::min(std::min(95.0,controller.limits.maxVrmTempC>0?controller.limits.maxVrmTempC:95.0),backup["settings"][NVS_CONFIG_FAN1_OVERHEAT].as<double>()-5);
     return sample.capturedAtUs>0&&static_cast<uint64_t>(sample.capturedAtUs)<=now&&now-sample.capturedAtUs<=5000000&&
@@ -602,7 +603,9 @@ void tick() {
         if(!strcmp(recoveryPhase,"verifying")) {
             const bool healthy=observed.valid&&observed.miningActive&&!observed.fault&&observed.fanOk&&
                 observed.current.frequencyMHz==target.frequencyMHz&&observed.current.coreVoltageMv==target.coreVoltageMv&&
-                std::fabs(observed.voltageReadbackMv-target.coreVoltageMv)<=25&&safeToRestore()&&effectiveMatch(board);
+                std::fabs(observed.voltageReadbackMv-target.coreVoltageMv)<=25&&safeToRestore()&&effectiveMatch(board)&&
+                (!recoveryAutomatic || (observed.asicTempC<controller.config.maxAsicTempC&&observed.vrmTempC<controller.config.maxVrmTempC&&observed.powerW<=controller.config.maxPowerW&&
+                    observed.errorPercentage<=FWT_BOARD_ERROR_LIMIT&&observed.worstErrorPercentage<=FWT_CHIP_ERROR_LIMIT));
             if(healthy&&observed.sampleId!=recoveryLastSample){recoveryLastSample=observed.sampleId;++recoverySamples;}
             if(!healthy)recoverySamples=0;
             if(recoverySamples>=2){recoveryRequested=false;restoring=false;backupRestored=true;recoveryPhase="complete";recoveryReason="Original settings restored and normal mining verified";adapterReason=nullptr;fwt_cancel(&controller,"Original settings restored; mining resumed");return;}
@@ -635,9 +638,25 @@ void tick() {
         target = request.point; pending = true; voltageMatches = 0; transitionStarted = now;
         advanceTransition(now);
     } else if (request.kind == FWT_REQUEST_PAUSE) {
+        // A soft exhausted search has no admissible learned rollback. The
+        // already-authorized run may recover once to its immutable original;
+        // hardware, sensor and actuation faults never enter this path.
+        const bool automatic=controller.reason && !strcmp(controller.reason,"cannot-reduce-load-within-limits") &&
+            observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
+            backupAvailable && restoreWorker && !hardRecoveryFault(board) && revisionCurrent();
         FiveTratumMining::manualOverride(true);
         FiveTratumMining::updateControl();
         observed.valid=false; observed.miningActive=false;
+        if(automatic) {
+            fwt_cancel(&controller,"Automatic recovery after a rejected tuning point");
+            restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;
+            recoveryRequested=true;recoveryAutomatic=true;recoveryPhase="validating-off";
+            recoveryReason="Automatic soft-limit recovery waits for cooling below your tuning limits";
+            adapterReason=recoveryReason;recoveryPolicy=FiveTratumMining::policyRevision();
+            target={backup["frequencyMHz"].as<double>(),backup["coreVoltageMv"].as<double>()};
+            if(target.frequencyMHz>controller.config.maxFrequencyMHz || target.coreVoltageMv>controller.config.maxVoltageMv)
+                blockRestore("Original settings exceed your current tuning upper limits; explicit recovery is required");
+        }
     }
 }
 
@@ -693,7 +712,7 @@ bool activity(JsonDocument &document) {
     document["priority"]=fwt_priority_name(controller.config.priority);
     document["continuous"]=controller.config.continuous;
     document["runId"]=controller.runId;
-    auto recovery=document["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
+    auto recovery=document["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["automatic"]=recoveryAutomatic;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
     if(lastOwnerTickUs && now>=lastOwnerTickUs) document["controllerAgeSeconds"]=(now-lastOwnerTickUs)/1000000.0;
     else document["controllerAgeSeconds"]=nullptr;
     pthread_mutex_unlock(&mutex);
@@ -726,7 +745,7 @@ bool report(JsonDocument &document) {
     const bool revoked=!revisionCurrent();
     status["active"]=controller.active && !revoked; status["ownsSettings"]=(controller.owns || restoring || pending) && !revoked;
     status["runId"]=controller.runId; status["experiments"]=controller.experiments;
-    auto recovery=status["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
+    auto recovery=status["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["automatic"]=recoveryAutomatic;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
     pointJson(status,"baseline",controller.baselineAvailable?&controller.baseline:nullptr);
     pointJson(status,"current",observed.current.frequencyMHz>0?&observed.current:nullptr);
     pointJson(status,"best",controller.bestAvailable?&controller.best:nullptr);
@@ -803,12 +822,13 @@ const char *command(JsonObjectConst input) {
         if (observed.current.frequencyMHz<controller.config.minFrequencyMHz || observed.current.frequencyMHz>controller.config.maxFrequencyMHz ||
             observed.current.coreVoltageMv<controller.config.minVoltageMv || observed.current.coreVoltageMv>controller.config.maxVoltageMv) return "current-point-outside-bounds";
         if (!ensureBackup(board)) return "original-backup-unavailable";
+        if (!ensureRestoreWorker()) return "storage-unavailable";
         {
             WriteGuard activation;
             if (before!=Config::tuningMutationRevision() || handoff.load() || firmwareUpdates.load() || permanentFreeze.load()) return "manual-settings-changed";
             if (!fwt_start(&controller,&observed,esp_timer_get_time())) return "tuner-not-ready";
             fwt_history_capture(&history,&controller);
-            mutationRevision=before;backupRestored=false;adapterReason=nullptr;
+            mutationRevision=before;backupRestored=false;adapterReason=nullptr;recoveryAutomatic=false;
         }
         return nullptr;
     }
@@ -824,7 +844,7 @@ const char *command(JsonObjectConst input) {
             WriteGuard activation;
             if(before!=Config::tuningMutationRevision()||policy!=FiveTratumMining::policyRevision()||handoff.load()!=priorHandoff||firmwareUpdates.load()||permanentFreeze.load())return "manual-settings-changed";
             fwt_cancel(&controller,"Explicit original-settings recovery requested");pending=false;restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;
-            recoveryRequested=true;recoveryPhase="validating-off";recoveryReason="Waiting for verified off-state sensors";
+            recoveryRequested=true;recoveryAutomatic=false;recoveryPhase="validating-off";recoveryReason="Waiting for verified off-state sensors";
             recoveryPolicy=policy;mutationRevision=before;handoff.store(nullptr);
             target={backup["frequencyMHz"].as<double>(),backup["coreVoltageMv"].as<double>()};
         }
@@ -833,7 +853,7 @@ const char *command(JsonObjectConst input) {
     }
     if (!strcmp(action,"stop")) {
         if (input.size()!=1) return "invalid-request";
-        recoveryRequested=false;recoveryPhase="idle";recoveryReason="No recovery requested";
+        recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";
         fwt_cancel(&controller,"Disable requested; restoring original settings");pending=false;restoring=false;
         if (!backupAvailable || !backupMatches(board,backup)) return "original-backup-unavailable";
         restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;

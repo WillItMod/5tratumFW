@@ -25,7 +25,7 @@ static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
-    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryPhase="idle";recoveryReason="No recovery requested";observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
+    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
     ++hostGeneration;
@@ -58,6 +58,38 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario.rfind("auto-",0)==0) {
+        using namespace FiveTratumAutotune;
+        if(scenario=="auto-worker-failure") {workerCreateFail=true;assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="storage-unavailable"&&!controller.active);return 0;}
+        const char *fixed=R"({"action":"configure","config":{"priority":"balanced","continuous":true,"minFrequencyMHz":600,"maxFrequencyMHz":600,"minVoltageMv":1150,"maxVoltageMv":1150,"maxAsicTempC":60,"maxVrmTempC":70,"maxPowerW":200}})";
+        assert(response(fixed)["ok"]==true);start();const auto original=nvstore["fwtune/baseline"];
+        if(scenario=="auto-upper-caps") {
+            candidate(590,1150);for(int i=0;i<2;++i)step();assert(!pending);
+            auto d=snapshot();JsonDocument changed;changed["action"]="configure";changed["config"].set(d["config"]);changed["config"]["minFrequencyMHz"]=590;changed["config"]["maxFrequencyMHz"]=590;
+            std::string body;serializeJson(changed,body);assert(response(body.c_str())["ok"]==true);
+        }
+        asicDegrees=62;
+        if(scenario=="auto-hardware-fault")SYSTEM_MODULE.error=Board::TEMP_FAULT;
+        step();
+        if(scenario=="auto-hardware-fault") {for(int i=0;i<40;++i)step();assert(!recoveryRequested&&paused&&recoveryResumeCalls==0&&SYSTEM_MODULE.error==Board::TEMP_FAULT);return 0;}
+        if(scenario=="auto-upper-caps") {for(int i=0;i<40;++i)step();assert(paused&&!recoveryRequested&&recoveryResumeCalls==0&&snapshot()["status"]["recovery"]["phase"]=="blocked");return 0;}
+        assert(recoveryRequested&&recoveryAutomatic&&paused&&!controller.active);
+        if(scenario=="auto-storage")storageFail=true;
+        if(scenario=="auto-manual")Config::cfgSetU16("asicfrequency",650);
+        if(scenario=="auto-no-retry")resumeFail=true;
+        for(int i=0;i<4;++i)step();
+        assert(recoveryResumeCalls==0); // user ceiling cooldown is mandatory.
+        asicDegrees=50;
+        for(int i=0;i<40;++i)step();
+        auto result=snapshot();
+        if(scenario=="auto-cooling") {
+            assert(!paused&&recoveryResumeCalls==1&&!recoveryRequested&&!controller.active&&!controller.owns);
+            assert(result["backup"]["restored"]==true&&result["status"]["recovery"]["phase"]=="complete");
+            bool bad=false;for(auto event:result["status"]["events"].as<JsonArrayConst>())if(event["kind"]=="rejected"&&event["outcome"]=="failed")bad=true;assert(bad);
+        } else {assert(paused&&!recoveryRequested&&result["backup"]["restored"]==false);}
+        if(scenario=="auto-no-retry"){resumeFail=false;for(int i=0;i<40;++i)step();assert(paused&&recoveryResumeCalls==1);}
+        assert(nvstore["fwtune/baseline"]==original);return 0;
+    }
     if(scenario.rfind("recovery-",0)==0) {
         using namespace FiveTratumAutotune;
         start();const auto baselineRecord=nvstore["fwtune/baseline"];
@@ -79,7 +111,7 @@ int main(int argc,char **argv) {
         if(scenario=="recovery-sensor")offSensorFail=true;
         if(scenario=="recovery-gpio")offGpioGood=false;
         if(scenario=="recovery-after-stop"){assert(response("{\"action\":\"stop\"}")["ok"]==true);step();assert(restoring&&recoveryResumeCalls==0);}
-        assert(response("{\"action\":\"restore-and-resume\"}")["ok"]==true);
+        if(scenario!="recovery-floor")assert(response("{\"action\":\"restore-and-resume\"}")["ok"]==true);
         if(scenario=="recovery-duplicate"){const unsigned calls=hostNvsCalls;assert(response("{\"action\":\"restore-and-resume\"}")["error"]=="transition-in-progress"&&calls==hostNvsCalls);}
         assert(snapshot()["status"]["active"]==false&&snapshot()["status"]["recovery"]["requested"]==true);
         if(scenario=="recovery-storage")storageFail=true;
@@ -480,7 +512,7 @@ int main(int argc,char **argv) {
             if(scenario=="restore-reboot")boot();
             if(scenario=="restore-fault")SYSTEM_MODULE.error=Board::TEMP_FAULT;
             if(scenario=="restore-storage-failure")storageFail=true;
-            if(scenario=="restore-worker-failure")workerCreateFail=true;
+            if(scenario=="restore-worker-failure"){FiveTratumAutotune::restoreWorker=nullptr;workerCreateFail=true;}
             if(scenario=="restore-hot")asicDegrees=72;
             if(scenario=="restore-disabled-protection") {
                 Config::cfgSetU16("overheat_temp",0);Config::cfgSetU16("fan1_overheat",0);boot();

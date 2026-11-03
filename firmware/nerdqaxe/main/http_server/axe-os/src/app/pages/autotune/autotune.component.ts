@@ -259,6 +259,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (!this.isFresh) return {label:this.report ? 'TUNING STATUS UNAVAILABLE' : 'CHECKING TUNING STATUS',detail:'Waiting for a fresh miner report. Do not infer the current state from older readings.',kind:'unknown'};
     const report=this.report!, status=report.status;
     if (status.telemetry.fault === true) return {label:'TUNING FAULT',detail:'Miner protection is authoritative. Check the reported reason before taking action.',kind:'fault'};
+    if (this.recovery?.requested) return {label:'RECOVERING MINING · AUTO-TUNING OFF',detail:this.recoveryText,kind:'restoring'};
     if (this.limitReached && !this.isEngaged) return {label:'STOPPED — LIMIT REACHED',detail:this.limitStopText,kind:'suspended'};
     if (!this.isEngaged) return {label:'AUTO-TUNING OFF',detail:report.backup.restored ? 'The miner reports its original pre-tuning settings restored.' : 'The miner reports no active tuning ownership. Any previous phase is historical; check the reported reason before a new Start.',kind:'off'};
     if (status.state === 'restoring') return {label:'RESTORING ORIGINAL SETTINGS',detail:'Restoration is pending until the miner confirms the backup is restored and control is released.',kind:'restoring'};

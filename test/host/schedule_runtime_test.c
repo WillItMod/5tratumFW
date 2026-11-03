@@ -149,6 +149,7 @@ int main(int argc, char **argv)
         assert(!mining_schedule_resume_if_unchanged(old) && global.SYSTEM_MODULE.mining_paused);
     } else if (strcmp(scenario,"recovery-revision")==0) {
         uint32_t old=mining_schedule_control_revision();
+        assert(mining_schedule_pause_if_unchanged(old) && global.SYSTEM_MODULE.mining_paused);
         mining_schedule_manual_override(true);
         assert(tuning_revocations==1 && mining_schedule_control_revision()!=old);
         assert(!mining_schedule_resume_if_unchanged(old) && global.SYSTEM_MODULE.mining_paused);

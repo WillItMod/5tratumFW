@@ -30,6 +30,7 @@ static unsigned sensor_reads, counter_resets, fault_stops, point_changes;
 static atomic_uint_least32_t tx_failures;
 static double sensor_vout_delta;
 static float host_asic_temp=50,host_vrm_temp=55;
+static double host_error_percentage;
 static bool host_applied_paused,host_internal_stack=true,host_resume_refused;
 static uint32_t host_schedule_revision=1;
 static unsigned host_resume_requests;
@@ -45,6 +46,10 @@ void mining_schedule_manual_override(bool paused) {
 bool mining_schedule_resume_if_unchanged(uint32_t revision) {
     if (revision!=host_schedule_revision || host_resume_refused) return false;
     ++host_resume_requests;gs.SYSTEM_MODULE.mining_paused=false;return true;
+}
+bool mining_schedule_pause_if_unchanged(uint32_t revision) {
+    if (revision!=host_schedule_revision) return false;
+    gs.SYSTEM_MODULE.mining_paused=true;return true;
 }
 int64_t esp_timer_get_time(void) {return host_now;}
 void vTaskDelay(unsigned ticks) {(void)ticks;}
@@ -99,7 +104,7 @@ esp_err_t EMC2101_read_strict(float *temp,uint16_t *rpm) {
 GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state,uint64_t now) {
     (void)state;
     return (GammaAutotuneCounterSample){.valid=counters_ok,.captured_at_us=now-500000,
-        .sample_id=now-500000,.useful_ghs=gs.POWER_MANAGEMENT_MODULE.frequency_value*2.04,.error_percentage=0};
+        .sample_id=now-500000,.useful_ghs=gs.POWER_MANAGEMENT_MODULE.frequency_value*2.04,.error_percentage=host_error_percentage};
 }
 void hashrate_monitor_reset_measurements(void *state) {(void)state;++counter_resets;}
 void POWER_MANAGEMENT_stop_for_fault(void *state,const char *reason) {
@@ -245,18 +250,40 @@ int main(int argc,char **argv) {
     } else if(!strcmp(name,"recovery-floor-event")) {
         tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
         start();host_asic_temp=59.5f;step(false);
-        assert(fault_stops==1 && fwt_history_latest(&tuner.history)->kind==FWT_EVENT_REJECTED);
+        assert(fault_stops==0 && gs.SYSTEM_MODULE.mining_paused && !gs.SYSTEM_MODULE.hardware_fault);
+        assert(fwt_history_latest(&tuner.history)->kind==FWT_EVENT_REJECTED);
         const fwt_event rejected=*fwt_history_latest(&tuner.history);
         assert(rejected.outcome==FWT_OUTCOME_FAILED && rejected.hasConditions && !rejected.hasMeasurement && !rejected.hasScore);
-        /* Simulate the operator correcting the physical fault; recovery never clears it. */
-        gs.SYSTEM_MODULE.hardware_fault=false;host_asic_temp=50;confirmed_off();
-        assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        /* Ordinary power-owner stop preserves the soft tuner limit reason. */
+        autotune_gamma_interrupt("mining-paused-or-faulted");
+        assert(tuner.core.state==FWT_FAULTED && !strcmp(tuner.core.reason,"cannot-reduce-load-within-limits"));
+        confirmed_off();unsigned before=writes;
+        autotune_gamma_recovery_tick(&gs);
+        assert(tuner.recovery_requested && tuner.recovery_automatic && !host_resume_requests && writes==before);
+        assert(!strcmp(tuner.recovery_reason,"automatic-waiting-for-cooling"));
+        host_asic_temp=54;host_now+=TUNE_POLL_US;
         autotune_gamma_recovery_tick(&gs);recovery_finish();
+        assert(tuner.core.state==FWT_DISABLED && tuner.automatic_recovery_attempted);
         assert(fwt_history_latest(&tuner.history)->id==rejected.id);
         cJSON *json=report(),*events=cJSON_GetObjectItem(cJSON_GetObjectItem(json,"status"),"events");
         cJSON *last=cJSON_GetArrayItem(events,cJSON_GetArraySize(events)-1);
         assert(cJSON_IsObject(cJSON_GetObjectItem(last,"conditions")) && cJSON_IsNull(cJSON_GetObjectItem(last,"measurement")));
         cJSON_Delete(json);
+    } else if(!strcmp(name,"automatic-floor-cancel")) {
+        tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
+        start();host_asic_temp=59.5f;step(false);confirmed_off();
+        assert(tuner.recovery_requested && tuner.recovery_automatic);
+        mining_schedule_manual_override(true);host_asic_temp=50;
+        autotune_gamma_recovery_tick(&gs);
+        assert(!tuner.recovery_requested && !host_resume_requests && tuner.recovery_phase==RECOVERY_BLOCKED);
+        autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests);
+    } else if(!strcmp(name,"automatic-floor-errors")) {
+        tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
+        start();host_asic_temp=59.5f;step(false);confirmed_off();host_asic_temp=50;
+        autotune_gamma_recovery_tick(&gs);normal_resume_completed();host_error_percentage=2;
+        for (unsigned i=0;i<20 && tuner.recovery_requested;++i) {host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);}
+        assert(!tuner.recovery_requested && tuner.recovery_phase==RECOVERY_BLOCKED && !tuner.backup_restored);
+        assert(gs.SYSTEM_MODULE.mining_paused && host_resume_requests==1);
     } else if(!strcmp(name,"recovery-durable-formats")) {
         start();assert(nvs_config_apply_autotune_restore(tuner.backup,BACKUP_FIELDS)==ESP_OK);
         assert(journal()->bytes[4]==1 && nvs_config_verify_autotune_restore(tuner.backup,BACKUP_FIELDS)==ESP_OK);

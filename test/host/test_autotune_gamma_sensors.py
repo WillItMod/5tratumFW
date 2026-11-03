@@ -148,7 +148,8 @@ static esp_err_t i2c_bitaxe_register_read(int device,uint8_t reg,uint8_t *out,un
     else if(reg==EMC2101_EXTERNAL_TEMP_LSB)*out=(raw_temp&7)<<5;
     else if(reg==EMC2101_TACH_LSB)*out=raw_tach&255;
     else if(reg==EMC2101_TACH_MSB)*out=raw_tach>>8;
-    else assert(false);return ESP_OK;
+    else assert(false);
+    return ESP_OK;
 }
 '''
         harness+=method(actual,'esp_err_t EMC2101_read_strict(')
