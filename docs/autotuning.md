@@ -141,7 +141,8 @@ unavailable rather than as zero or a healthy result.
 Live values and completed measurement means have different purposes. Any
 reference/best comparison is for the **current search round**. A later round
 can remeasure its reference as conditions change; that reference is not the
-immutable original-settings backup. Browser trend observations start when the
+immutable original-settings backup. Experiment counts reset for each round;
+the reported rejected-window count accumulates across the current run. Browser trend observations start when the
 page is opened, contain connection gaps and are not additional controller
 samples. Reopening the page does not reconstruct a complete tuning history.
 
@@ -166,7 +167,10 @@ probe returns to the better measured point when there is sufficient headroom.
 No improvement is a valid result; the starting settings can remain the best.
 
 Board errors above 0.5% or worst-chip errors above 1% trigger the bounded error
-recovery policy after a full window. An additional 5mV is considered only with
+recovery policy after a full evaluation window. While holding or observing a
+result, a fresh error reading above either threshold instead triggers an
+immediate clock backoff; it does not wait for another full window. During
+full-window error recovery, an additional 5mV is considered only with
 both thermal and power headroom and within the user's voltage ceiling.
 Otherwise the controller reduces clock. Thermal/power protection backoffs can
 be larger than a normal search step (approximately 5%, rounded to the clock

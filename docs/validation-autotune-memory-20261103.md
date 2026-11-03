@@ -176,3 +176,69 @@ Software validation of these additions passed before target packaging:
 The source changes do not modify the controller's search, electrical limits,
 storage transactions or actuator policy. Fresh target builds, final package
 checks and the remaining supervised Gamma qualification stay separate gates.
+
+## Final software packages — still unpublished
+
+All three final packages were built and independently verified from clean source
+**`51afd35cdefc7b8e33c30eb6b06b8ee848a7aaf0`**. The Gamma build uses pinned SDK
+6.0.2; QAxe and OctAxe use pinned SDK 5.5.3. Later validation-only documentation
+commits do not change their binary/source provenance.
+
+The target compilers caught a portable counter-formatting error that the native
+host typedefs did not expose; `5d963f46` corrected both display paths with
+`PRIu32`. The full Nerd helper then caught a missing allocator link in its
+companion host candidate renderer; the final one-line test-target repair is
+`51afd35c`. Both native renderers and final target/package stages passed after
+these corrections. No firmware or test-pool/stack limit was raised to pass.
+
+A Gamma package check also caught a stale standard web-output cache, despite a
+separately successful new-interface preview build. That pair was rejected and
+retained privately. Both the embedded application interface and the separate
+WWW image were rebuilt from the final production output. The final verification
+parses the actual SPIFFS image, compares each served static asset with the tested
+production bundle and verifies the new Tuning page markers. Version strings and
+checksums alone are not treated as proof of the new page.
+
+| Candidate | Application SHA256 | Matching WWW SHA256 |
+|---|---|---|
+| Bitaxe Gamma Beta12 | `e40fb750861ab56ef703fec97a18a75e858f07db7d5ef351510f1e939c51a9fe` | `625fde61fd872e8c3401ffd48fd239dea474468e14f3b41d4d6f2d593c67a0f6` |
+| NerdQAxe++ Beta9 | `489b9cb96d9522f4d861342d2618d4c3c7699cbac555c3ddd42d28fbf94cd9f3` | `61cc3f452a481d0658afe7c8fff2e015092d92f9804bd64a2ee604f61144d807` |
+| NerdOctAxe Gamma Beta7 | `b7973349c7a845af76f64814dedb18434745fde05b27186f1a28eb7e1a2db447` | `c1bf2260861b90aa992aec8bb94f043ec5719e88dd7aa4365c17d0d3654202f0` |
+
+Each final manifest, checksum list, source archive/inventory, selected target
+configuration and actual application descriptor matched independently. Actual
+WWW contents matched all nine tested Gamma static assets and all 58 tested
+static assets in each Nerd family, excluding their separately checked generated
+version/provenance files. Gamma's embedded asset table also matched every WWW
+payload. The preserved older Nerd web images fail the new-interface marker
+check, providing a negative control.
+
+Read-only target stack analysis recompiles the selected units privately with
+stack-usage metadata, verifies unchanged executable code and leaves normal
+outputs intact. Gamma's linked display callback is 864 bytes, its snapshot
+function 144 bytes and renderer 320 bytes, with the existing 7168-byte LVGL task.
+The Nerd linked LVGL timer task is 432 bytes plus its 32-byte wrapper, snapshot
+128 bytes, Tuning renderer 192 bytes and update wrapper 64 bytes, with the
+existing 6000-byte task. These are function frames, not a complete worst-case
+call graph or physical high-water measurement. Existing formatting, library,
+RTOS, interrupt and error paths must still be considered.
+
+The unchanged production **5tratumOS 0.8.50** updater passed an offline replay
+with the actual final images and source/configuration checks. Five modeled
+paired jobs completed with exactly two uploads and retained settings: Gamma
+Beta11→Beta12, QAxe Beta8→Beta9, OctAxe Beta6→Beta7, and older QAxe Beta6 /OctAxe
+Beta4 migrations exercising optional-API redirects. Corrupted application and
+web payloads, wrong-family selection, stable-channel beta selection and repeat
+installation were rejected as applicable. The tested updater modules matched
+the retained published MAIN/DEV archives, and the network guard recorded zero
+events. No OS update is required to discover these releases once published.
+This is offline parser/state-machine evidence, not an installed OS or physical
+paired OTA test.
+
+The final presentation packages have **not been installed on the miners**.
+The earlier source357 physical results remain limited to those exact images.
+Gamma 602's unexplained strict admission fault, Gamma tuner backup/restore and
+the final supervised interface checks remain outstanding. Publication remains
+on hold until those checks pass. The previous write window is closed; the
+remaining tests need a newly confirmed powered window. No miners were contacted
+for this subsequent offline work.
