@@ -11,6 +11,7 @@ import { SwarmComponent } from './swarm/swarm.component';
 import { AlertComponent } from './alert/alert.component';
 import { SecurityComponent } from './security/security.component';
 import { CanSwarmComponent } from './can-swarm/can-swarm.component';
+import { AutotuneComponent, leaveAutotune } from './autotune/autotune.component';
 
 const routes: Routes = [{
   path: '',
@@ -31,6 +32,7 @@ const routes: Routes = [{
     },
     {path: 'pool', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'pool'}},
     {path: 'scheduler', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'scheduler'}},
+    {path: 'tuning', component: AutotuneComponent, canDeactivate: [leaveAutotune]},
     {path: 'network', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'network'}},
     {path: 'update', component: SettingsComponent, canDeactivate: [leaveSettings], data: {section: 'update'}},
     {

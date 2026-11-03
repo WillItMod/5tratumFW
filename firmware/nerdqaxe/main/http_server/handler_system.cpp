@@ -395,7 +395,7 @@ esp_err_t GET_system_info(httpd_req_t *req)
     doc["sv2ChannelType"]     = Config::getSV2ChannelType();
     doc["fallbackSv2ChannelType"] = Config::getFallbackSV2ChannelType();
     doc["voltage"]            = POWER_MANAGEMENT_MODULE.getVoltage();
-    doc["frequency"]          = board->getAsicFrequency();
+    doc["frequency"]          = board->getAsicFrequency(); // Saved-settings API used by 5tratumOS update verification.
     doc["defaultFrequency"]   = board->getDefaultAsicFrequency();
     doc["jobInterval"]        = board->getAsicJobIntervalMs();
     doc["stratumDifficulty"] = Config::getStratumDifficulty();

@@ -40,6 +40,8 @@ def stock_source():
 #include <cstdlib>
 #include <cstring>
 #include "crc.h"
+#include "autotune/write_gate.h"
+namespace FiveTratumAutotune { inline bool transitionAllowed() { return true; } }
 enum packet_type_t { JOB_PACKET, CMD_PACKET };
 struct bm_job { uint32_t starting_nonce, target, ntime, version; uint8_t merkle_root_be[32], prev_block_hash_be[32]; };
 static std::array<uint8_t,88> stockBytes{};
@@ -51,6 +53,7 @@ static int SERIAL_send(uint8_t *bytes, int length) {
 class StockAsic {
 public:
     bool m_transportFailed = false;
+    bool (*m_recoveryGuard)(void *) = nullptr;
     void send(uint8_t, uint8_t *, uint8_t);
     void send2(uint8_t, uint8_t, uint8_t);
     uint8_t sendWork(uint32_t, bm_job *);
@@ -73,9 +76,9 @@ class ProtocolTests(unittest.TestCase):
             reference = stock_source()
             (path / "stock_source.h").write_text(reference)
             binary = path / "codec-tests"
-            subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-vla-cxx-extension",
+            subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-vla-cxx-extension", "-pthread",
                 "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-I", str(path),
-                "-I", str(COMPONENT / "include"), str(COMPONENT / "bm1370_protocol.cpp"),
+                "-I", str(ROOT / "main"), "-I", str(COMPONENT / "include"), str(COMPONENT / "bm1370_protocol.cpp"),
                 str(COMPONENT / "crc.cpp"), str(ROOT / "test/host/bm1370_protocol_harness.cpp"), "-o", str(binary)], check=True)
             report = json.loads(subprocess.run([str(binary)], check=True, capture_output=True, text=True).stdout)
             self.assertEqual(report["groupsPassed"], 8)

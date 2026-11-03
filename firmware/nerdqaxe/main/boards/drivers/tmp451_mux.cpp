@@ -34,7 +34,7 @@ esp_err_t Tmp451Mux::select_channel(int channel)
         b1 ^= 1;
     }
 
-    ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_set_level(m_mux_a0, b0));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_set_level(m_mux_a1, b1));
+    ESP_RETURN_ON_ERROR(gpio_set_level(m_mux_a0, b0), TAG, "mux A0");
+    ESP_RETURN_ON_ERROR(gpio_set_level(m_mux_a1, b1), TAG, "mux A1");
     return ESP_OK;
 }

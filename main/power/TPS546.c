@@ -30,6 +30,8 @@
 #define TPS546_I2C_TIMEOUT_MS 500
 
 static const char *TAG = "TPS546";
+__attribute__((weak,noinline)) int autotune_gamma_wire_begin(bool safety_power_off) {(void)safety_power_off;return 1;}
+__attribute__((weak,noinline)) void autotune_gamma_wire_end(int token) {(void)token;}
 
 const TPS546_CONFIG TPS546_CONFIG_DEFAULT = {
     .TPS546_INIT_PHASE = TPS546_INIT_PHASE_SINGLE,
@@ -166,7 +168,10 @@ static esp_err_t smb_read_byte(uint8_t command, uint8_t *data)
  */
 static esp_err_t smb_write_byte(uint8_t command, uint8_t data)
 {
-    return i2c_bitaxe_register_write_byte(tps546_i2c_handle, command, data);
+    const int lease=autotune_gamma_wire_begin(command == PMBUS_OPERATION && data == OPERATION_OFF);
+    if (!lease) return ESP_FAIL;
+    esp_err_t result=i2c_bitaxe_register_write_byte(tps546_i2c_handle, command, data);
+    autotune_gamma_wire_end(lease);return result;
 }
 
 /**
@@ -201,7 +206,10 @@ static esp_err_t smb_read_word(uint8_t command, uint16_t *result)
  */
 static esp_err_t smb_write_word(uint8_t command, uint16_t data)
 {
-    return i2c_bitaxe_register_write_word(tps546_i2c_handle, command, data);
+    const int lease=autotune_gamma_wire_begin(false);
+    if (!lease) return ESP_FAIL;
+    esp_err_t result=i2c_bitaxe_register_write_word(tps546_i2c_handle, command, data);
+    autotune_gamma_wire_end(lease);return result;
 }
 
 /**
@@ -394,11 +402,11 @@ static uint16_t float_2_slinear11(float value)
  */
 static float ulinear16_2_float(uint16_t value)
 {
-    uint8_t voutmode;
+    uint8_t voutmode = 0;
     int exponent;
     float result;
 
-    smb_read_byte(PMBUS_VOUT_MODE, &voutmode);
+    if (smb_read_byte(PMBUS_VOUT_MODE, &voutmode) != ESP_OK || (voutmode & 0xE0)) return NAN;
 
     if (voutmode & 0x10) {
         // exponent is negative
@@ -419,11 +427,11 @@ static float ulinear16_2_float(uint16_t value)
 */
 static uint16_t float_2_ulinear16(float value)
 {
-    uint8_t voutmode;
+    uint8_t voutmode = 0;
     float exponent;
     uint16_t result;
 
-    smb_read_byte(PMBUS_VOUT_MODE, &voutmode);
+    if (smb_read_byte(PMBUS_VOUT_MODE, &voutmode) != ESP_OK || (voutmode & 0xE0)) return 0;
     if (voutmode & 0x10) {
         // exponent is negative
         exponent = -1 * ((~voutmode & 0x1F) + 1);
@@ -436,38 +444,37 @@ static uint16_t float_2_ulinear16(float value)
     return result;
 }
 
+static esp_err_t encode_voltage_checked(float volts, uint16_t *encoded)
+{
+    uint8_t mode = 0;
+    if (!encoded || !isfinite(volts) || volts <= 0 ||
+        smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK || (mode & 0xE0)) return ESP_FAIL;
+    int exponent = mode & 0x1F;
+    if (exponent & 0x10) exponent -= 32;
+    double raw = ldexp((double)volts, -exponent);
+    if (!isfinite(raw) || raw < 1 || raw > UINT16_MAX) return ESP_FAIL;
+    *encoded = (uint16_t)raw;
+    return ESP_OK;
+}
+
 static esp_err_t TPS546_write_vout_limit_ratios(float vout_command)
 {
-    ESP_LOGI(TAG, "Setting VOUT_OV_FAULT_LIMIT: %.2fx (%.2fV)", TPS546_INIT_VOUT_OV_FAULT_LIMIT,
-             vout_command * TPS546_INIT_VOUT_OV_FAULT_LIMIT);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_OV_FAULT_LIMIT, float_2_ulinear16(TPS546_INIT_VOUT_OV_FAULT_LIMIT)),
-                        TAG, "Failed to write VOUT_OV_FAULT_LIMIT");
-
-    ESP_LOGI(TAG, "Setting VOUT_OV_WARN_LIMIT: %.2fx (%.2fV)", TPS546_INIT_VOUT_OV_WARN_LIMIT,
-             vout_command * TPS546_INIT_VOUT_OV_WARN_LIMIT);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_OV_WARN_LIMIT, float_2_ulinear16(TPS546_INIT_VOUT_OV_WARN_LIMIT)),
-                        TAG, "Failed to write VOUT_OV_WARN_LIMIT");
-
-    ESP_LOGI(TAG, "Setting VOUT_MARGIN_HIGH: %.2fx (%.2fV)", TPS546_INIT_VOUT_MARGIN_HIGH,
-             vout_command * TPS546_INIT_VOUT_MARGIN_HIGH);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_MARGIN_HIGH, float_2_ulinear16(TPS546_INIT_VOUT_MARGIN_HIGH)),
-                        TAG, "Failed to write VOUT_MARGIN_HIGH");
-
-    ESP_LOGI(TAG, "Setting VOUT_MARGIN_LOW: %.2fx (%.2fV)", TPS546_INIT_VOUT_MARGIN_LOW,
-             vout_command * TPS546_INIT_VOUT_MARGIN_LOW);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_MARGIN_LOW, float_2_ulinear16(TPS546_INIT_VOUT_MARGIN_LOW)),
-                        TAG, "Failed to write VOUT_MARGIN_LOW");
-
-    ESP_LOGI(TAG, "Setting VOUT_UV_WARN_LIMIT: %.2fx (%.2fV)", TPS546_INIT_VOUT_UV_WARN_LIMIT,
-             vout_command * TPS546_INIT_VOUT_UV_WARN_LIMIT);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_UV_WARN_LIMIT, float_2_ulinear16(TPS546_INIT_VOUT_UV_WARN_LIMIT)),
-                        TAG, "Failed to write VOUT_UV_WARN_LIMIT");
-
-    ESP_LOGI(TAG, "Setting VOUT_UV_FAULT_LIMIT: %.2fx (%.2fV)", TPS546_INIT_VOUT_UV_FAULT_LIMIT,
-             vout_command * TPS546_INIT_VOUT_UV_FAULT_LIMIT);
-    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_UV_FAULT_LIMIT, float_2_ulinear16(TPS546_INIT_VOUT_UV_FAULT_LIMIT)),
-                        TAG, "Failed to write VOUT_UV_FAULT_LIMIT");
-
+    /* Preserve the existing ratio-register values, while rejecting an
+     * unreadable exponent rather than emitting a guessed PMBus command. */
+    const uint8_t registers[] = {PMBUS_VOUT_OV_FAULT_LIMIT, PMBUS_VOUT_OV_WARN_LIMIT,
+        PMBUS_VOUT_MARGIN_HIGH, PMBUS_VOUT_MARGIN_LOW, PMBUS_VOUT_UV_WARN_LIMIT,
+        PMBUS_VOUT_UV_FAULT_LIMIT};
+    const float ratios[] = {TPS546_INIT_VOUT_OV_FAULT_LIMIT, TPS546_INIT_VOUT_OV_WARN_LIMIT,
+        TPS546_INIT_VOUT_MARGIN_HIGH, TPS546_INIT_VOUT_MARGIN_LOW, TPS546_INIT_VOUT_UV_WARN_LIMIT,
+        TPS546_INIT_VOUT_UV_FAULT_LIMIT};
+    uint16_t encoded[6];
+    for (unsigned i = 0; i < 6; ++i) {
+        if (encode_voltage_checked(ratios[i], &encoded[i]) != ESP_OK) return ESP_FAIL;
+    }
+    for (unsigned i = 0; i < 6; ++i) {
+        if (smb_write_word(registers[i], encoded[i]) != ESP_OK) return ESP_FAIL;
+    }
+    (void)vout_command;
     return ESP_OK;
 }
 
@@ -1247,7 +1254,7 @@ esp_err_t TPS546_set_vout(float volts) {
             return ESP_FAIL;
         } else {
             /* set the output voltage */
-            value = float_2_ulinear16(volts);
+            if (encode_voltage_checked(volts, &value) != ESP_OK) return ESP_FAIL;
             if (smb_write_word(PMBUS_VOUT_COMMAND, value) != ESP_OK) {
                 ESP_LOGE(TAG, "Could not set Vout to %1.2f V", volts);
                 return ESP_FAIL;
@@ -1272,10 +1279,44 @@ esp_err_t TPS546_set_vout(float volts) {
 
             if (value8 != OPERATION_ON) {
                 ESP_LOGE(TAG, "Operation not set to ON: %02X", value8);
+                return ESP_FAIL;
             }
 
         }
     }
+    return ESP_OK;
+}
+
+esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
+{
+    if (!sample) return ESP_ERR_INVALID_ARG;
+    TPS546_StrictTelemetry result = {0};
+    uint8_t mode = 0;
+    uint16_t vin = 0, vout = 0, iout = 0, temperature = 0;
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK || (mode & 0xE0) ||
+        smb_read_word(PMBUS_READ_VIN, &vin) != ESP_OK ||
+        smb_read_word(PMBUS_READ_VOUT, &vout) != ESP_OK ||
+        smb_read_word(PMBUS_READ_IOUT, &iout) != ESP_OK ||
+        smb_read_word(PMBUS_READ_TEMPERATURE_1, &temperature) != ESP_OK ||
+        smb_read_word(PMBUS_STATUS_WORD, &result.status_word) != ESP_OK ||
+        smb_read_byte(PMBUS_STATUS_VOUT, &result.status_vout) != ESP_OK ||
+        smb_read_byte(PMBUS_STATUS_IOUT, &result.status_iout) != ESP_OK ||
+        smb_read_byte(PMBUS_STATUS_INPUT, &result.status_input) != ESP_OK ||
+        smb_read_byte(PMBUS_STATUS_TEMPERATURE, &result.status_temperature) != ESP_OK ||
+        smb_read_byte(PMBUS_STATUS_CML, &result.status_cml) != ESP_OK) return ESP_FAIL;
+    int exponent = mode & 0x1F;
+    if (exponent & 0x10) exponent -= 32;
+    /* Automatic steps are 5 mV. A coarser converter format cannot implement
+     * that envelope, even if a particular cached value looks plausible. */
+    if (ldexpf(1.0f,exponent) > 0.005f) return ESP_FAIL;
+    result.vout = ldexpf((float)vout, exponent);
+    result.vin = slinear11_2_float(vin);
+    result.iout = slinear11_2_float(iout);
+    result.temperature_c = slinear11_2_float(temperature);
+    if (!isfinite(result.vin) || result.vin <= 0 || !isfinite(result.vout) || result.vout <= 0 ||
+        !isfinite(result.iout) || result.iout < 0 || !isfinite(result.temperature_c) ||
+        result.temperature_c < -40 || result.temperature_c >= 150) return ESP_FAIL;
+    *sample = result;
     return ESP_OK;
 }
 

@@ -4,6 +4,7 @@
 #include "esp_timer.h"
 
 #include "global_state.h"
+#include "autotune/runtime.h"
 
 #include "http_cors.h"
 #include "http_utils.h"
@@ -39,6 +40,7 @@ esp_err_t POST_WWW_update(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    FiveTratumAutotune::FirmwareUpdateGuard tuningFreeze;
     int remaining = req->content_len;
 
     const esp_partition_t *www_partition =
@@ -122,6 +124,7 @@ esp_err_t POST_OTA_update(httpd_req_t *req)
     }
 
     esp_ota_handle_t ota_handle;
+    FiveTratumAutotune::FirmwareUpdateGuard tuningFreeze;
     int remaining = req->content_len;
 
     uint8_t prefix[FiveTratumDisplayOta::ImagePrefixBytes];

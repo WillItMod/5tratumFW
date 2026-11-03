@@ -1,5 +1,11 @@
 # 5tratumFW — choose your device
 
+**Unreleased development:** Gamma Beta12, NerdQAxe++ Beta9 and NerdOctAxe Gamma
+Beta7 add the [adaptive Tuning page](docs/autotuning.md), explicit waiver and
+verified original-settings backup/restore. QAxe/OctAxe also add ASIC error
+percentages. These candidates are being validated; the public downloads below
+remain the previous released pairs until publication.
+
 **[Download firmware — Gamma, QAxe or OctAxe](DOWNLOADS.md)**
 
 5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** The firmware families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
@@ -53,7 +59,7 @@ The guard validates an existing NVS board identity; it does not physically ident
 - Weekly pool-switch time points saved on the miner alongside the independent power scheduler.
 - Weekly tuning-profile time points select saved clock/voltage slots; tuning and pool schedules use an explicit fixed UTC offset without automatic daylight-saving changes.
 
-No autotuning, clock presets, authenticated native MUX management or independent per-chip mining are implemented or validated. Existing thermal protection remains active and may change operating settings after overheating.
+The published Gamma Beta11, QAxe Beta8 and OctAxe Beta6 pairs do not include auto-tuning. The unreleased candidates described above add an opt-in controller; software implementation does not establish hardware qualification. Clock presets, authenticated native MUX management and independent per-chip mining remain unimplemented. Existing thermal protection remains active and may change operating settings after overheating.
 
 ## Install and operate
 

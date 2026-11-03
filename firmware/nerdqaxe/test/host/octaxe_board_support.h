@@ -118,7 +118,12 @@ public:
     virtual ~Board() { delete m_tps; }
     virtual bool initBoard() { ++mockParentInitCalls; return mockParentInit; }
     virtual void requestChipTemps() {}
+    virtual const char *tuningAsicSensorLabel() const { return "Shared TMP1075"; }
     virtual float getVRTemp() { return 0; }
+    virtual bool tuningAsicTemperature(float &, int64_t &) { return false; }
+    virtual bool refreshTuningTemperatures() { return true; }
+    virtual float tuningVrmOffset() const { return 0; }
+    bool readTuningChipTemperatures(float &maximum, int64_t &oldest) { maximum=50;oldest=1;return true; }
     virtual const EthPins *getEthPins() { return nullptr; }
     void setChipTemp(int index, float value) { m_chipTemps.at(index) = value; }
     float getChipTemp(int index) const { return m_chipTemps.at(index); }
@@ -128,6 +133,7 @@ class NerdQaxePlus : public Board {
 public:
     void requestChipTemps() override;
     float getVRTemp() override;
+    bool tuningAsicTemperature(float &maximum, int64_t &oldest) override { maximum=50;oldest=1;return true; }
     const EthPins *getEthPins() override { return &mockEthPins; }
 };
 class NerdQaxePlus2 : public NerdQaxePlus {};

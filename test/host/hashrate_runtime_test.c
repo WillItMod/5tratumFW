@@ -60,6 +60,33 @@ int main(void)
     assert(!hashrate_monitor_display_snapshot(NULL, UINT64_C(11000000)).fresh);
     state.DEVICE_CONFIG.family.asic_count = 2;
     assert(!hashrate_monitor_display_snapshot(&state, UINT64_C(11000000)).fresh);
+    state.DEVICE_CONFIG.family.asic_count = 1;
+    state.DEVICE_CONFIG.family.asic.small_core_count = 2040;
+    state.POWER_MANAGEMENT_MODULE.frequency_value = 525;
+    hashrate_monitor_reset_measurements(&state);
+    const register_type_t registers[] = {REGISTER_TOTAL_COUNT,REGISTER_ERROR_COUNT,
+        REGISTER_DOMAIN_0_COUNT,REGISTER_DOMAIN_1_COUNT,REGISTER_DOMAIN_2_COUNT,REGISTER_DOMAIN_3_COUNT};
+    for (unsigned i = 0; i < 6; ++i)
+        hashrate_monitor_register_read(&state,registers[i],0,100,UINT64_C(20000000));
+    assert(!hashrate_monitor_autotune_snapshot(&state,UINT64_C(20000000)).valid);
+    for (unsigned i = 0; i < 6; ++i)
+        hashrate_monitor_register_read(&state,registers[i],0,i == 1 ? 100 : 300,UINT64_C(22000000));
+    GammaAutotuneCounterSample tuning=hashrate_monitor_autotune_snapshot(&state,UINT64_C(22000000));
+    assert(tuning.valid && tuning.error_percentage == 0 && tuning.useful_ghs > 0 && tuning.sample_id == UINT64_C(22000000));
+    assert(!hashrate_monitor_autotune_snapshot(&state,UINT64_C(37000001)).valid);
+    domains[3].rate_sample_us=0;
+    assert(!hashrate_monitor_autotune_snapshot(&state,UINT64_C(22000000)).valid);
+    domains[3].rate_sample_us=UINT64_C(22000000);
+    float domain_hashrate=domains[3].hashrate;
+    domains[3].hashrate=1; /* Positive but nearly silent, not healthy liveness. */
+    assert(!hashrate_monitor_autotune_snapshot(&state,UINT64_C(22000000)).valid);
+    domains[3].hashrate=domain_hashrate;
+    errors[0].hashrate=total[0].hashrate*2;
+    assert(!hashrate_monitor_autotune_snapshot(&state,UINT64_C(22000000)).valid);
+    hashrate_monitor_register_read(&state,REGISTER_TOTAL_COUNT,0,400,UINT64_C(38000000));
+    assert(total[0].rate_sample_us == 0); /* Long gap cannot revive an old rate. */
+    hashrate_monitor_register_read(&state,REGISTER_TOTAL_COUNT,0,600,UINT64_C(40000000));
+    assert(total[0].rate_sample_us == UINT64_C(40000000));
     assert(pthread_mutex_destroy(&monitor->lock) == 0);
     puts("PASS: production counter metadata, first/ignored samples, stale positive expiry, fresh zero and reset");
     return 0;

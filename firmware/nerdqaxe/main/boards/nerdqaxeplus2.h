@@ -16,6 +16,7 @@ class NerdQaxePlus2 : public NerdQaxePlus {
 
   public:
     NerdQaxePlus2();
+    const char *tuningAsicSensorLabel() const override { return "Shared TMP1075 ASIC-area temperature with existing +10 C correction"; }
     bool initBoard() override;
     bool initAsics() override;
     bool setVoltage(float core_voltage) override;

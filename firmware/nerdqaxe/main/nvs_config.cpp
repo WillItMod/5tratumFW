@@ -4,12 +4,14 @@
 #include "nvs.h"
 #include "nvs_config.h"
 #include "strict_config_read.h"
+#include "autotune/write_gate.h"
 #include "http_server/config_transaction.h"
 #include "macros.h"
 #include "ArduinoJson.h"
 #include "psram_allocator.h"
 
 #include <pthread.h>
+#include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -35,6 +37,23 @@ static JsonDocument   s_doc(&s_allocator);
 static pthread_mutex_t s_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool s_dirty       = false;
 static bool s_initialized = false;
+static std::atomic<uint64_t> s_tuningRevision{0};
+static const char *const tuningKeys[] = {
+    NVS_CONFIG_ASIC_FREQ, NVS_CONFIG_ASIC_VOLTAGE,
+    NVS_CONFIG_INVERT_FAN_POLARITY, NVS_CONFIG_AUTO_FAN_POLARITY, NVS_CONFIG_FAN_PWM_POLARITY,
+    NVS_CONFIG_AUTO_FAN_SPEED, NVS_CONFIG_FAN_SPEED, NVS_CONFIG_OVERHEAT_TEMP,
+    NVS_CONFIG_PID_TARGET_TEMP, NVS_CONFIG_PID_P, NVS_CONFIG_PID_I, NVS_CONFIG_PID_D,
+    NVS_CONFIG_FAN1_SPEED, NVS_CONFIG_FAN1_MODE, NVS_CONFIG_FAN1_PID_TEMP,
+    NVS_CONFIG_FAN1_PID_P, NVS_CONFIG_FAN1_PID_I, NVS_CONFIG_FAN1_PID_D,
+    NVS_CONFIG_FAN1_OVERHEAT, NVS_CONFIG_FAN_PID_USE_MAX
+};
+static bool isTuningKey(const char *path) {
+    if (!path) return false;
+    for (const char *key : tuningKeys) if (strcmp(path, key) == 0) return true;
+    return false;
+}
+uint64_t tuningMutationRevision() { return s_tuningRevision.load(); }
+
 
 // The flush task is intentionally created with xTaskCreate(), not
 // xTaskCreatePSRAM(). It is the only async path that writes config to NVS.
@@ -426,11 +445,43 @@ static const char* cfgGetStr_locked(const char *path, const char *def)
 
 bool cfgApplyPatchPersisted(JsonObjectConst patch)
 {
+    // Revoke even a same-value explicit manual/scheduled request before I/O.
+    for (JsonPairConst pair : patch) if (isTuningKey(pair.key().c_str())) { FiveTratumAutotune::WriteGuard wire; ++s_tuningRevision; break; }
     PThreadGuard guard(s_mutex);
     const bool ok = FiveTratumProfiles::applyPersistedPatch(s_doc, patch,
         [](const JsonDocument &next, void *) { return write_document_to_nvs(next); }, nullptr);
     if (ok) s_dirty = false; // The complete latest config, including pending ordinary changes, was committed.
     return ok;
+}
+
+bool captureTuningSettings(JsonObject output) {
+    PThreadGuard guard(s_mutex);
+    for (const char *key : tuningKeys) {
+        const JsonVariantConst value = s_doc[key];
+        if (value.isNull()) output[key] = nullptr;
+        else if (value.is<uint16_t>() || value.is<bool>()) output[key].set(value);
+        else return false;
+    }
+    return true;
+}
+bool validTuningSettings(JsonObjectConst input) {
+    if (input.size() != sizeof(tuningKeys) / sizeof(tuningKeys[0])) return false;
+    for (const char *key : tuningKeys) if (!input[key].is<uint16_t>() || input[key].is<bool>()) return false;
+    return true;
+}
+bool restoreTuningSettings(JsonObjectConst input) {
+    if (!validTuningSettings(input)) return false;
+    {
+        PThreadGuard guard(s_mutex);
+        JsonDocument next(s_doc.allocator());
+        if (!next.set(s_doc)) return false;
+        for (const char *key : tuningKeys) next[key] = input[key].as<uint16_t>();
+        if (next.overflowed() || !write_document_to_nvs(next)) return false;
+        swap(s_doc, next); s_dirty = false;
+    }
+    // Never acquire the physical-frame gate while retaining the config mutex.
+    { FiveTratumAutotune::WriteGuard wire; ++s_tuningRevision; }
+    return true;
 }
 
 char* cfgGetStrAlloc(const char *path, const char *def)
@@ -462,6 +513,7 @@ bool cfgReadU16(const char *path, uint16_t &output)
 
 void cfgSetU16(const char *path, uint16_t value)
 {
+    if (isTuningKey(path)) { FiveTratumAutotune::WriteGuard wire; ++s_tuningRevision; }
     PThreadGuard guard(s_mutex);
     s_doc[path] = value;
     s_dirty = true;
@@ -478,6 +530,7 @@ bool cfgGetBool(const char *path, bool def)
 
 void cfgSetBool(const char *path, bool value)
 {
+    if (isTuningKey(path)) { FiveTratumAutotune::WriteGuard wire; ++s_tuningRevision; }
     PThreadGuard guard(s_mutex);
     s_doc[path] = value;
     s_dirty = true;

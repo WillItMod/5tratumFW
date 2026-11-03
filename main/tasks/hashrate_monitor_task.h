@@ -26,6 +26,12 @@ void hashrate_monitor_task(void *pvParameters);
 void hashrate_monitor_register_read(void *pvParameters, register_type_t register_type, uint8_t asic_nr, uint32_t value, uint64_t timestamp_us);
 void hashrate_monitor_reset_measurements(void *pvParameters);
 HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *pvParameters, uint64_t now_us);
+typedef struct {
+    bool valid;
+    uint64_t captured_at_us, sample_id;
+    double useful_ghs, error_percentage;
+} GammaAutotuneCounterSample;
+GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state, uint64_t now_us);
 
 void update_hashrate(measurement_t * measurement, uint32_t value);
 void update_hash_counter(measurement_t * measurement, uint32_t value, uint64_t time_us);

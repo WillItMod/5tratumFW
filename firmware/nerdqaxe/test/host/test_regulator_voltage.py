@@ -61,6 +61,7 @@ esp_err_t i2c_master_cmd_begin(int, i2c_cmd_handle_t, int) { ++executions; retur
 void i2c_cmd_link_delete(i2c_cmd_handle_t) { ++deletions; }
 class TPS53647 {
 protected:
+    bool m_initialized = false;
     uint8_t m_i2cAddr = 0;
     float m_hwMinVoltage = 0, m_initVOutMin = 0, m_initVOutMax = 0;
     uint8_t m_initOnOffConfig = 0, m_initOtWarnLimit = 0, m_initOtFaultLimit = 0;

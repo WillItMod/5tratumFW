@@ -45,6 +45,8 @@ class NerdQaxePlus : public Board {
     virtual bool setVoltage(float core_voltage);
 
     virtual void setFanPolarity(bool invert);
+    bool restoreTuningFanPolarity(bool invert, bool (*allowed)()) override;
+    bool readTuningFan(int channel, uint16_t &rpm) override;
     virtual void setFanSpeedCh(int channel, float perc);
     virtual void getFanSpeedCh(int channel, uint16_t *rpm);
 
@@ -58,6 +60,12 @@ class NerdQaxePlus : public Board {
     virtual float getVout();
     virtual float getIout();
     virtual float getPout();
+    const char *tuningAsicSensorLabel() const override { return "Shared TMP1075 ASIC-area temperature"; }
+    const char *tuningVrmSensorLabel() override;
+    bool readTuningSensors(TuningSensors &output) override;
+    bool setTuningVoltage(float volts, bool (*allowed)()) override;
+    bool tuningAsicTemperature(float &maximum, int64_t &oldest) override;
+    virtual float tuningVrmOffset() const { return 0; }
     virtual void requestBuckTelemtry();
     virtual void requestChipTemps();
 

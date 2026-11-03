@@ -82,6 +82,12 @@ class MiningPowerTests(unittest.TestCase):
     def test_failed_voltage_raise_blocks_upclock_and_retries_the_pair(self):
         self.run_case("settings-up-voltage-fail")
 
+    def test_headroom_is_rechecked_after_downclock_before_voltage_drop(self):
+        self.run_case("guard-after-downclock")
+
+    def test_cancelled_before_first_pll_frame_normalizes_live_reporting_on_manual_noop(self):
+        self.run_case("revoked-pll-noop-reporting")
+
     def test_workers_gate_on_current_stop_reasons_before_uart_operations(self):
         self.run_case("worker-gates")
         jobs = (ROOT / "main/tasks/create_jobs_task.c").read_text()

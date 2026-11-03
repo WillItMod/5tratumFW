@@ -6,6 +6,8 @@
 #include "nvs_config.h"
 #include "esp_log.h"
 #include "w5500.h"
+#include "esp_timer.h"
+#include <cmath>
 #include "../displays/displayDriver.h"
 
 const static char* TAG = "board";
@@ -79,14 +81,20 @@ void Board::setChipTemp(int nr, float temp) {
     if (nr < 0 || nr >= m_asicCount) {
         return;
     }
+    pthread_mutex_lock(&m_chipTemperatureMutex);
     m_chipTemps[nr] = temp;
+    m_chipTemperatureAtUs[nr] = std::isfinite(temp) && temp > 0 ? esp_timer_get_time() : 0;
+    pthread_mutex_unlock(&m_chipTemperatureMutex);
 }
 
 float Board::getChipTemp(int nr) {
     if (nr < 0 || nr >= m_asicCount) {
         return 0.0f;
     }
-    return m_chipTemps[nr];
+    pthread_mutex_lock(&m_chipTemperatureMutex);
+    const float value = m_chipTemps[nr];
+    pthread_mutex_unlock(&m_chipTemperatureMutex);
+    return value;
 }
 
 void Board::requestChipTemps() {
@@ -94,10 +102,12 @@ void Board::requestChipTemps() {
 }
 
 float Board::getMaxChipTemp() {
+    pthread_mutex_lock(&m_chipTemperatureMutex);
     float maxTemp = 0.0f;
     for (int i=0;i<m_asicCount;i++) {
         maxTemp = std::max(maxTemp, m_chipTemps[i]);
     }
+    pthread_mutex_unlock(&m_chipTemperatureMutex);
     return maxTemp;
 }
 
@@ -194,4 +204,21 @@ bool Board::validateFrequency(float frequency) {
         return false;
     }
     return true;
+}
+
+bool Board::readTuningChipTemperatures(float &maximum, int64_t &oldest) {
+    pthread_mutex_lock(&m_chipTemperatureMutex);
+    const int64_t now = esp_timer_get_time();
+    bool valid = m_asicCount > 0 && m_asicCount <= 64 && m_chipTemps;
+    maximum = 0; oldest = now;
+    for (int i = 0; valid && i < m_asicCount; ++i) {
+        const float value = m_chipTemps[i];
+        const int64_t captured = m_chipTemperatureAtUs[i];
+        valid = std::isfinite(value) && value > 0 && value < 125 && captured > 0 &&
+                now >= captured && now - captured <= 5000000;
+        maximum = std::max(maximum, value);
+        oldest = std::min(oldest, captured);
+    }
+    pthread_mutex_unlock(&m_chipTemperatureMutex);
+    return valid;
 }

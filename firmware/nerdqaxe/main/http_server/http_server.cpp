@@ -23,6 +23,7 @@
 #include "handler_capabilities.h"
 #include "handler_status.h"
 #include "handler_profiles.h"
+#include "autotune/runtime.h"
 #include "handler_mining.h"
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
 #include "handler_asic_capture.h"
@@ -205,6 +206,9 @@ esp_err_t start_rest_server(void * pvParameters)
         {.uri = "/api/5tratum/profiles/apply", .method = HTTP_POST, .handler = POST_five_tratum_profiles_apply, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_GET, .handler = GET_five_tratum_pool_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_POST, .handler = POST_five_tratum_pool_schedule, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/autotune", .method = HTTP_GET, .handler = GET_five_tratum_autotune, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/autotune", .method = HTTP_POST, .handler = POST_five_tratum_autotune, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/autotune", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
         {.uri = "/api/5tratum/tuning-schedule", .method = HTTP_GET, .handler = GET_five_tratum_tuning_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/tuning-schedule", .method = HTTP_POST, .handler = POST_five_tratum_tuning_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/profiles", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},

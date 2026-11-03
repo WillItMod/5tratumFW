@@ -2,6 +2,7 @@
 #include "esp_log.h"
 
 #include "global_state.h"
+#include "autotune/runtime.h"
 #include "http_cors.h"
 #include "http_utils.h"
 
@@ -23,6 +24,7 @@ esp_err_t POST_restart(httpd_req_t *req)
         return ESP_FAIL;
     }
 */
+    FiveTratumAutotune::externalHandoff("Restart requested");
     ESP_LOGI(TAG, "Restarting System because of API Request");
 
     // Send HTTP response before restarting

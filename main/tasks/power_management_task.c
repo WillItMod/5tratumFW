@@ -14,6 +14,7 @@
 #include "serial.h"
 #include "mining_schedule.h"
 #include "mining_state.h"
+#include "autotune_runtime.h"
 #include <math.h>
 
 #define POLL_RATE 100
@@ -41,6 +42,7 @@ static bool current_stop_request(GlobalState *state)
 
 static esp_err_t mining_stop(GlobalState * GLOBAL_STATE)
 {
+    autotune_gamma_interrupt("mining-paused-or-faulted");
     ESP_LOGI(TAG, "Stopping mining");
 
     // Wind frequency down to 50 MHz before cutting power. This also updates
@@ -66,6 +68,7 @@ static esp_err_t mining_stop(GlobalState * GLOBAL_STATE)
     // Flush any stale data from the UART buffers
     if (SERIAL_is_initialized()) uart_flush(UART_NUM_1);
     vTaskDelay(100 / portTICK_PERIOD_MS);
+    autotune_gamma_owner_idle();
 
     esp_err_t ret = power_ret != ESP_OK ? power_ret : reset_ret;
     if (ret == ESP_OK) ESP_LOGI(TAG, "Mining stopped");
@@ -167,7 +170,12 @@ static bool apply_requested_frequency(GlobalState *state, float requested, float
     // A zero/invalid/out-of-range result cannot authorize a voltage reduction.
     const bool current_valid = isfinite(power->actual_frequency) && power->actual_frequency > 0 &&
                                fabsf(power->actual_frequency - requested) <= 2.0f;
-    if (*last_requested == requested && current_valid) return true;
+    if (*last_requested == requested && current_valid) {
+        /* A revoked ramp may have changed the requested/reporting field before
+         * its first wire frame. The confirmed no-op must normalize it too. */
+        power->frequency_value=requested;power->expected_hashrate=expected_hashrate(state);
+        return true;
+    }
     if (current_stop_request(state)) return false;
     power->frequency_value = requested;
     power->expected_hashrate = expected_hashrate(state);
@@ -183,10 +191,16 @@ static bool apply_requested_settings(GlobalState *state, uint16_t voltage, float
 {
     PowerManagementModule *power = &state->POWER_MANAGEMENT_MODULE;
     if (!isfinite(frequency) || frequency <= 0 || !voltage || current_stop_request(state)) return false;
+    if ((voltage != power->applied_core_voltage_mv || frequency != *last_frequency) &&
+        !autotune_gamma_transition_allowed(state)) return false;
     const bool lowering_voltage = power->applied_core_voltage_mv != 0 && voltage < power->applied_core_voltage_mv;
     if (lowering_voltage && !apply_requested_frequency(state, frequency, last_frequency)) return false;
     if (current_stop_request(state)) return false;
     if (voltage != power->applied_core_voltage_mv) {
+        /* A downclock ramp can outlast the initial sensor check. Revalidate
+         * immediately before changing the rail; ordinary manual control keeps
+         * the optional tuner guard disabled. */
+        if (!autotune_gamma_transition_allowed(state)) return false;
         ESP_LOGI(TAG, "setting new vcore voltage to %umV", voltage);
         if (VCORE_set_voltage(state, (float)voltage / 1000.0f) != ESP_OK) return false;
         power->applied_core_voltage_mv = voltage;
@@ -360,7 +374,12 @@ void POWER_MANAGEMENT_task(void * pvParameters)
             is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;
             continue;
         }
-        if (!apply_requested_settings(GLOBAL_STATE, core_voltage, asic_frequency, &last_asic_frequency)) {
+        const bool automatic_target = !GLOBAL_STATE->SELF_TEST_MODULE.is_active &&
+            autotune_gamma_select_target(GLOBAL_STATE,&core_voltage,&asic_frequency);
+        bool point_applied = apply_requested_settings(GLOBAL_STATE, core_voltage, asic_frequency, &last_asic_frequency);
+        if (automatic_target) point_applied = autotune_gamma_transition_finished(GLOBAL_STATE,point_applied);
+        if (!point_applied) {
+            if (automatic_target && autotune_gamma_transition_cancelled()) continue;
             // A new pause is cancellation; solver/regulator failure is latched.
             if (!current_stop_request(GLOBAL_STATE)) latch_power_fault(GLOBAL_STATE, "ASIC operating-point update failed");
             is_paused = mining_stop(GLOBAL_STATE) == ESP_OK;

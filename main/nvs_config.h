@@ -158,6 +158,9 @@ typedef struct {
 // A bounded, single-blob transaction for operating/pool settings. Successful
 // commit precedes cache replacement; boot replays it after the identity guard.
 esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count);
+/* Internal tuner restore: same journal transaction, without a manual handoff. */
+esp_err_t nvs_config_apply_autotune_restore(const NvsConfigMutation *changes, size_t count);
+bool nvs_config_read_atomic(const NvsConfigKey *keys, NvsConfigMutation *values, size_t count);
 
 esp_err_t nvs_config_init(void);
 

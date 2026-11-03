@@ -1,4 +1,6 @@
 import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { NbAlertModule, NbCardModule, NbIconModule, NbMenuModule } from '@nebular/theme';
 
 import { ThemeModule } from '../@theme/theme.module';
@@ -15,11 +17,14 @@ import { HomeModule } from './home/home.module';
 import { AlertModule } from './alert/alert.module';
 import { SecurityModule } from './security/security.module';
 import { CanSwarmModule } from './can-swarm/can-swarm.module';
+import { AutotuneComponent } from './autotune/autotune.component';
 
 //import { PipesModule} from '../pipes/pipes.module';
 
 @NgModule({
   imports: [
+    CommonModule,
+    FormsModule,
     PagesRoutingModule,
     ThemeModule,
     NbMenuModule,
@@ -40,6 +45,7 @@ import { CanSwarmModule } from './can-swarm/can-swarm.module';
     ],
   declarations: [
     PagesComponent,
+    AutotuneComponent,
   ],
 })
 export class PagesModule {

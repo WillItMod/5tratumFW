@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
                     "-pthread", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
                     "-I", str(path), "-I", str(ROOT / "test/host"), "-I", str(COMPONENT / "include"),
                     "-I", str(ROOT / "components/arduinojson"),
-                    "-I", str(ROOT / "main/tasks"), *generated, str(COMPONENT / "crc.cpp"),
+                    "-I", str(ROOT / "main"), "-I", str(ROOT / "main/tasks"), *generated, str(COMPONENT / "crc.cpp"),
                     str(path / "helpers.cpp"), str(path / "board.cpp"), str(path / "protection.cpp"), str(path / "control.cpp"),
                     str(path / "jobs-startup.cpp"),
                     str(COMPONENT / "bm1370_protocol.cpp"),

@@ -33,6 +33,9 @@ class ProfileRuntimeTests(unittest.TestCase):
  def test_pool_capture_private_password_apply_preserves_other_route_and_reference_guard(self):self.run_case('pool')
  def test_pool_auth_capture_roundtrip_atomic_failure_false_and_reboot(self):self.run_case('pool-auth')
  def test_same_point_and_changed_tuning_remain_byte_and_beta9_decoder_compatible(self):self.run_case('journal-compat-legacy')
+ def test_cooling_extension_restores_exact_fields_reboots_and_manual_writes_do_not_leave_stale_overlay(self):self.run_case('journal-compat-cooling-reboot')
+ def test_cooling_extension_failed_uncertain_commits_restore_v1_or_v2_independently(self):self.run_case('journal-compat-cooling-rollback')
+ def test_cooling_extension_rejects_invalid_limits_and_fault_unlatch(self):self.run_case('journal-compat-cooling-invalid')
  def test_raw_auth_baselines_survive_legacy_extended_revert_and_reboot(self):
   for bits in ('00','01','10','11'):
    with self.subTest(raw_auth=bits):self.run_case('journal-compat-raw-'+bits)

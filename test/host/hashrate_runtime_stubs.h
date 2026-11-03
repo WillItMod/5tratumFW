@@ -22,7 +22,8 @@ static inline void SYSTEM_noinit_update(SystemModule *system) { (void)system; }
 typedef struct {
     SystemModule SYSTEM_MODULE;
     HashrateMonitorModule HASHRATE_MONITOR_MODULE;
-    struct { struct { int asic_count; struct { int hash_domains; } asic; } family; } DEVICE_CONFIG;
+    struct { struct { int asic_count; struct { int hash_domains, small_core_count; } asic; } family; } DEVICE_CONFIG;
+    struct {float frequency_value;} POWER_MANAGEMENT_MODULE;
     struct { bool is_active; } SELF_TEST_MODULE;
     bool ASIC_initalized;
 } GlobalState;

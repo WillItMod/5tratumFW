@@ -249,10 +249,26 @@ static bool nvs_config_load_legacy(NvsConfigKey key, const Settings *setting, Co
 #define OPERATING_JOURNAL_KEY "5fw_operating"
 #define OPERATING_JOURNAL_MAX 32768
 #define OPERATING_JOURNAL_LEGACY_COUNT (NVS_CONFIG_USE_FALLBACK_STRATUM - NVS_CONFIG_STRATUM_PROTOCOL + 4)
-#define OPERATING_JOURNAL_COUNT (OPERATING_JOURNAL_LEGACY_COUNT + 2)
+#define OPERATING_JOURNAL_AUTH_COUNT (OPERATING_JOURNAL_LEGACY_COUNT + 2)
+#define OPERATING_JOURNAL_COOLING_COUNT 4
+#define OPERATING_JOURNAL_COUNT (OPERATING_JOURNAL_AUTH_COUNT + OPERATING_JOURNAL_COOLING_COUNT)
 // Snapshot individual auth keys before journal replay. Omitting auth from a
 // legacy journal is safe only when replay would recover these exact values.
 static bool raw_primary_require_auth, raw_fallback_require_auth;
+static ConfigValue raw_cooling[OPERATING_JOURNAL_COOLING_COUNT];
+static const NvsConfigKey cooling_keys[OPERATING_JOURNAL_COOLING_COUNT] = {
+    NVS_CONFIG_AUTO_FAN_SPEED, NVS_CONFIG_MANUAL_FAN_SPEED,
+    NVS_CONFIG_MIN_FAN_SPEED, NVS_CONFIG_TEMP_TARGET};
+/* Optional hook keeps older host fixtures and non-tuning targets independent. */
+__attribute__((weak,noinline)) void autotune_gamma_manual_override(void) {}
+static void notify_autotune_override(void) {
+    autotune_gamma_manual_override();
+}
+static bool cooling_key(NvsConfigKey key) {
+    for (unsigned i = 0; i < OPERATING_JOURNAL_COOLING_COUNT; ++i)
+        if (cooling_keys[i] == key) return true;
+    return false;
+}
 
 static bool auth_key(NvsConfigKey key)
 {
@@ -263,7 +279,14 @@ static bool operating_key(NvsConfigKey key)
 {
     return (key >= NVS_CONFIG_STRATUM_PROTOCOL && key <= NVS_CONFIG_USE_FALLBACK_STRATUM) ||
            key == NVS_CONFIG_ASIC_FREQUENCY || key == NVS_CONFIG_ASIC_VOLTAGE || key == NVS_CONFIG_OVERCLOCK_ENABLED ||
-           auth_key(key);
+           auth_key(key) || cooling_key(key);
+}
+
+static bool autotune_control_key(NvsConfigKey key)
+{
+    return operating_key(key) || key == NVS_CONFIG_OVERHEAT_MODE || key == NVS_CONFIG_SELF_TEST ||
+        (key >= NVS_CONFIG_BOARD_VERSION && key <= NVS_CONFIG_SELF_TEST_TEMP_MAX) ||
+        (key >= NVS_CONFIG_TPS546_PHASE && key <= NVS_CONFIG_NOMINAL_VOLTAGE);
 }
 
 static void put16(uint8_t *p, uint16_t n) { p[0] = n; p[1] = n >> 8; }
@@ -294,27 +317,36 @@ static uint8_t *journal_encode(const NvsConfigMutation *entries, size_t count, s
 {
     if (count != OPERATING_JOURNAL_COUNT) return NULL;
     bool include_auth = false;
+    bool include_cooling = false;
     for (size_t i = 0; i < count; i++) {
         if (!mutation_valid(&entries[i])) return NULL;
         if (entries[i].key == NVS_CONFIG_SV2_REQUIRE_AUTH)
             include_auth |= entries[i].value.b != raw_primary_require_auth;
         if (entries[i].key == NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH)
             include_auth |= entries[i].value.b != raw_fallback_require_auth;
+        for (unsigned j = 0; j < OPERATING_JOURNAL_COOLING_COUNT; ++j) {
+            if (entries[i].key == cooling_keys[j])
+                include_cooling |= entries[i].type == TYPE_BOOL ?
+                    entries[i].value.b != raw_cooling[j].b : entries[i].value.u16 != raw_cooling[j].u16;
+        }
     }
-    const size_t encoded_count = include_auth ? OPERATING_JOURNAL_COUNT : OPERATING_JOURNAL_LEGACY_COUNT;
+    const size_t encoded_count = (include_auth ? OPERATING_JOURNAL_AUTH_COUNT : OPERATING_JOURNAL_LEGACY_COUNT) +
+        (include_cooling ? OPERATING_JOURNAL_COOLING_COUNT : 0);
     size_t length = 12;
     for (size_t i = 0; i < count; i++) {
         if (!include_auth && auth_key(entries[i].key)) continue;
+        if (!include_cooling && cooling_key(entries[i].key)) continue;
         length += 5 + (entries[i].type == TYPE_STR ? strlen(entries[i].value.str) + 1 : entries[i].type == TYPE_FLOAT ? 4 : 2);
     }
     if (length > OPERATING_JOURNAL_MAX) return NULL;
     uint8_t *blob = malloc(length);
     if (!blob) return NULL;
-    memcpy(blob, "5FWJ", 4); blob[4] = 1; blob[5] = encoded_count; put16(blob + 6, length);
+    memcpy(blob, "5FWJ", 4); blob[4] = include_cooling ? 2 : 1; blob[5] = encoded_count; put16(blob + 6, length);
     size_t offset = 12;
     for (size_t i = 0; i < count; i++) {
         const NvsConfigMutation *entry = &entries[i];
         if (!include_auth && auth_key(entry->key)) continue;
+        if (!include_cooling && cooling_key(entry->key)) continue;
         size_t bytes = entry->type == TYPE_STR ? strlen(entry->value.str) + 1 : entry->type == TYPE_FLOAT ? 4 : 2;
         put16(blob + offset, entry->key); blob[offset + 2] = entry->type; put16(blob + offset + 3, bytes); offset += 5;
         if (entry->type == TYPE_STR) memcpy(blob + offset, entry->value.str, bytes);
@@ -333,8 +365,10 @@ static void mutations_free(NvsConfigMutation *entries, size_t count)
 
 static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutation *entries, size_t *count)
 {
-    if (size < 12 || size > OPERATING_JOURNAL_MAX || memcmp(blob, "5FWJ", 4) || blob[4] != 1 ||
-        (blob[5] != OPERATING_JOURNAL_LEGACY_COUNT && blob[5] != OPERATING_JOURNAL_COUNT) ||
+    if (size < 12 || size > OPERATING_JOURNAL_MAX || memcmp(blob, "5FWJ", 4) ||
+        (blob[4] != 1 && blob[4] != 2) ||
+        (blob[5] != OPERATING_JOURNAL_LEGACY_COUNT + (blob[4] == 2 ? OPERATING_JOURNAL_COOLING_COUNT : 0) &&
+         blob[5] != OPERATING_JOURNAL_AUTH_COUNT + (blob[4] == 2 ? OPERATING_JOURNAL_COOLING_COUNT : 0)) ||
         get16(blob + 6) != size || get32(blob + 8) != journal_checksum(blob + 12, size - 12)) return ESP_ERR_INVALID_STATE;
     *count = blob[5];
     memset(entries, 0, sizeof(*entries) * OPERATING_JOURNAL_COUNT);
@@ -365,8 +399,11 @@ static esp_err_t journal_decode(const uint8_t *blob, size_t size, NvsConfigMutat
     // Legacy v1 snapshots contain every original key and leave the newly
     // appended authentication settings untouched. Never rewrite them on load.
     for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) if (operating_key(key)) {
-        bool extension = auth_key(key);
-        if (seen[key] != (!extension || *count == OPERATING_JOURNAL_COUNT)) goto failed;
+        const bool has_cooling = blob[4] == 2;
+        const bool has_auth = *count == OPERATING_JOURNAL_AUTH_COUNT +
+            (has_cooling ? OPERATING_JOURNAL_COOLING_COUNT : 0);
+        const bool expected = cooling_key(key) ? has_cooling : auth_key(key) ? has_auth : true;
+        if (seen[key] != expected) goto failed;
     }
     return ESP_OK;
 failed:
@@ -383,10 +420,13 @@ static void journal_install(NvsConfigMutation *entries, size_t count)
     }
     // A successful 30 -> 28 transaction must also undo the cached auth values.
     // Boot replay uses the same raw-key baseline without writing those keys.
-    if (count == OPERATING_JOURNAL_LEGACY_COUNT) {
+    if (count == OPERATING_JOURNAL_LEGACY_COUNT || count == OPERATING_JOURNAL_LEGACY_COUNT + OPERATING_JOURNAL_COOLING_COUNT) {
         settings[NVS_CONFIG_SV2_REQUIRE_AUTH].value[0].b = raw_primary_require_auth;
         settings[NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH].value[0].b = raw_fallback_require_auth;
     }
+    if (count == OPERATING_JOURNAL_LEGACY_COUNT || count == OPERATING_JOURNAL_AUTH_COUNT)
+        for (unsigned i = 0; i < OPERATING_JOURNAL_COOLING_COUNT; ++i)
+            settings[cooling_keys[i]].value[0] = raw_cooling[i];
 }
 
 static esp_err_t journal_load(void)
@@ -406,13 +446,14 @@ static esp_err_t journal_load(void)
     return error;
 }
 
-esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count)
+static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bool manual)
 {
     if (!changes || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex) return ESP_ERR_INVALID_ARG;
     for (size_t i = 0; i < count; i++) {
         if (!mutation_valid(&changes[i])) return ESP_ERR_INVALID_ARG;
         for (size_t j = 0; j < i; j++) if (changes[i].key == changes[j].key) return ESP_ERR_INVALID_ARG;
     }
+    if (manual) notify_autotune_override();
     xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
     NvsConfigMutation before[OPERATING_JOURNAL_COUNT], after[OPERATING_JOURNAL_COUNT], decoded[OPERATING_JOURNAL_COUNT];
     size_t index = 0;
@@ -453,6 +494,24 @@ esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count
     return error;
 }
 
+esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count) {
+    return apply_atomic(changes, count, true);
+}
+esp_err_t nvs_config_apply_autotune_restore(const NvsConfigMutation *changes, size_t count) {
+    return apply_atomic(changes, count, false);
+}
+bool nvs_config_read_atomic(const NvsConfigKey *keys, NvsConfigMutation *values, size_t count) {
+    if (!keys || !values || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex) return false;
+    xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+    bool valid = true;
+    for (size_t i = 0; i < count; ++i) {
+        if (!operating_key(keys[i]) || settings[keys[i]].type == TYPE_STR) { valid = false; break; }
+        values[i] = (NvsConfigMutation){.key = keys[i], .type = settings[keys[i]].type, .value = settings[keys[i]].value[0]};
+    }
+    xSemaphoreGive(nvs_cache_mutex);
+    return valid;
+}
+
 static void nvs_config_apply_fallback(NvsConfigKey key, Settings * setting)
 {
     if (key == NVS_CONFIG_ASIC_FREQUENCY) {
@@ -479,6 +538,9 @@ static void nvs_task(void *pvParameters)
                     if (update.type == TYPE_STR) free(update.value.str);
                     continue;
                 }
+                /* A queued hardware/calibration change may execute after an
+                 * attempted new Start. Revoke again at actual cache mutation. */
+                if (autotune_control_key(update.key)) notify_autotune_override();
                 esp_err_t ret = ESP_OK;
 
                 char key[NVS_KEY_NAME_MAX_SIZE];
@@ -691,6 +753,8 @@ esp_err_t nvs_config_init(void)
 
     raw_primary_require_auth = settings[NVS_CONFIG_SV2_REQUIRE_AUTH].value[0].b;
     raw_fallback_require_auth = settings[NVS_CONFIG_FALLBACK_SV2_REQUIRE_AUTH].value[0].b;
+    for (unsigned i = 0; i < OPERATING_JOURNAL_COOLING_COUNT; ++i)
+        raw_cooling[i] = settings[cooling_keys[i]].value[0];
 
     // Replay only after the persisted board identity was validated, before any
     // hardware is initialized. Corrupt journals stop boot without defaults.
@@ -766,6 +830,7 @@ void nvs_config_set_string(NvsConfigKey key, const char *value)
 
     ConfigUpdate update = { .key = key, .type = TYPE_STR, .value.str = strdup(value) };
     if (!update.value.str) return;
+    if (autotune_control_key(key)) notify_autotune_override();
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
 }
 
@@ -847,6 +912,7 @@ void nvs_config_set_u16(NvsConfigKey key, uint16_t value)
 {
     Settings *setting = nvs_config_get_settings(key);
     if (!setting || setting->type != TYPE_U16 || setting->value[0].u16 == value) return;
+    if (autotune_control_key(key)) notify_autotune_override();
 
     ConfigUpdate update = { .key = key, .type = TYPE_U16, .value.u16 = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -873,6 +939,7 @@ void nvs_config_set_i32(NvsConfigKey key, int32_t value)
 {
     Settings *setting = nvs_config_get_settings(key);
     if (!setting || setting->type != TYPE_I32 || setting->value[0].i32 == value) return;
+    if (autotune_control_key(key)) notify_autotune_override();
 
     ConfigUpdate update = { .key = key, .type = TYPE_I32, .value.i32 = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -935,6 +1002,7 @@ void nvs_config_set_float(NvsConfigKey key, float value)
 {
     Settings *setting = nvs_config_get_settings(key);
     if (!setting || setting->type != TYPE_FLOAT || fabsf(setting->value[0].f - value) < 0.001f) return;
+    if (autotune_control_key(key)) notify_autotune_override();
 
     ConfigUpdate update = { .key = key, .type = TYPE_FLOAT, .value.f = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -961,6 +1029,7 @@ void nvs_config_set_bool(NvsConfigKey key, bool value)
 {
     Settings *setting = nvs_config_get_settings(key);
     if (!setting || setting->type != TYPE_BOOL || setting->value[0].b == value) return;
+    if (autotune_control_key(key)) notify_autotune_override();
 
     ConfigUpdate update = { .key = key, .type = TYPE_BOOL, .value.b = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);

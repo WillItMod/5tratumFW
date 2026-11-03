@@ -24,6 +24,8 @@ esp_err_t EMC2302_set_fan_speed(int channel, float percent)
 
 esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst)
 {
+    if (!dst || channel < 0 || channel > 1) return ESP_ERR_INVALID_ARG;
+    *dst = 0;
     esp_err_t err;
     uint8_t tach_lsb, tach_msb;
 
@@ -47,6 +49,9 @@ esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst)
 
     // 3 LSBs are unused
     int rpm_raw = (tach_msb << 5) | (tach_lsb >> 3) ;
+    // Zero is invalid; full-scale is the disconnected/stalled sentinel.
+    // Reject both before division, including during power-on/transient reads.
+    if (rpm_raw == 0 || rpm_raw >= 8191) return ESP_OK;
 
     const int poles = 2;
     const int n = 5; // number of edges measured (typically five for a two-pole fan)
@@ -84,6 +89,25 @@ esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst)
 
     *dst = rpm;
     return ESP_OK;
+}
+
+bool EMC2302_read_tuning_fan(int channel, uint16_t *rpm) {
+    if (!rpm || channel < 0 || channel > 1) return false;
+    *rpm = 0;
+    const uint8_t base = !channel ? EMC2302_FAN2 : EMC2302_FAN1;
+    uint8_t config = 0, status = 0;
+    // DS20006532A, sections4.4 and6.14: the existing conversion is valid for
+    // direct control, multiplier1, five edges. Fail closed on a changed mode.
+    if (i2c_master_register_read(EMC2302_ADDR,base+EMC2302_OFS_FAN_CONFIG1,&config,1)!=ESP_OK || (config & 0xf8)!=0x08) return false;
+    // Read-then-clear status does not authorize a failed sample: any fitted
+    // fan stall, spin-up or drive failure invalidates this entire acquisition.
+    const uint8_t statuses[] = {EMC2302_STALL_STATUS,EMC2302_SPIN_STATUS,EMC2302_DRIVE_STATUS};
+    for (uint8_t reg : statuses) {
+        if (i2c_master_register_read(EMC2302_ADDR,reg,&status,1)!=ESP_OK || (status & 0x03)) return false;
+    }
+    uint16_t measured = 0;
+    if (EMC2302_get_fan_speed(channel,&measured)!=ESP_OK || measured < 500 || measured > 16000) return false;
+    *rpm = measured;return true;
 }
 
 bool EMC2302_init(bool invertPolarity)

@@ -1,6 +1,56 @@
 // Production journal + independent verified Beta9 decoder; no device access.
 static bool journal_compatibility_case(const char *scenario)
 {
+    if (!strcmp(scenario,"journal-compat-cooling-reboot")) {
+        NvsConfigMutation changes[]={
+            {.key=NVS_CONFIG_ASIC_FREQUENCY,.type=TYPE_FLOAT,.value.f=575.25f},
+            {.key=NVS_CONFIG_ASIC_VOLTAGE,.type=TYPE_U16,.value.u16=1151},
+            {.key=NVS_CONFIG_AUTO_FAN_SPEED,.type=TYPE_BOOL,.value.b=false},
+            {.key=NVS_CONFIG_MANUAL_FAN_SPEED,.type=TYPE_U16,.value.u16=80},
+            {.key=NVS_CONFIG_MIN_FAN_SPEED,.type=TYPE_U16,.value.u16=30},
+            {.key=NVS_CONFIG_TEMP_TARGET,.type=TYPE_U16,.value.u16=55}};
+        assert(nvs_config_apply_autotune_restore(changes,6)==ESP_OK);
+        assert(journal()->bytes[4]==2&&journal()->bytes[5]==32);
+        unsigned before=writes;assert(nvs_config_init()==ESP_OK&&writes==before);
+        assert(nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY)==575.25f&&nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE)==1151);
+        assert(!nvs_config_get_bool(NVS_CONFIG_AUTO_FAN_SPEED)&&nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==80&&
+            nvs_config_get_u16(NVS_CONFIG_MIN_FAN_SPEED)==30&&nvs_config_get_u16(NVS_CONFIG_TEMP_TARGET)==55);
+        nvs_config_set_u16(NVS_CONFIG_MANUAL_FAN_SPEED,90);drain_auth_write();
+        before=writes;assert(nvs_config_init()==ESP_OK&&writes==before);
+        assert(nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==90&&nvs_config_get_u16(NVS_CONFIG_TEMP_TARGET)==55);
+        assert(!find(1,"manualfanspeed")&&!erases);
+        return true;
+    }
+    if (!strcmp(scenario,"journal-compat-cooling-rollback")) {
+        NvsConfigMutation fan={.key=NVS_CONFIG_MANUAL_FAN_SPEED,.type=TYPE_U16,.value.u16=80};
+        assert(request(2,"{\"type\":\"tuning\",\"frequencyMHz\":625.125,\"coreVoltageMv\":1173}").code==200);
+        fail_commits_remaining=1;persist_before_commit_failure=true;
+        assert(nvs_config_apply_autotune_restore(&fan,1)!=ESP_OK);
+        persist_before_commit_failure=false;
+        assert_legacy_journal(625.125f,1173);assert(nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==100);
+        unsigned before=writes;assert(nvs_config_init()==ESP_OK&&writes==before);
+        assert(nvs_config_apply_autotune_restore(&fan,1)==ESP_OK&&journal()->bytes[4]==2);
+        fan.value.u16=100;fail_commits_remaining=1;persist_before_commit_failure=true;
+        assert(nvs_config_apply_autotune_restore(&fan,1)!=ESP_OK);
+        persist_before_commit_failure=false;
+        assert(journal()->bytes[4]==2&&nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==80);
+        before=writes;assert(nvs_config_init()==ESP_OK&&writes==before);
+        assert(nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==80);
+        assert(nvs_config_apply_autotune_restore(&fan,1)==ESP_OK);
+        assert_legacy_journal(625.125f,1173);assert(!erases);
+        return true;
+    }
+    if (!strcmp(scenario,"journal-compat-cooling-invalid")) {
+        NvsConfigMutation change={.key=NVS_CONFIG_TEMP_TARGET,.type=TYPE_U16,.value.u16=100};
+        unsigned before=writes;assert(nvs_config_apply_autotune_restore(&change,1)==ESP_ERR_INVALID_ARG&&writes==before);
+        change=(NvsConfigMutation){.key=NVS_CONFIG_MIN_FAN_SPEED,.type=TYPE_U16,.value.u16=100};
+        assert(nvs_config_apply_autotune_restore(&change,1)==ESP_ERR_INVALID_ARG&&writes==before);
+        change=(NvsConfigMutation){.key=NVS_CONFIG_AUTO_FAN_SPEED,.type=TYPE_U16,.value.u16=1};
+        assert(nvs_config_apply_autotune_restore(&change,1)==ESP_ERR_INVALID_ARG&&writes==before);
+        change=(NvsConfigMutation){.key=NVS_CONFIG_OVERHEAT_MODE,.type=TYPE_BOOL,.value.b=false};
+        assert(nvs_config_apply_autotune_restore(&change,1)==ESP_ERR_INVALID_ARG&&writes==before);
+        return true;
+    }
     if (!strcmp(scenario,"journal-compat-legacy")) {
         assert(beta9_accepts(legacy_journal_v1,sizeof(legacy_journal_v1),577.25f,1137));
         assert(nvs_set_blob(1,"5fw_operating",legacy_journal_v1,sizeof(legacy_journal_v1))==ESP_OK && nvs_commit(1)==ESP_OK);

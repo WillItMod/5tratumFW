@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <pthread.h>
+#include "tuning_telemetry.h"
 #include "../displays/images/themes/themes.h"
 #include "asic.h"
 #include "bm1368.h"
@@ -49,6 +51,8 @@ public:
     int m_chipsDetected = 0;
     int m_numTempSensors = 0;
     float *m_chipTemps;
+    pthread_mutex_t m_chipTemperatureMutex = PTHREAD_MUTEX_INITIALIZER;
+    int64_t m_chipTemperatureAtUs[64]{};
     const char *m_swarmColorName = "blue";
     uint32_t m_vrFrequency;
     uint32_t m_defaultVrFrequency;
@@ -151,6 +155,7 @@ public:
     // abstract common methos
     virtual bool setVoltage(float core_voltage) = 0;
     virtual void setFanPolarity(bool invert) = 0;
+    virtual bool restoreTuningFanPolarity(bool, bool (*)()) { return false; }
     virtual void setFanSpeedCh(int channel, float perc) = 0;
     virtual void setFanSpeed(float perc) {
         for (int i=0;i<getNumFans();i++) {
@@ -158,6 +163,7 @@ public:
         }
     }
     virtual void getFanSpeedCh(int channel, uint16_t *rpm) = 0;
+    virtual bool readTuningFan(int, uint16_t &) { return false; }
 
     virtual int getNumFans() { return m_numFans; }
 
@@ -171,6 +177,15 @@ public:
     virtual float getVout() = 0;
     virtual float getIout() = 0;
     virtual float getPout() = 0;
+    virtual const char *tuningAsicSensorLabel() const { return "Unavailable ASIC temperature source"; }
+    virtual const char *tuningVrmSensorLabel() { return "Unavailable VRM temperature source"; }
+    virtual bool readTuningSensors(TuningSensors &) { return false; }
+    // Power owner only. Shared sensors are read by readTuningSensors; fitted
+    // I2C mux boards may refresh their temperature scan without ASIC UART.
+    virtual bool refreshTuningTemperatures() { return true; }
+    virtual bool setTuningVoltage(float, bool (*)()) { return false; }
+    virtual bool tuningAsicTemperature(float &, int64_t &) { return false; }
+    bool readTuningChipTemperatures(float &maximum, int64_t &oldest);
 
     virtual void requestBuckTelemtry() = 0;
     virtual void requestChipTemps();

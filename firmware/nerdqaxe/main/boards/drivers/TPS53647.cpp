@@ -10,6 +10,7 @@
 #include "rom/gpio.h"
 
 #include "TPS53647.h"
+#include "autotune/write_gate.h"
 #include "boards/nerdqaxeplus.h"
 #include "pmbus_commands.h"
 
@@ -32,6 +33,7 @@ static const char *TAG = "TPS53647.c";
 
 TPS53647::TPS53647()
 {
+    m_initialized = false;
     m_i2cAddr = 0x71;
     m_hwMinVoltage = 0.25f;
     m_initVOutMin = 0.8f;
@@ -572,3 +574,34 @@ uint8_t TPS53647::get_status_temp(void)
 
 
 
+
+// Autonomous decisions cannot use the legacy getters' zero-on-error contract.
+bool TPS53647::readTuningTelemetry(BuckTuningTelemetry &output) {
+    output = {};
+    uint16_t temp = 0, vin = 0, vout = 0, iout = 0, pin = 0, status = 0;
+    if (!m_initialized || read_word(PMBUS_STATUS_WORD, &status) != ESP_OK || status != 0 ||
+        read_word(PMBUS_READ_TEMPERATURE_1, &temp) != ESP_OK ||
+        read_word(PMBUS_READ_VIN, &vin) != ESP_OK ||
+        read_word(PMBUS_MFR_SPECIFIC_04, &vout) != ESP_OK ||
+        read_word(PMBUS_READ_IOUT, &iout) != ESP_OK ||
+        read_word(PMBUS_READ_PIN, &pin) != ESP_OK) return false;
+    BuckTuningTelemetry next;
+    next.temperatureC = slinear11_to_float(temp);
+    next.vin = slinear11_to_float(vin);
+    next.vout = vout * (1.0f / 512.0f);
+    next.iout = slinear11_to_float(iout);
+    next.pin = slinear11_to_float(pin);
+    next.measuredInputPower = true;
+    if (!isfinite(next.temperatureC) || next.temperatureC <= 0 || next.temperatureC >= 127.9f ||
+        !isfinite(next.vin) || next.vin <= 0 || !isfinite(next.vout) || next.vout <= 0 ||
+        !isfinite(next.iout) || next.iout < 0 || !isfinite(next.pin) || next.pin <= 0) return false;
+    output = next;
+    return true;
+}
+bool TPS53647::setTuningVoltage(float volts, bool (*allowed)()) {
+    BuckTuningTelemetry current;
+    if (!isfinite(volts) || volts <= 0 || !readTuningTelemetry(current)) return false;
+    // Existing checked command path changes only VOUT_COMMAND, not OPERATION.
+    FiveTratumAutotune::WriteGuard wire;
+    return allowed && allowed() && set_vout(volts);
+}

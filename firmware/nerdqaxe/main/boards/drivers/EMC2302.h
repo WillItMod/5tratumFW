@@ -36,5 +36,6 @@
 
 esp_err_t EMC2302_set_fan_speed(int channel, float percent);
 esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst);
+bool EMC2302_read_tuning_fan(int channel, uint16_t *rpm);
 bool EMC2302_init(bool);
 bool EMC2302_set_fan_polarity(bool invert);

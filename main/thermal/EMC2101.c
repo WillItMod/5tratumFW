@@ -102,6 +102,7 @@ uint16_t EMC2101_get_fan_speed(void)
     // ESP_LOGI(TAG, "Raw Fan Speed = %02X %02X", tach_msb, tach_lsb);
 
     reading = tach_lsb | (tach_msb << 8);
+    if (reading == 0 || reading == UINT16_MAX) return 0;
     RPM = 5400000 / reading;
 
     // ESP_LOGI(TAG, "Fan Speed = %d RPM", RPM);
@@ -165,4 +166,27 @@ float EMC2101_get_internal_temp(void)
         return -1;
     }
     return (float) temp + temp_offset;
+}
+
+esp_err_t EMC2101_read_strict(float *external_c, uint16_t *fan_rpm)
+{
+    if (!external_c || !fan_rpm) return ESP_ERR_INVALID_ARG;
+    uint8_t status = 0, msb = 0, lsb = 0, check_msb = 0, tach_lo = 0, tach_hi = 0;
+    if (i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_STATUS, &status, 1) != ESP_OK ||
+        (status & 0x04) ||
+        i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_EXTERNAL_TEMP_MSB, &msb, 1) != ESP_OK ||
+        i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_EXTERNAL_TEMP_LSB, &lsb, 1) != ESP_OK ||
+        i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_EXTERNAL_TEMP_MSB, &check_msb, 1) != ESP_OK ||
+        msb != check_msb ||
+        i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_TACH_LSB, &tach_lo, 1) != ESP_OK ||
+        i2c_bitaxe_register_read(emc2101_dev_handle, EMC2101_TACH_MSB, &tach_hi, 1) != ESP_OK) return ESP_FAIL;
+    int16_t raw = (int16_t)(((uint16_t)msb << 8 | lsb) >> 5);
+    if (raw == EMC2101_TEMP_FAULT_OPEN_CIRCUIT || raw == EMC2101_TEMP_FAULT_SHORT) return ESP_FAIL;
+    if (raw & 0x0400) raw |= (int16_t)0xF800;
+    const uint16_t tach = (uint16_t)tach_lo | ((uint16_t)tach_hi << 8);
+    const uint32_t rpm = tach && tach != UINT16_MAX ? 5400000u / tach : 0;
+    if (rpm > UINT16_MAX) return ESP_FAIL;
+    *external_c = raw / 8.0f + temp_offset;
+    *fan_rpm = rpm == 82 ? 0 : (uint16_t)rpm;
+    return ESP_OK;
 }

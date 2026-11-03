@@ -16,6 +16,7 @@
 #include "http_server.h"
 #include "protocol_coordinator.h"
 #include "operating_profiles.h"
+#include "autotune_runtime.h"
 #include "pool_schedule.h"
 #include "tuning_schedule.h"
 #include "i2c_bitaxe.h"
@@ -153,6 +154,7 @@ void app_main(void)
 
     SYSTEM_init_system(&GLOBAL_STATE);
     operating_profiles_init(&GLOBAL_STATE);
+    autotune_gamma_init(&GLOBAL_STATE);
     if (!GLOBAL_STATE.SELF_TEST_MODULE.is_active && pool_schedule_init(&GLOBAL_STATE) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize pool schedule; keeping ASIC reset asserted");
         return;

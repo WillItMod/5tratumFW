@@ -9,6 +9,15 @@
 #include "tasks/power_management_task.c"
 
 static GlobalState global;
+static unsigned guard_calls,guard_deny_at;
+/* The existing power-transition suite keeps the optional tuner disabled. Its
+ * enabled production adapter is exercised by test_autotune_gamma.py. */
+void autotune_gamma_interrupt(const char *reason) {(void)reason;}
+void autotune_gamma_owner_idle(void) {}
+bool autotune_gamma_select_target(GlobalState *state,uint16_t *mv,float *mhz) {(void)state;(void)mv;(void)mhz;return false;}
+bool autotune_gamma_transition_allowed(void *state) {(void)state;return ++guard_calls!=guard_deny_at;}
+bool autotune_gamma_transition_cancelled(void) {return false;}
+bool autotune_gamma_transition_finished(GlobalState *state,bool success) {(void)state;return success;}
 static uint16_t saved_voltage = 1173;
 static float saved_frequency = 625.125f;
 static unsigned setting_writes, voltage_calls, reset_calls, frequency_calls, nonce_calls, init_calls, flush_calls;
@@ -84,7 +93,26 @@ int main(int argc, char **argv) {
     global.POWER_MANAGEMENT_MODULE.frequency_value = saved_frequency;
     global.POWER_MANAGEMENT_MODULE.expected_hashrate = 1275;
     const char *scenario = argv[1];
-    if (strncmp(scenario, "settings-", 9) == 0) {
+    if (strcmp(scenario,"revoked-pll-noop-reporting")==0) {
+        float last_frequency=saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.actual_frequency=saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.frequency_value=saved_frequency-6.25;
+        global.POWER_MANAGEMENT_MODULE.expected_hashrate=0;
+        assert(apply_requested_frequency(&global,saved_frequency,&last_frequency));
+        assert(global.POWER_MANAGEMENT_MODULE.frequency_value==saved_frequency&&frequency_calls==0);
+        assert(fabsf(global.POWER_MANAGEMENT_MODULE.expected_hashrate-saved_frequency*2.04f)<.001f);
+    } else if (strcmp(scenario,"guard-after-downclock")==0) {
+        float last_frequency=saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.actual_frequency=saved_frequency;
+        global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=saved_voltage;
+        guard_deny_at=2;
+        assert(!apply_requested_settings(&global,saved_voltage-50,saved_frequency-50,&last_frequency));
+        assert(guard_calls==2&&strcmp(settings_events,"fn")==0&&voltage_calls==0);
+        assert(last_frequency==saved_frequency-50&&global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==saved_voltage);
+        guard_deny_at=0;memset(settings_events,0,sizeof(settings_events));settings_event_count=0;
+        assert(apply_requested_settings(&global,saved_voltage-50,saved_frequency-50,&last_frequency));
+        assert(strcmp(settings_events,"v")==0&&voltage_calls==1&&setting_writes==0);
+    } else if (strncmp(scenario, "settings-", 9) == 0) {
         float last_frequency = saved_frequency;
         global.POWER_MANAGEMENT_MODULE.actual_frequency = saved_frequency;
         global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv = saved_voltage;

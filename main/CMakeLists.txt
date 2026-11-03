@@ -5,6 +5,7 @@ SRCS
     "main.c"
     "log_buffer.c"
     "nvs_config.c"
+    "autotune_runtime.c"
     "mining_schedule.c"
     "pool_schedule.c"
     "tuning_schedule.c"

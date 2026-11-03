@@ -70,10 +70,10 @@ def source_vectors(diagnostic=False):
         compiler = shutil.which("clang++") or shutil.which("g++")
         if compiler is None:
             raise RuntimeError("C++ compiler required for actual-source cross checks")
-        subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-sign-compare",
+        subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-sign-compare", "-pthread",
             "-Wno-vla-cxx-extension", "-Wno-unused-const-variable", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
             f"-DFIVETRATUM_BM1370_DIAGNOSTIC_DRIVER={int(diagnostic)}",
-            "-I", str(path), "-I", str(ROOT / "test/host"), "-I", str(COMPONENT / "include"),
+            "-I", str(path), "-I", str(ROOT / "test/host"), "-I", str(ROOT / "main"), "-I", str(COMPONENT / "include"),
             *sources, str(COMPONENT / "crc.cpp"), str(COMPONENT / "bm1370_protocol.cpp"), str(path / "helpers.cpp"),
             str(ROOT / "test/host/asic_capture_vector_harness.cpp"), "-o", str(binary)], check=True)
         return json.loads(subprocess.run([str(binary)], check=True, capture_output=True, text=True).stdout)

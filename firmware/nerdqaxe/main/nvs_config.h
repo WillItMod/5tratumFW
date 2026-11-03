@@ -131,6 +131,11 @@ namespace Config {
     void flush();    // Signal the non-PSRAM flush task to persist batched changes.
     // Internal API normal-stack transaction: publish only after NVS commit succeeds.
     bool cfgApplyPatchPersisted(JsonObjectConst patch);
+    // Atomic allowlisted snapshot/restore for identity-bound autotuning backup.
+    bool captureTuningSettings(JsonObject output);
+    bool validTuningSettings(JsonObjectConst input);
+    bool restoreTuningSettings(JsonObjectConst input);
+    uint64_t tuningMutationRevision();
 
     // ---- Direct document access (for API handlers — include ArduinoJson.h first) ----
     // JsonDocument& getDoc();

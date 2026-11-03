@@ -26,6 +26,14 @@ class NerdOctaxeGamma : public NerdQaxePlus2 {
     virtual bool initBoard() override;
     virtual void requestChipTemps() override;
     float getVRTemp() override;
+    bool tuningAsicTemperature(float &maximum, int64_t &oldest) override;
+    bool refreshTuningTemperatures() override;
+    const char *tuningAsicSensorLabel() const override {
+        return m_hasTMux[0] && m_hasTMux[1] ? "Hottest calibrated TMP451 per-chip temperature" :
+            (m_hasTMux[0] || m_hasTMux[1]) ? "Incomplete TMP451 per-chip temperature inputs" :
+            "Shared TMP1075 ASIC-area temperature with existing +10 C correction";
+    }
+    float tuningVrmOffset() const override { return m_isTPS53667 ? 8.0f : 0.0f; }
 
     // no ethernet HAT when the temp mux (sharing GPIO2/12) is fitted
     const EthPins *getEthPins() override;

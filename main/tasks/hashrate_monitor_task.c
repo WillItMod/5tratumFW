@@ -58,6 +58,46 @@ HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *pvParameters, ui
     return snapshot;
 }
 
+GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *pvParameters, uint64_t now_us)
+{
+    GammaAutotuneCounterSample result = {0};
+    GlobalState *state = pvParameters;
+    if (!state || state->DEVICE_CONFIG.family.asic_count != 1 ||
+        state->DEVICE_CONFIG.family.asic.hash_domains != 4) return result;
+    HashrateMonitorModule *monitor = &state->HASHRATE_MONITOR_MODULE;
+    if (!monitor->is_initialized || !monitor->total_measurement ||
+        !monitor->error_measurement || !monitor->domain_measurements) return result;
+    pthread_mutex_lock(&monitor->lock);
+    const measurement_t total = monitor->total_measurement[0];
+    const measurement_t error = monitor->error_measurement[0];
+    const double expected = (double)state->POWER_MANAGEMENT_MODULE.frequency_value *
+        state->DEVICE_CONFIG.family.asic.small_core_count / 1000.0;
+    uint64_t oldest = total.rate_sample_us;
+    bool valid = isfinite(expected) && expected > 0 && total.rate_sample_us && error.rate_sample_us &&
+        isfinite(total.hashrate) && total.hashrate > 0 &&
+        isfinite(error.hashrate) && error.hashrate >= 0 && error.hashrate <= total.hashrate;
+    if (error.rate_sample_us < oldest) oldest = error.rate_sample_us;
+    for (unsigned domain = 0; domain < 4; ++domain) {
+        const measurement_t sample = monitor->domain_measurements[0][domain];
+        /* Deny automatic adjustments on a nearly silent domain rather than
+         * increasing voltage/clock to compensate for missing hardware work.
+         * This is a conservative liveness gate, not a performance guarantee. */
+        valid = valid && sample.rate_sample_us && isfinite(sample.hashrate) && sample.hashrate >= expected/4.0*0.20;
+        if (sample.rate_sample_us < oldest) oldest = sample.rate_sample_us;
+    }
+    valid = valid && now_us >= oldest && now_us - oldest <= UINT64_C(15000000);
+    if (valid) {
+        /* Gamma 0x8C is total work; do not add 0x4C errors a second time. */
+        result.valid = true;
+        result.captured_at_us = oldest;
+        result.sample_id = oldest;
+        result.useful_ghs = (double)total.hashrate - error.hashrate;
+        result.error_percentage = 100.0 * error.hashrate / total.hashrate;
+    }
+    pthread_mutex_unlock(&monitor->lock);
+    return result;
+}
+
 void hashrate_monitor_reset_measurements(void *pvParameters)
 {
     GlobalState * GLOBAL_STATE = (GlobalState *)pvParameters;    
@@ -92,13 +132,21 @@ void update_hash_counter(measurement_t * measurement, uint32_t value, uint64_t t
 {
     uint64_t previous_time_us = measurement->time_us;
     if (previous_time_us != 0) {
+        if (time_us <= previous_time_us) return;
         uint64_t duration_us = time_us - previous_time_us;
         if (duration_us < 1000000) {
             // Ignore updates that are too close (e.g. rapid bursts) to avoid huge hashrate spikes
             return;
         }
+        if (duration_us > UINT64_C(15000000)) {
+            measurement->value = value;
+            measurement->time_us = time_us;
+            measurement->rate_sample_us = 0;
+            return;
+        }
         uint32_t counter = value - measurement->value; // Compute counter difference, handling uint32_t wraparound
         measurement->hashrate = hashCounterToGhs(duration_us, counter);
+        measurement->rate_sample_us = time_us;
     }
 
     measurement->value = value;
@@ -244,12 +292,7 @@ void hashrate_monitor_register_read(void *pvParameters, register_type_t register
             break;
         case REGISTER_TOTAL_COUNT: {
             measurement_t *total = &HASHRATE_MONITOR_MODULE->total_measurement[asic_nr];
-            uint64_t previous_time_us = total->time_us;
             update_hash_counter(total, value, timestamp_us);
-            /* The first counter is only a baseline. Ignored short intervals
-             * and cached publication must never refresh a computed rate. */
-            if (previous_time_us != 0 && timestamp_us > previous_time_us &&
-                total->time_us == timestamp_us) total->rate_sample_us = timestamp_us;
             break;
         }
         case REGISTER_DOMAIN_0_COUNT:

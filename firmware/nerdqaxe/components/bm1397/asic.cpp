@@ -9,6 +9,7 @@
 #include "mining_utils.h"
 #include "serial.h"
 #include "asic.h"
+#include "autotune/write_gate.h"
 #include "crc.h"
 
 
@@ -81,7 +82,11 @@ void Asic::send(uint8_t header, uint8_t *data, uint8_t data_len)
     }
 
     // send serial data
-    if (SERIAL_send(buf, total_length) != total_length) m_transportFailed = true;
+    if (m_recoveryGuard) {
+        FiveTratumAutotune::WriteGuard wire;
+        if (!FiveTratumAutotune::transitionAllowed()) { m_transportFailed = true; return; }
+        if (SERIAL_send(buf, total_length) != total_length) m_transportFailed = true;
+    } else if (SERIAL_send(buf, total_length) != total_length) m_transportFailed = true;
 }
 
 void Asic::send6(uint8_t header, uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3, uint8_t b4, uint8_t b5) {

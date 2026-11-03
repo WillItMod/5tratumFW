@@ -47,7 +47,8 @@ struct HostSystem {
     Board *getBoard() { return board; }
     float getCurrentHashrate() { return 1000.0f; }
 };
-struct HostPower { bool isShutdown() { return false; } };
+struct HostPower {
+    uint16_t getAppliedTuningFrequency() const { return 0; } bool isShutdown() { return false; } };
 extern HostSystem SYSTEM_MODULE;
 extern HostPower POWER_MANAGEMENT_MODULE;
 

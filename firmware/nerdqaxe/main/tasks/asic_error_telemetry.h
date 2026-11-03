@@ -9,6 +9,7 @@ struct ChipErrorTelemetry {
     float errorHashRate = 0.0f;
     float errorPercentage = 0.0f;
     double sampleAgeSeconds = 0.0;
+    int64_t sampleCapturedAtUs = 0;
     bool errorPercentageAvailable = false;
     bool sampleAgeAvailable = false;
     bool errorSampleFresh = false;
@@ -42,6 +43,7 @@ inline ChipErrorTelemetry chipErrorTelemetry(const ChipHashrateSample &valid,
     const int64_t oldestUs = valid.capturedAtUs < error.capturedAtUs ?
         valid.capturedAtUs : error.capturedAtUs;
     result.sampleAgeSeconds = static_cast<double>(nowUs - oldestUs) / 1000000.0;
+    result.sampleCapturedAtUs = oldestUs;
     result.sampleAgeAvailable = true;
     result.errorSampleFresh = valid.isFresh(nowUs) && error.isFresh(nowUs);
     if (!result.errorSampleFresh) return result;

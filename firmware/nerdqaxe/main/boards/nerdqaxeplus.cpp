@@ -11,6 +11,10 @@
 #include "serial.h"
 #include "board.h"
 #include "nerdqaxeplus.h"
+#include <algorithm>
+#include <cmath>
+#include "esp_timer.h"
+#include "autotune/write_gate.h"
 #include "nvs_config.h"
 #include "../displays/displayDriver.h"
 
@@ -312,8 +316,18 @@ void NerdQaxePlus::getFanSpeedCh(int channel, uint16_t* rpm) {
     EMC2302_get_fan_speed(channel, rpm);
 }
 
+bool NerdQaxePlus::readTuningFan(int channel, uint16_t &rpm) {
+    return EMC2302_read_tuning_fan(channel,&rpm);
+}
+
 void NerdQaxePlus::setFanPolarity(bool invert) {
     EMC2302_set_fan_polarity(invert);
+}
+
+bool NerdQaxePlus::restoreTuningFanPolarity(bool invert, bool (*allowed)()) {
+    // Only this one physical frame shares the manual/OTA revocation gate.
+    FiveTratumAutotune::WriteGuard frame;
+    return allowed && allowed() && EMC2302_set_fan_polarity(invert);
 }
 
 // return the number of asic temp measuring sensors
@@ -500,4 +514,47 @@ bool NerdQaxePlus::selfTest(){
     }
 
     return true;
+}
+
+bool NerdQaxePlus::tuningAsicTemperature(float &maximum, int64_t &oldest) {
+    maximum = 0; oldest = esp_timer_get_time();
+    if (getNumTempSensors() < 1) return false;
+    for (int i = 0; i < getNumTempSensors(); ++i) {
+        const float temperature = getTemperature(i); // Actual fresh TMP1075 read; zero means failure.
+        if (!std::isfinite(temperature) || temperature <= 0 || temperature >= 125) return false;
+        maximum = std::max(maximum, temperature);
+    }
+    return true;
+}
+bool NerdQaxePlus::readTuningSensors(TuningSensors &output) {
+    output = {};
+    if (!m_tps || !isInitialized() || !isBuckInitialized() || isShutdown()) return false;
+    const int64_t started = esp_timer_get_time();
+    BuckTuningTelemetry buck;
+    float asic = 0; int64_t asicAt = started;
+    if (!m_tps->readTuningTelemetry(buck) || !tuningAsicTemperature(asic, asicAt)) return false;
+    float vrm = buck.temperatureC;
+    if (m_tps->uses_external_vr_temperature()) {
+        const float external = TMP1075_read_temperature(1);
+        if (!std::isfinite(external) || external <= 0 || external >= 125) return false;
+        vrm = std::max(vrm, external + tuningVrmOffset());
+    }
+    const int64_t now = esp_timer_get_time();
+    if (now < started || now - started > 5000000 || now < asicAt || now - asicAt > 5000000) return false;
+    output.asicTempC = asic; output.vrmTempC = vrm;
+    output.vin = buck.vin; output.coreVoltageMv = buck.vout * 1000.0f;
+    output.outputCurrentA = buck.iout; output.powerW = buck.pin;
+    output.capturedAtUs = std::min(started, asicAt);
+    output.measuredInputPower = buck.measuredInputPower;
+    return true;
+}
+bool NerdQaxePlus::setTuningVoltage(float volts, bool (*allowed)()) {
+    return m_tps && isInitialized() && isBuckInitialized() && !isShutdown() &&
+           validateVoltage(volts) && volts > 0 && m_tps->setTuningVoltage(volts, allowed);
+}
+
+const char *NerdQaxePlus::tuningVrmSensorLabel() {
+    return m_tps && m_tps->uses_external_vr_temperature() ?
+        "Hottest external TMP1075 VRM-area and internal power-stage temperature" :
+        "TPS546 internal regulator die temperature";
 }

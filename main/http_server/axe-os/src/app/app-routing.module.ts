@@ -12,6 +12,7 @@ import { ScoreboardComponent } from './components/scoreboard/scoreboard.componen
 import { DesignComponent } from './components/design/design.component';
 import { PoolComponent } from './components/pool/pool.component';
 import { SchedulerComponent, leaveScheduler } from './components/scheduler/scheduler.component';
+import { AutotuneComponent, leaveAutotune } from './components/autotune/autotune.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
@@ -88,6 +89,12 @@ const routes: Routes = [
         path: 'mux',
         redirectTo: 'pool',
         pathMatch: 'full',
+      },
+      {
+        path: 'tuning',
+        component: AutotuneComponent,
+        canDeactivate: [leaveAutotune],
+        title: `${TITLE_PREFIX} Tuning`,
       },
       {
         path: 'scheduler',

@@ -91,6 +91,8 @@ float Tmp451::read_remote_celsius()
     if (oneShotAndWait(200) != ESP_OK)
         return NAN;
 
+    uint8_t status = 0;
+    if (!readStatus(&status) || (status & 0x04)) return NAN; // Open remote diode.
     uint8_t msb_u = 0, lsb = 0;
     if (read_reg(REG_REMOTE_MSB, &msb_u) != ESP_OK)
         return NAN;

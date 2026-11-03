@@ -222,4 +222,13 @@ const char* TPS546_get_error_message(void); //Get the current TPS error message
 void TPS546_log_snapshot(const TPS546_StatusSnapshot *s);
 esp_err_t TPS546_snapshot_status(TPS546_StatusSnapshot *s);
 
+/* No cached fallback: every field comes from successful transactions in this
+ * call, including the ULINEAR16 exponent. The power owner serializes calls. */
+typedef struct {
+    float vin, vout, iout, temperature_c;
+    uint16_t status_word;
+    uint8_t status_vout, status_iout, status_input, status_temperature, status_cml;
+} TPS546_StrictTelemetry;
+esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample);
+
 #endif /* TPS546_H_ */

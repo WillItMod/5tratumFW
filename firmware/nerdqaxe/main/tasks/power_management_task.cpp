@@ -17,6 +17,7 @@
 #include "serial.h"
 #include "mining_control.h"
 #include "mining_schedule.h"
+#include "autotune/runtime.h"
 #include <cmath>
 
 #define POLL_RATE 2000
@@ -38,6 +39,7 @@ void PowerManagementTask::taskWrapper(void *pvParameters)
 
 void PowerManagementTask::restart()
 {
+    FiveTratumAutotune::externalHandoff("Restart requested");
     ESP_LOGW(TAG, "Shutdown requested ...");
     // stops the main task
     lock();
@@ -55,6 +57,7 @@ void PowerManagementTask::restart()
 
 void PowerManagementTask::shutdown()
 {
+    FiveTratumAutotune::externalHandoff("Shutdown requested");
     lock();
     if (m_board) {
         m_shutdown = true;
@@ -217,6 +220,7 @@ void PowerManagementTask::readAndPublishPowerTelemetry()
 
 void PowerManagementTask::applyAsicSettings()
 {
+    if (FiveTratumAutotune::ownsSettings()) return;
     // not available when asics are shutdown
     if (m_shutdown || (FiveTratumMining::controlSupported() && !FiveTratumMining::miningWritesAllowed())) {
         return;
@@ -377,6 +381,7 @@ void PowerManagementTask::task()
 
         pollProtection();
         FiveTratumMining::updateControl();
+        FiveTratumAutotune::tick();
         unlock();
 #ifdef MEASURE_LOOP_TIME
         // checks if loop takes too much time
@@ -389,4 +394,23 @@ void PowerManagementTask::task()
         last_time = start;
 #endif
     }
+}
+
+bool PowerManagementTask::commandTuningFrequency(uint16_t frequency) {
+    if (!m_board || m_shutdown || !FiveTratumMining::controlSupported() ||
+        !FiveTratumMining::miningWritesAllowed() || !refreshProtectionForMining() ||
+        !m_board->validateFrequency(frequency)) return false;
+    if (frequency == m_appliedAsicFrequency) return true;
+    if (!FiveTratumMining::applyFrequency(frequency)) return false;
+    m_appliedAsicFrequency = frequency;
+    return true;
+}
+bool PowerManagementTask::commandTuningVoltage(uint16_t millivolts) {
+    if (!m_board || m_shutdown || !FiveTratumMining::controlSupported() ||
+        !FiveTratumMining::miningWritesAllowed() || !refreshProtectionForMining() ||
+        !m_board->validateVoltage(millivolts / 1000.0f) || !millivolts) return false;
+    if (millivolts == m_appliedCoreVoltage) return true;
+    if (!m_board->setTuningVoltage(millivolts / 1000.0f, FiveTratumAutotune::transitionAllowed)) return false;
+    m_appliedCoreVoltage = millivolts;
+    return true;
 }

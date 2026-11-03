@@ -7,6 +7,7 @@
 
 #include "i2c_master.h"
 #include "TPS546.h"
+#include "autotune/write_gate.h"
 
 namespace Rev7TPS546
 {
@@ -775,14 +776,8 @@ void TPS546_set_frequency(int newfreq)
 
 float TPS546_get_temperature(void)
 {
-    uint16_t value;
-
-    if (!is_initialized) {
-        return 0;
-    }
-
-    smb_read_word(PMBUS_READ_TEMPERATURE_1, &value);
-
+    uint16_t value = 0;
+    if (!is_initialized || smb_read_word(PMBUS_READ_TEMPERATURE_1, &value) != ESP_OK) return 0;
     return slinear11_2_float(value);
 }
 
@@ -1064,6 +1059,47 @@ bool TPS546::init(int num_phases, int imax, float ifault)
 void TPS546::clear_faults()
 {
     TPS546_clear_faults();
+}
+
+// Read and validate VOUT_MODE once; no conversion reads can silently fail.
+static bool tuning_mode(uint8_t &mode, int &exponent) {
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK) return false;
+    const int raw = mode & 0x1f;
+    exponent = raw & 0x10 ? raw - 32 : raw;
+    return (mode & 0x60) == 0 && exponent >= -16 && exponent <= 0;
+}
+bool TPS546::readTuningTelemetry(BuckTuningTelemetry &output) {
+    output = {};
+    uint16_t status = 0, temp = 0, vin = 0, vout = 0, iout = 0;
+    uint8_t mode = 0; int exponent = 0;
+    if (!m_initialized || !is_initialized || smb_read_word(PMBUS_STATUS_WORD, &status) != ESP_OK || status != 0 ||
+        !tuning_mode(mode, exponent) || smb_read_word(PMBUS_READ_TEMPERATURE_1, &temp) != ESP_OK ||
+        smb_read_word(PMBUS_READ_VIN, &vin) != ESP_OK || smb_read_word(PMBUS_READ_VOUT, &vout) != ESP_OK ||
+        smb_read_word(PMBUS_READ_IOUT, &iout) != ESP_OK) return false;
+    BuckTuningTelemetry next;
+    next.temperatureC = slinear11_2_float(temp);
+    next.vin = slinear11_2_float(vin);
+    const float railVout = ldexpf(static_cast<float>(vout), exponent);
+    next.vout = railVout / m_voltageDomains;
+    next.iout = slinear11_2_float(iout);
+    next.pin = railVout * next.iout;
+    next.measuredInputPower = false; // Output-derived rail power, not PSU watts.
+    if (!isfinite(next.temperatureC) || next.temperatureC <= 0 || next.temperatureC >= 125 ||
+        !isfinite(next.vin) || next.vin <= 0 || !isfinite(next.vout) || next.vout <= 0 ||
+        !isfinite(next.iout) || next.iout < 0 || !isfinite(next.pin) || next.pin <= 0) return false;
+    output = next;
+    return true;
+}
+bool TPS546::setTuningVoltage(float volts, bool (*allowed)()) {
+    BuckTuningTelemetry current; uint8_t mode = 0; int exponent = 0;
+    const float rail = volts * m_voltageDomains;
+    if (!isfinite(volts) || volts <= 0 || rail < m_config.vout_min || rail > m_config.vout_max ||
+        !readTuningTelemetry(current) || !tuning_mode(mode, exponent)) return false;
+    const float command = ldexpf(rail, -exponent);
+    if (!isfinite(command) || command < 1 || command > 65535) return false;
+    // Deliberately no clear_faults, OPERATION, margin or protection writes.
+    FiveTratumAutotune::WriteGuard wire;
+    return allowed && allowed() && smb_write_word(PMBUS_VOUT_COMMAND, static_cast<uint16_t>(command)) == ESP_OK;
 }
 
 float TPS546::get_temperature()

@@ -1,0 +1,363 @@
+#include "autotune_gamma_stubs.h"
+/* Reuse the existing fake storage/HTTP boundary; all NVS journal and profile
+ * code linked by the runner is production, not a second implementation. */
+#define main legacy_profiles_main
+#include "profiles_runtime_test.c"
+#undef main
+static bool revoke_after_snapshot;
+static bool interleaved_snapshot(const NvsConfigKey *,NvsConfigMutation *,size_t);
+#define nvs_config_read_atomic interleaved_snapshot
+#include "../../main/autotune_runtime.c"
+#undef nvs_config_read_atomic
+static bool interleaved_snapshot(const NvsConfigKey *keys,NvsConfigMutation *values,size_t count) {
+    const bool result=nvs_config_read_atomic(keys,values,count);
+    if (revoke_after_snapshot) {revoke_after_snapshot=false;autotune_gamma_manual_override();}
+    return result;
+}
+
+static uint64_t host_now=UINT64_C(1000000);
+static bool sensors_ok=true, counters_ok=true, host_fan_ok=true, host_current_ok=true;
+static unsigned sensor_reads, counter_resets, fault_stops, point_changes;
+static atomic_uint_least32_t tx_failures;
+static double sensor_vout_delta;
+static float host_asic_temp=50,host_vrm_temp=55;
+int64_t esp_timer_get_time(void) {return host_now;}
+void vTaskDelay(unsigned ticks) {(void)ticks;}
+esp_err_t uart_wait_tx_done(int uart,unsigned ticks) {(void)uart;(void)ticks;return ESP_OK;}
+static unsigned physical_uart_frames,physical_i2c_frames;
+static pthread_mutex_t wire_test_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wire_test_condition=PTHREAD_COND_INITIALIZER;
+static bool block_uart,uart_entered,release_uart;
+static atomic_bool revocation_attempted,revocation_completed;
+static int tps546_i2c_handle;
+#define BUF_SIZE 1024
+#include "pmbus_commands.h"
+static void prettyHex(unsigned char *bytes,int length) {(void)bytes;(void)length;}
+static int uart_write_bytes(int uart,const char *bytes,int length) {
+    (void)uart;(void)bytes;
+    pthread_mutex_lock(&wire_test_mutex);
+    if(block_uart) {
+        uart_entered=true;pthread_cond_broadcast(&wire_test_condition);
+        while(!release_uart) pthread_cond_wait(&wire_test_condition,&wire_test_mutex);
+    }
+    ++physical_uart_frames;
+    pthread_mutex_unlock(&wire_test_mutex);return length;
+}
+static esp_err_t i2c_bitaxe_register_write_byte(int device,uint8_t reg,uint8_t value) {
+    (void)device;(void)reg;(void)value;++physical_i2c_frames;return ESP_OK;
+}
+static esp_err_t i2c_bitaxe_register_write_word(int device,uint8_t reg,uint16_t value) {
+    (void)device;(void)reg;(void)value;++physical_i2c_frames;return ESP_OK;
+}
+/* Exact production wire functions, copied by the runner without rewriting;
+ * these call the strong production runtime lease hooks above. */
+#include "gamma_wire_methods.inc"
+esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *out) {
+    ++sensor_reads;
+    if(!sensors_ok) return ESP_FAIL;
+    double v=gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv/1000.0;
+    /* Deterministic output-power plant; it is not a claimed real miner curve. */
+    double watts=12.0*(gs.POWER_MANAGEMENT_MODULE.frequency_value/625.125)*(v/1.173)*(v/1.173);
+    *out=(TPS546_StrictTelemetry){.vin=5.1,.vout=v+sensor_vout_delta,.iout=host_current_ok?watts/v:0,.temperature_c=host_vrm_temp};
+    return ESP_OK;
+}
+esp_err_t EMC2101_read_strict(float *temp,uint16_t *rpm) {
+    if(!sensors_ok) return ESP_FAIL;
+    *temp=host_asic_temp;*rpm=host_fan_ok?3000:0;return ESP_OK;
+}
+GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state,uint64_t now) {
+    (void)state;
+    return (GammaAutotuneCounterSample){.valid=counters_ok,.captured_at_us=now-500000,
+        .sample_id=now-500000,.useful_ghs=gs.POWER_MANAGEMENT_MODULE.frequency_value*2.04,.error_percentage=0};
+}
+void hashrate_monitor_reset_measurements(void *state) {(void)state;++counter_resets;}
+void POWER_MANAGEMENT_stop_for_fault(void *state,const char *reason) {
+    (void)reason;GlobalState *device=state;++fault_stops;device->SYSTEM_MODULE.hardware_fault=true;device->ASIC_initalized=false;
+}
+static httpd_req_t tune_request(bool write,const char *body) {return request(write?4:3,body);}
+static void observe(void) {
+    httpd_req_t req=tune_request(false,NULL);assert(req.code==200);
+    uint16_t mv=nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE);float mhz=nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY);
+    assert(!autotune_gamma_select_target(&gs,&mv,&mhz));
+}
+static void init(void) {
+    bootstrap();
+    gs.SYSTEM_MODULE.mining_runtime_ready=true;gs.ASIC_initalized=true;
+    gs.POWER_MANAGEMENT_MODULE.frequency_value=625.125f;
+    gs.POWER_MANAGEMENT_MODULE.actual_frequency=625.125f;
+    gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=1173;
+    autotune_gamma_init(&gs);assert(tuner.supported&&tuner.generation==1);
+    assert(autotune_gamma_register(NULL)==ESP_OK&&route_count==5);
+    observe();assert(tuner.input.valid);
+}
+static void start(void) {
+    httpd_req_t req=tune_request(true,"{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}");
+    if(req.code!=200) fprintf(stderr,"start failed: %s\n",req.reply);
+    assert(req.code==200&&tuner.core.owns&&tuner.backup_available);
+}
+static bool step(bool callback) {
+    host_now+=TUNE_POLL_US;
+    uint16_t mv=nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE);float mhz=nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY);
+    bool owned=autotune_gamma_select_target(&gs,&mv,&mhz);
+    if(owned && callback) {
+        if(mv!=gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv || mhz!=gs.POWER_MANAGEMENT_MODULE.frequency_value) ++point_changes;
+        gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=mv;
+        gs.POWER_MANAGEMENT_MODULE.frequency_value=mhz;gs.POWER_MANAGEMENT_MODULE.actual_frequency=mhz;
+        assert(autotune_gamma_transition_finished(&gs,true));
+    }
+    return owned;
+}
+static void reboot_runtime(void) {
+    memset(&tuner,0,sizeof(tuner));atomic_store(&transition_live,false);atomic_store(&manual_epoch,0);
+    autotune_gamma_init(&gs);
+}
+static void expect_error(const char *body,const char *error) {
+    httpd_req_t req=tune_request(true,body);assert(req.code!=200&&strstr(req.reply,error));
+}
+static httpd_req_t configure_request(fwt_config config) {
+    cJSON *json=cJSON_CreateObject();assert(json&&cJSON_AddStringToObject(json,"action","configure"));
+    assert(cJSON_AddItemToObject(json,"config",config_json(&config)));
+    char *body=cJSON_PrintUnformatted(json);assert(body);
+    httpd_req_t req=tune_request(true,body);free(body);cJSON_Delete(json);return req;
+}
+static void *wire_writer(void *unused) {
+    (void)unused;uint8_t bytes[12]={0};
+    return (void *)(uintptr_t)SERIAL_send(bytes,sizeof(bytes),false);
+}
+static void *wire_revoker(void *fault) {
+    pthread_mutex_lock(&wire_test_mutex);
+    atomic_store(&revocation_attempted,true);pthread_cond_broadcast(&wire_test_condition);
+    pthread_mutex_unlock(&wire_test_mutex);
+    if(fault) autotune_gamma_interrupt("hardware-fault");else autotune_gamma_manual_override();
+    atomic_store(&revocation_completed,true);return NULL;
+}
+int main(int argc,char **argv) {
+    assert(argc==2);init();const char *name=argv[1];
+    if(!strcmp(name,"waiver")) {
+        unsigned before=writes;
+        expect_error("{\"action\":\"start\"}","waiver-required");
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":1,\"waiverVersion\":1}","waiver-required");
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":2}","waiver-required");
+        assert(writes==before&&!tuner.core.owns&&!tuner.backup_available);
+    } else if(!strcmp(name,"read-only")) {
+        unsigned before=writes,reads=sensor_reads;
+        cJSON *schema=report();assert(schema);
+        const cJSON *limits=cJSON_GetObjectItemCaseSensitive(schema,"limits");
+        const char *limit_keys[]={"minFrequencyMHz","maxFrequencyMHz","minVoltageMv","maxVoltageMv",
+            "maxAsicTempC","maxVrmTempC","maxPowerW","frequencyStepMHz","voltageStepMv"};
+        assert(cJSON_GetArraySize(limits)==9);
+        for(unsigned i=0;i<9;++i) {const cJSON *value=cJSON_GetObjectItemCaseSensitive(limits,limit_keys[i]);assert(cJSON_IsNumber(value)&&value->valuedouble>0);}
+        cJSON_Delete(schema);
+        for(unsigned i=0;i<10;++i) {httpd_req_t req=tune_request(false,NULL);assert(req.code==200&&!strstr(req.reply,"fixture-pass")&&!strstr(req.reply,"020000000001"));}
+        assert(writes==before&&sensor_reads==reads&&!tuner.core.owns);
+        authorized=false;
+        httpd_req_t req=tune_request(true,"{\"action\":\"stop\"}");assert(req.code==401&&req.received==0&&writes==before);
+    } else if(!strcmp(name,"backup-once")) {
+        start();Entry *original=find(2,"backup");assert(original&&original->size);
+        size_t length=original->size;unsigned char bytes[2048];memcpy(bytes,original->bytes,length);
+        for(unsigned i=0;i<50&&!point_changes;++i) step(true);
+        assert(point_changes>0&&counter_resets>0);
+        autotune_gamma_manual_override();step(true);assert(!tuner.core.owns);
+        gs.POWER_MANAGEMENT_MODULE.frequency_value=625.125f;gs.POWER_MANAGEMENT_MODULE.actual_frequency=625.125f;gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=1173;
+        host_now+=TUNE_POLL_US;observe();start();
+        assert(original->size==length&&!memcmp(bytes,original->bytes,length));
+        reboot_runtime();assert(!tuner.core.owns&&tuner.backup_available);
+        host_now+=TUNE_POLL_US;observe();assert(!tuner.backup_restored);
+        host_now+=TUNE_POLL_US;observe();assert(tuner.backup_restored);
+    } else if(!strcmp(name,"backup-failure")) {
+        fail_set=true;expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","backup-verification-failed");
+        assert(!tuner.core.owns&&!tuner.backup_available&&!point_changes);fail_set=false;
+        fail_commit=true;expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","backup-verification-failed");
+        assert(!tuner.core.owns&&!tuner.backup_available);fail_commit=false;start();
+    } else if(!strcmp(name,"backup-binding")) {
+        start();Entry *backup=find(2,"backup");assert(backup);
+        char *board=strstr((char *)backup->bytes,"601");assert(board);board[2]='2';
+        reboot_runtime();assert(!tuner.backup_available&&!tuner.storage_ok&&!tuner.core.owns);
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","storage-or-restore-unavailable");
+        assert(!erases);
+    } else if(!strcmp(name,"backup-invalid-snapshot")) {
+        put(1,"manualfanspeed",3,NULL,101);assert(nvs_config_init()==ESP_OK);
+        unsigned before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","backup-verification-failed");
+        assert(writes==before&&!find(2,"backup")&&!tuner.backup_available);
+        put(1,"manualfanspeed",3,NULL,100);assert(nvs_config_init()==ESP_OK);
+        host_now+=TUNE_POLL_US;observe();start();
+    } else if(!strcmp(name,"backup-cached-corruption") || !strcmp(name,"backup-cached-deletion")) {
+        start();autotune_gamma_interrupt("manual-control");host_now+=TUNE_POLL_US;observe();
+        Entry *record=find(2,"backup");assert(record);
+        if(!strcmp(name,"backup-cached-deletion")) record->ns=99;
+        else {char *voltage=strstr((char *)record->bytes,"1173");assert(voltage);voltage[3]='4';}
+        unsigned before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","backup-verification-failed");
+        assert(!tuner.core.owns&&writes==before&&tuner.backup[1].value.u16==1173);
+    } else if(!strcmp(name,"wire-vout-drift")) {
+        start();assert(step(false));assert(autotune_gamma_transition_allowed(&gs));
+        sensor_vout_delta=-0.050;
+        assert(!autotune_gamma_transition_allowed(&gs));
+        sensor_vout_delta=0.050;
+        assert(!autotune_gamma_transition_allowed(&gs));
+        sensor_vout_delta=0;
+        assert(autotune_gamma_transition_allowed(&gs));
+        host_current_ok=false;assert(!autotune_gamma_transition_allowed(&gs));
+    } else if(!strcmp(name,"manual-handoff")) {
+        start();unsigned before=writes;
+        autotune_gamma_manual_override();step(true);
+        assert(!tuner.core.owns&&tuner.backup_available&&writes==before);
+        for(unsigned i=0;i<20;++i) assert(!step(true));
+    } else if(!strcmp(name,"hardware-policy-handoff")) {
+        for(unsigned kind=0;kind<4;++kind) {
+            start();assert(step(false));
+            const uint32_t before=atomic_load(&manual_epoch);
+            if(kind==0) nvs_config_set_i32(NVS_CONFIG_TEMP_OFFSET,nvs_config_get_i32(NVS_CONFIG_TEMP_OFFSET)+1);
+            if(kind==1) nvs_config_set_bool(NVS_CONFIG_EMC_INTERNAL_TEMP,!nvs_config_get_bool(NVS_CONFIG_EMC_INTERNAL_TEMP));
+            if(kind==2) nvs_config_set_u16(NVS_CONFIG_TPS546_FREQUENCY,nvs_config_get_u16(NVS_CONFIG_TPS546_FREQUENCY)+1);
+            if(kind==3) nvs_config_set_float(NVS_CONFIG_TPS546_SCALE_LOOP,nvs_config_get_float(NVS_CONFIG_TPS546_SCALE_LOOP)+.001f);
+            assert(atomic_load(&manual_epoch)!=before&&autotune_gamma_transition_cancelled());
+            assert(!step(true)&&!tuner.core.owns&&tuner.backup_available);
+            /* A Start racing a queued hardware change is revoked again when
+             * that change reaches the actual cache/persistence boundary. */
+            start();const uint32_t pending=atomic_load(&manual_epoch);
+            drain_auth_write();assert(atomic_load(&manual_epoch)!=pending);
+            assert(!step(true)&&!tuner.core.owns);
+        }
+        start();const uint32_t before=atomic_load(&manual_epoch);
+        nvs_config_set_u64(NVS_CONFIG_BEST_DIFF,nvs_config_get_u64(NVS_CONFIG_BEST_DIFF)+1);
+        drain_auth_write();assert(atomic_load(&manual_epoch)==before&&step(false)&&tuner.core.owns);
+    } else if(!strcmp(name,"start-snapshot-interleave")) {
+        start();autotune_gamma_interrupt("manual-control");step(false);
+        revoke_after_snapshot=true;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","manual-control-changed");
+        assert(!tuner.core.owns&&tuner.backup_available&&!point_changes);
+        start();assert(tuner.core.owns);
+    } else if(!strcmp(name,"manual-pair-interleave")) {
+        start();uint16_t stale_mv=1173;float stale_mhz=625.125f;
+        const NvsConfigMutation changes[]={
+            {.key=NVS_CONFIG_ASIC_FREQUENCY,.type=TYPE_FLOAT,.value.f=575},
+            {.key=NVS_CONFIG_ASIC_VOLTAGE,.type=TYPE_U16,.value.u16=1150}};
+        assert(nvs_config_apply_atomic(changes,2)==ESP_OK);
+        assert(!autotune_gamma_select_target(&gs,&stale_mv,&stale_mhz));
+        assert(!tuner.core.owns&&stale_mv==1150&&stale_mhz==575);
+    } else if(!strcmp(name,"restore-storage")) {
+        start();for(unsigned i=0;i<50&&!point_changes;++i) step(true);assert(point_changes);
+        const float live=gs.POWER_MANAGEMENT_MODULE.frequency_value;
+        const uint16_t voltage=gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv;
+        /* A manual fan change is durable v2 and cancels auto ownership. */
+        nvs_config_set_u16(NVS_CONFIG_MANUAL_FAN_SPEED,80);drain_auth_write();step(true);
+        assert(journal()->bytes[4]==2&&nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==80);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        fail_set=true;assert(step(true));
+        assert(tuner.restore_pending&&!tuner.backup_restored&&!tuner.restore_committed);
+        assert(gs.POWER_MANAGEMENT_MODULE.frequency_value==live&&gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==voltage);
+        fail_set=false;
+        for(unsigned i=0;i<12&&tuner.restore_pending;++i) step(true);
+        assert(tuner.backup_restored&&!tuner.restore_pending&&tuner.backup_available);
+        assert(nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE)==1173&&nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY)==625.125f);
+        assert(nvs_config_get_bool(NVS_CONFIG_AUTO_FAN_SPEED)&&nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==100&&nvs_config_get_u16(NVS_CONFIG_MIN_FAN_SPEED)==25&&nvs_config_get_u16(NVS_CONFIG_TEMP_TARGET)==60);
+        assert(journal()->bytes[4]==1);unsigned before=writes;assert(nvs_config_init()==ESP_OK&&writes==before);
+        reboot_runtime();assert(tuner.backup_available&&!tuner.core.owns);
+    } else if(!strcmp(name,"restore-fault")) {
+        start();autotune_gamma_interrupt("fault");gs.SYSTEM_MODULE.hardware_fault=true;
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);unsigned before=writes;
+        assert(step(true)&&tuner.restore_pending&&!tuner.backup_restored&&writes==before&&gs.SYSTEM_MODULE.hardware_fault);
+        httpd_req_t req=tune_request(false,NULL);assert(strstr(req.reply,"\"asicTempC\":null"));
+    } else if(!strcmp(name,"stale-sensors")) {
+        sensors_ok=false;host_now+=TUNE_POLL_US;observe();assert(!tuner.input.valid);
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","miner-not-ready");
+        httpd_req_t req=tune_request(false,NULL);assert(strstr(req.reply,"\"asicTempC\":null")&&!point_changes);
+    } else if(!strcmp(name,"zero-current")) {
+        host_current_ok=false;host_now+=TUNE_POLL_US;observe();assert(!tuner.input.valid);
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","miner-not-ready");
+        assert(!tuner.backup_available&&!point_changes);
+    } else if(!strcmp(name,"domains")) {
+        counters_ok=false;host_now+=TUNE_POLL_US;observe();assert(!tuner.input.valid);
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","miner-not-ready");
+    } else if(!strcmp(name,"lost-apply")) {
+        start();for(unsigned i=0;i<60&&!tuner.core.awaitingApply;++i) step(false);
+        assert(tuner.core.awaitingApply);
+        for(unsigned i=0;i<20&&!fault_stops;++i) step(false);
+        assert(fault_stops&&gs.SYSTEM_MODULE.hardware_fault&&tuner.backup_available&&!point_changes);
+    } else if(!strcmp(name,"readback-failure")) {
+        start();for(unsigned i=0;i<60&&!tuner.core.awaitingApply;++i) step(true);
+        assert(tuner.core.awaitingApply&&tuner.confirming);
+        sensor_vout_delta=.08;
+        for(unsigned i=0;i<20&&!fault_stops;++i) step(false);
+        assert(fault_stops&&tuner.backup_available&&!tuner.backup_restored);
+    } else if(!strcmp(name,"configure-busy")) {
+        start();for(unsigned i=0;i<60&&!tuner.core.awaitingApply;++i) step(true);assert(tuner.core.awaitingApply);
+        unsigned before=writes;
+        expect_error("{\"action\":\"configure\",\"config\":{}}","transition-in-progress");assert(writes==before);
+    } else if(!strcmp(name,"configure-preflight")) {
+        start();fwt_config config=tuner.core.config;config.maxFrequencyMHz=600;
+        unsigned before=writes;httpd_req_t req=configure_request(config);
+        assert(req.code==409&&strstr(req.reply,"invalid-configuration")&&writes==before&&tuner.core.config.maxFrequencyMHz==625.125);
+    } else if(!strcmp(name,"restore-slow-rail") || !strcmp(name,"restore-stuck-rail")) {
+        start();gs.POWER_MANAGEMENT_MODULE.frequency_value=575;gs.POWER_MANAGEMENT_MODULE.actual_frequency=575;
+        gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=1100;
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        assert(step(true)&&tuner.rail_wait&&gs.POWER_MANAGEMENT_MODULE.frequency_value==575);
+        assert(gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==1173);
+        sensor_vout_delta=-.073;
+        for(unsigned i=0;i<2;++i) {
+            assert(step(true)&&tuner.rail_wait&&!fault_stops&&gs.POWER_MANAGEMENT_MODULE.frequency_value==575);
+        }
+        /* Repeated Disable cannot skip an already commanded but unconfirmed rail. */
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        assert(step(true)&&tuner.rail_wait&&gs.POWER_MANAGEMENT_MODULE.frequency_value==575);
+        if(!strcmp(name,"restore-stuck-rail")) {
+            for(unsigned i=0;i<20&&!fault_stops;++i) step(true);
+            assert(fault_stops&&gs.SYSTEM_MODULE.hardware_fault&&tuner.backup_available&&!tuner.backup_restored);
+            assert(gs.POWER_MANAGEMENT_MODULE.frequency_value==575);
+        } else {
+            sensor_vout_delta=0;
+            assert(step(true)&&tuner.rail_wait&&tuner.rail_confirmations==1&&gs.POWER_MANAGEMENT_MODULE.frequency_value==575);
+            assert(step(true)&&!tuner.rail_wait&&gs.POWER_MANAGEMENT_MODULE.frequency_value==625.125f&&!fault_stops);
+            for(unsigned i=0;i<8&&tuner.restore_pending;++i) step(true);
+            assert(tuner.backup_restored&&!tuner.restore_pending&&!fault_stops);
+        }
+    } else if(!strcmp(name,"restore-low-user-limit")) {
+        start();tuner.core.config.maxAsicTempC=40;
+        gs.POWER_MANAGEMENT_MODULE.frequency_value=575;gs.POWER_MANAGEMENT_MODULE.actual_frequency=575;
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        step(true);assert(autotune_gamma_transition_allowed(&gs));
+        for(unsigned i=0;i<8&&tuner.restore_pending;++i) step(true);
+        assert(tuner.backup_restored&&!tuner.restore_pending&&host_asic_temp>tuner.core.config.maxAsicTempC);
+    } else if(!strcmp(name,"wire-after-preflight")) {
+        start();step(true);assert(autotune_gamma_transition_allowed(&gs));
+        uint8_t bytes[12]={0};unsigned uart_before=physical_uart_frames,i2c_before=physical_i2c_frames;
+        autotune_gamma_manual_override();
+        assert(SERIAL_send(bytes,sizeof(bytes),false)==0&&physical_uart_frames==uart_before);
+        assert(smb_write_word(PMBUS_VOUT_COMMAND,600)!=ESP_OK&&physical_i2c_frames==i2c_before);
+        assert(smb_write_byte(PMBUS_OPERATION,OPERATION_OFF)==ESP_OK&&physical_i2c_frames==i2c_before+1);
+        step(true);assert(!tuner.core.owns);
+        assert(SERIAL_send(bytes,sizeof(bytes),false)==sizeof(bytes));
+        assert(smb_write_word(PMBUS_VOUT_COMMAND,600)==ESP_OK);
+    } else if(!strcmp(name,"wire-inflight") || !strcmp(name,"wire-fault")) {
+        start();step(true);pthread_t writer,revoker;block_uart=true;
+        assert(!pthread_create(&writer,NULL,wire_writer,NULL));
+        pthread_mutex_lock(&wire_test_mutex);
+        while(!uart_entered)pthread_cond_wait(&wire_test_condition,&wire_test_mutex);
+        pthread_mutex_unlock(&wire_test_mutex);
+        assert(!pthread_create(&revoker,NULL,wire_revoker,!strcmp(name,"wire-fault")?(void *)1:NULL));
+        pthread_mutex_lock(&wire_test_mutex);
+        while(!atomic_load(&revocation_attempted))pthread_cond_wait(&wire_test_condition,&wire_test_mutex);
+        assert(!atomic_load(&revocation_completed));
+        release_uart=true;pthread_cond_broadcast(&wire_test_condition);pthread_mutex_unlock(&wire_test_mutex);
+        void *result;assert(!pthread_join(writer,&result)&&(uintptr_t)result==12);
+        assert(!pthread_join(revoker,NULL)&&atomic_load(&revocation_completed));
+        unsigned uart_before=physical_uart_frames,i2c_before=physical_i2c_frames;uint8_t bytes[12]={0};
+        assert(SERIAL_send(bytes,sizeof(bytes),false)==0&&physical_uart_frames==uart_before);
+        assert(smb_write_word(PMBUS_VOUT_COMMAND,600)!=ESP_OK&&physical_i2c_frames==i2c_before);
+        assert(smb_write_byte(PMBUS_OPERATION,OPERATION_OFF)==ESP_OK);
+        autotune_gamma_owner_idle();
+        assert(smb_write_word(PMBUS_VOUT_COMMAND,600)==ESP_OK);
+    } else if(!strcmp(name,"uart-failure")) {
+        start();for(unsigned i=0;i<60&&!tuner.core.awaitingApply;++i) step(false);assert(tuner.core.awaitingApply);
+        ++tx_failures;assert(!autotune_gamma_transition_finished(&gs,true));assert(!tuner.core.owns);
+    } else if(!strcmp(name,"manual-pending")) {
+        gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=1150;
+        tuner.input.current.coreVoltageMv=1150;tuner.input.voltageReadbackMv=1150;
+        unsigned before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","manual-settings-not-applied");assert(writes==before&&!tuner.backup_available);
+    } else assert(!"unknown scenario");
+    assert(!erases);puts("PASS");return 0;
+}

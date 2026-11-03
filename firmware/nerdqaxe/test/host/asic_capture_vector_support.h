@@ -1,4 +1,6 @@
 #pragma once
+#include "autotune/write_gate.h"
+namespace FiveTratumAutotune { inline bool transitionAllowed() { return true; } }
 // Only external UART/RTOS/log boundaries are replaced. This harness creates
 // synthetic source vectors; it contains no serial port or device access.
 #include <algorithm>

@@ -151,6 +151,8 @@ class TPS546 : public BuckConverter {
     bool uses_external_vr_temperature() override;
 
     bool set_vout(float volts) override;
+    bool readTuningTelemetry(BuckTuningTelemetry &output) override;
+    bool setTuningVoltage(float volts, bool (*allowed)()) override;
     bool disable_vout() override;
 
     void status() override;

@@ -1,0 +1,597 @@
+#include "runtime.h"
+#include "core.h"
+#include "write_gate.h"
+#include "global_state.h"
+#include "tasks/mining_control.h"
+#include "tasks/mining_schedule.h"
+#include "tasks/mining_board_policy.h"
+#include "http_server/handler_capabilities.h"
+#include "nvs_config.h"
+#include "nvs.h"
+#include "esp_timer.h"
+#include "esp_app_desc.h"
+#include "freertos/task.h"
+#include "http_server/http_cors.h"
+#include <atomic>
+#include <cmath>
+#include <cstring>
+#include <memory>
+#include <algorithm>
+#include <string>
+#include <utility>
+#include "http_server/http_utils.h"
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
+namespace FiveTratumAutotune {
+namespace {
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+struct Guard { Guard() { pthread_mutex_lock(&mutex); } ~Guard() { pthread_mutex_unlock(&mutex); } };
+fwt_controller controller{};
+fwt_input observed{};
+TuningSensors sensors{};
+bool initialized = false, optionsError = false, backupAvailable = false, backupRestored = false;
+bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
+TaskHandle_t restoreWorker = nullptr;
+void restoreWorkerLoop(void *);
+bool ensureRestoreWorker() {
+    if (restoreWorker) return true;
+    TaskHandle_t created=nullptr;
+    if (xTaskCreate(restoreWorkerLoop,"tune_restore",4096,nullptr,8,&created)!=pdPASS || !created) return false;
+    restoreWorker=created;return true;
+}
+bool pending = false;
+unsigned voltageMatches = 0;
+uint64_t transitionStarted = 0, mutationRevision = 0;
+uint64_t transitionHealthUntilUs = 0;
+fwt_point target{};
+JsonDocument backup;
+const char *adapterReason = nullptr;
+const char *observationReason = nullptr;
+std::atomic<const char *> handoff{nullptr};
+std::atomic_uint firmwareUpdates{0};
+std::atomic_bool permanentFreeze{false};
+constexpr size_t maxBlob = 4096;
+constexpr int waiverVersion = 1;
+
+bool exactFamily(Board *board) {
+    if (!board || strcmp(board->getAsicModel(),"BM1370") || !FiveTratumMining::controlSupported() || board->isCanSlave() || Config::isCanEnabled()) return false;
+    const unsigned count = FiveTratumMining::expectedStandaloneChain(board->getDeviceModel(), board->getAsicModel());
+    return (count == 4 || count == 8) && board->getAsicCount() == static_cast<int>(count);
+}
+fwt_limits hardwareLimits(Board *board) {
+    fwt_limits limits{};
+    if (!exactFamily(board)) return limits;
+    limits.minFrequencyMHz = 100;
+    limits.maxFrequencyMHz = board->getAbsMaxAsicFrequency();
+    limits.minVoltageMv = board->getAbsMinAsicVoltageMillis() > 0 ? board->getAbsMinAsicVoltageMillis() : 1005;
+    limits.maxVoltageMv = board->getAbsMaxAsicVoltageMillis();
+    const double asicProtection = POWER_MANAGEMENT_MODULE.getFanController().getOverheatTemp(0);
+    const double vrmProtection = POWER_MANAGEMENT_MODULE.getFanController().getOverheatTemp(1);
+    // A disabled protection channel does not become an unlimited tuner ceiling.
+    limits.maxAsicTempC = asicProtection >= 40 ? std::min(asicProtection - 5.0, 80.0) : 0;
+    limits.maxVrmTempC = vrmProtection >= 40 ? std::min(vrmProtection - 5.0, 95.0) : 0;
+    limits.maxPowerW = board->getMaxPin();
+    limits.frequencyStepMHz = 10; // Existing Nerd API targets integer MHz; PLL driver resolves the actual command.
+    limits.voltageStepMv = 5;
+    return limits;
+}
+void writeConfig(JsonObject out, const fwt_config &config) {
+    out["priority"] = fwt_priority_name(config.priority); out["continuous"] = config.continuous;
+    out["minFrequencyMHz"] = config.minFrequencyMHz; out["maxFrequencyMHz"] = config.maxFrequencyMHz;
+    out["minVoltageMv"] = config.minVoltageMv; out["maxVoltageMv"] = config.maxVoltageMv;
+    out["maxAsicTempC"] = config.maxAsicTempC; out["maxVrmTempC"] = config.maxVrmTempC; out["maxPowerW"] = config.maxPowerW;
+}
+bool numeric(JsonObjectConst object, const char *key, double &out) {
+    const auto value = object[key];
+    if (value.is<bool>() || !value.is<double>()) return false;
+    out = value.as<double>(); return std::isfinite(out);
+}
+bool parseConfig(JsonObjectConst object, fwt_config &config) {
+    if (object.size() != 9 || !object["priority"].is<const char *>() || !object["continuous"].is<bool>()) return false;
+    const char *priority = object["priority"];
+    if (!strcmp(priority, "efficiency")) config.priority = FWT_EFFICIENCY;
+    else if (!strcmp(priority, "balanced")) config.priority = FWT_BALANCED;
+    else if (!strcmp(priority, "performance")) config.priority = FWT_PERFORMANCE;
+    else return false;
+    config.continuous = object["continuous"];
+    if (!numeric(object,"minFrequencyMHz",config.minFrequencyMHz) || !numeric(object,"maxFrequencyMHz",config.maxFrequencyMHz) ||
+        !numeric(object,"minVoltageMv",config.minVoltageMv) || !numeric(object,"maxVoltageMv",config.maxVoltageMv) ||
+        !numeric(object,"maxAsicTempC",config.maxAsicTempC) || !numeric(object,"maxVrmTempC",config.maxVrmTempC) ||
+        !numeric(object,"maxPowerW",config.maxPowerW)) return false;
+    return std::floor(config.minFrequencyMHz) == config.minFrequencyMHz && std::floor(config.maxFrequencyMHz) == config.maxFrequencyMHz &&
+           std::floor(config.minVoltageMv) == config.minVoltageMv && std::floor(config.maxVoltageMv) == config.maxVoltageMv;
+}
+bool readBlob(const char *key, JsonDocument &document, bool &missing) {
+    missing = false; document.clear();
+    nvs_handle_t handle; esp_err_t err = nvs_open("fwtune", NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) { missing = true; return true; }
+    if (err != ESP_OK) return false;
+    size_t length = 0; err = nvs_get_blob(handle, key, nullptr, &length);
+    if (err == ESP_ERR_NVS_NOT_FOUND) { nvs_close(handle); missing = true; return true; }
+    if (err != ESP_OK || !length || length > maxBlob) { nvs_close(handle); return false; }
+    std::unique_ptr<char[]> data(new (std::nothrow) char[length]);
+    if (!data) { nvs_close(handle); return false; }
+    err = nvs_get_blob(handle,key,data.get(),&length); nvs_close(handle);
+    return err == ESP_OK && !deserializeJson(document,data.get(),length,DeserializationOption::NestingLimit(4));
+}
+bool writeVerified(const char *key, JsonDocument &document) {
+    const size_t length = measureJson(document);
+    if (document.overflowed() || !length || length > maxBlob) return false;
+    std::unique_ptr<char[]> data(new (std::nothrow) char[length + 1]);
+    if (!data || serializeJson(document,data.get(),length+1) != length) return false;
+    nvs_handle_t handle; esp_err_t err = nvs_open("fwtune",NVS_READWRITE,&handle);
+    if (err != ESP_OK) return false;
+    err = nvs_set_blob(handle,key,data.get(),length);
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    if (err != ESP_OK) return false;
+    JsonDocument verified; bool missing = false;
+    if (!readBlob(key,verified,missing) || missing || measureJson(verified) != length) return false;
+    std::unique_ptr<char[]> compare(new (std::nothrow) char[length+1]);
+    return compare && serializeJson(verified,compare.get(),length+1) == length && !memcmp(data.get(),compare.get(),length);
+}
+bool captureEffective(Board *board, JsonObject out) {
+    if (!board || !Config::captureTuningSettings(out)) return false;
+    out[NVS_CONFIG_ASIC_FREQ] = board->getAsicFrequency();
+    out[NVS_CONFIG_ASIC_VOLTAGE] = board->getAsicVoltageMillis();
+    out[NVS_CONFIG_INVERT_FAN_POLARITY] = Config::cfgGetU16(NVS_CONFIG_INVERT_FAN_POLARITY,0);
+    out[NVS_CONFIG_AUTO_FAN_POLARITY] = Config::cfgGetU16(NVS_CONFIG_AUTO_FAN_POLARITY,0);
+    out[NVS_CONFIG_FAN_PWM_POLARITY] = board->isInvertFanPolarityEnabled() ? 1 : 0;
+    out[NVS_CONFIG_AUTO_FAN_SPEED] = board->getFanMode(0);
+    out[NVS_CONFIG_FAN1_MODE] = board->getFanMode(1);
+    out[NVS_CONFIG_FAN_SPEED] = Config::getFanManualSpeed(0);
+    out[NVS_CONFIG_FAN1_SPEED] = Config::getFanManualSpeed(1);
+    out[NVS_CONFIG_OVERHEAT_TEMP] = POWER_MANAGEMENT_MODULE.getFanController().getOverheatTemp(0);
+    out[NVS_CONFIG_FAN1_OVERHEAT] = POWER_MANAGEMENT_MODULE.getFanController().getOverheatTemp(1);
+    const auto *a = board->getPidSettings(0); const auto *b = board->getPidSettings(1);
+    if (!a || !b) return false;
+    out[NVS_CONFIG_PID_TARGET_TEMP] = a->targetTemp; out[NVS_CONFIG_PID_P]=a->p; out[NVS_CONFIG_PID_I]=a->i; out[NVS_CONFIG_PID_D]=a->d;
+    out[NVS_CONFIG_FAN1_PID_TEMP] = b->targetTemp; out[NVS_CONFIG_FAN1_PID_P]=b->p; out[NVS_CONFIG_FAN1_PID_I]=b->i; out[NVS_CONFIG_FAN1_PID_D]=b->d;
+    out[NVS_CONFIG_FAN_PID_USE_MAX] = Config::isFanPidUseMax() ? 1 : 0;
+    return true;
+}
+bool validEffectiveSettings(Board *board, JsonObjectConst values) {
+    if (!board || !Config::validTuningSettings(values)) return false;
+    const double frequency=values[NVS_CONFIG_ASIC_FREQ].as<unsigned>();
+    const double voltage=values[NVS_CONFIG_ASIC_VOLTAGE].as<unsigned>();
+    if (frequency<100 || frequency>board->getAbsMaxAsicFrequency() || voltage<controller.limits.minVoltageMv || voltage>board->getAbsMaxAsicVoltageMillis()) return false;
+    for (const char *key : {NVS_CONFIG_INVERT_FAN_POLARITY,NVS_CONFIG_AUTO_FAN_POLARITY,NVS_CONFIG_FAN_PWM_POLARITY,NVS_CONFIG_FAN_PID_USE_MAX}) if (values[key].as<unsigned>()>1) return false;
+    for (const char *key : {NVS_CONFIG_FAN_SPEED,NVS_CONFIG_FAN1_SPEED}) if (values[key].as<unsigned>()>100) return false;
+    const unsigned first=values[NVS_CONFIG_AUTO_FAN_SPEED],second=values[NVS_CONFIG_FAN1_MODE];
+    if ((first!=0 && first!=2) || (second!=0 && second!=2 && second!=3)) return false;
+    for (const char *key : {NVS_CONFIG_OVERHEAT_TEMP,NVS_CONFIG_FAN1_OVERHEAT,NVS_CONFIG_PID_TARGET_TEMP,NVS_CONFIG_FAN1_PID_TEMP}) {
+        const unsigned value=values[key]; if (value<20 || value>125) return false;
+    }
+    return true;
+}
+bool effectiveMatch(Board *board) {
+    JsonDocument current;
+    if (!backupAvailable || !captureEffective(board,current.to<JsonObject>())) return false;
+    JsonObjectConst original=backup["settings"].as<JsonObjectConst>();
+    if (current.size()!=original.size()) return false;
+    for (JsonPairConst value : original) if (current[value.key()] != value.value()) return false;
+    return true;
+}
+bool backupMatches(Board *board, JsonDocument &document) {
+    char identity[39];
+    return document.size()==7 && board && readFiveTratumPhysicalDeviceId(identity) && document["schemaVersion"].is<int>() &&
+        document["schemaVersion"].as<int>() == 1 && document["deviceId"].is<const char *>() &&
+        !strcmp(document["deviceId"],identity) && document["model"].is<const char *>() &&
+        !strcmp(document["model"],board->getDeviceModel()) && document["asicCount"].is<int>() &&
+        document["asicCount"].as<int>() == board->getAsicCount() && document["settings"].is<JsonObject>() && validEffectiveSettings(board,document["settings"].as<JsonObjectConst>()) &&
+        document["frequencyMHz"].is<uint16_t>() && document["frequencyMHz"].as<uint16_t>() > 0 &&
+        document["coreVoltageMv"].is<uint16_t>() && document["coreVoltageMv"].as<uint16_t>() > 0 &&
+        document["frequencyMHz"].as<uint16_t>() == document["settings"][NVS_CONFIG_ASIC_FREQ].as<uint16_t>() &&
+        document["coreVoltageMv"].as<uint16_t>() == document["settings"][NVS_CONFIG_ASIC_VOLTAGE].as<uint16_t>();
+}
+void initialize(Board *board) {
+    if (initialized || !exactFamily(board)) return;
+    const fwt_limits limits = hardwareLimits(board);
+    fwt_config config{};
+    config.priority = FWT_BALANCED; config.continuous = false;
+    config.maxFrequencyMHz = board->getAsicFrequency();
+    config.minFrequencyMHz = std::max(limits.minFrequencyMHz, config.maxFrequencyMHz * 0.7);
+    config.minFrequencyMHz = std::ceil(config.minFrequencyMHz);
+    config.maxVoltageMv = board->getAsicVoltageMillis();
+    config.minVoltageMv = std::max(limits.minVoltageMv, config.maxVoltageMv - 100);
+    config.maxAsicTempC = std::min(limits.maxAsicTempC, 65.0);
+    config.maxVrmTempC = std::min(limits.maxVrmTempC, 80.0);
+    config.maxPowerW = limits.maxPowerW;
+    JsonDocument stored; bool missing = false;
+    if (!readBlob("options",stored,missing)) optionsError = true;
+    else if (!missing && (!parseConfig(stored.as<JsonObjectConst>(),config) || !fwt_config_valid(&config,&limits))) optionsError = true;
+    fwt_init(&controller,&limits,&config);
+    if (!readBlob("baseline",backup,missing)) { adapterReason = "Original tuning backup is unreadable"; }
+    else if (!missing) {
+        backupAvailable = backupMatches(board,backup);
+        if (!backupAvailable) adapterReason = "Original tuning backup belongs to different hardware or is invalid";
+    }
+    mutationRevision = Config::tuningMutationRevision();
+    initialized = true;
+}
+bool ensureBackup(Board *board) {
+    JsonDocument existing; bool missing=false;
+    if (!readBlob("baseline",existing,missing)) return false;
+    if (backupAvailable) {
+        // Every Start verifies the same immutable original from durable storage.
+        if (missing || !backupMatches(board,existing)) return false;
+        std::string cached,stored;serializeJson(backup,cached);serializeJson(existing,stored);
+        if (cached!=stored) return false;
+        return writeVerified("baseline",existing);
+    }
+    if (!missing) {
+        if (!backupMatches(board,existing) || !writeVerified("baseline",existing)) return false;
+        if (!backup.set(existing)) return false;
+        backupAvailable=true;backupRestored=false;return true;
+    }
+    char identity[39]; if (!readFiveTratumPhysicalDeviceId(identity)) return false;
+    JsonDocument document;
+    document["schemaVersion"] = 1; document["deviceId"] = identity; document["model"] = board->getDeviceModel();
+    document["asicCount"] = board->getAsicCount();
+    document["frequencyMHz"] = board->getAsicFrequency(); document["coreVoltageMv"] = board->getAsicVoltageMillis();
+    if (!captureEffective(board,document["settings"].to<JsonObject>()) || !backupMatches(board,document) || !writeVerified("baseline",document)) return false;
+    bool absent = false;
+    if (!readBlob("baseline",backup,absent) || absent || !backupMatches(board,backup)) return false;
+    backupAvailable = true; backupRestored = false; return true;
+}
+void acquire(Board *board) {
+    observed = {}; sensors = {}; observationReason = nullptr;
+    const uint64_t acquisitionStarted=esp_timer_get_time();
+    observed.current = {static_cast<double>(POWER_MANAGEMENT_MODULE.getAppliedTuningFrequency()),
+                        static_cast<double>(POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage())};
+    observed.generation = FiveTratumMining::workGeneration();
+    observed.fault = !board || POWER_MANAGEMENT_MODULE.isShutdown() || board->isShutdown() || SYSTEM_MODULE.getBoardError() != Board::Error::NONE;
+    observed.miningActive = exactFamily(board) && board->isInitialized() && board->isBuckInitialized() &&
+        FiveTratumMining::miningWritesAllowed() && !observed.fault && STRATUM_MANAGER &&
+        STRATUM_MANAGER->isAnyConnected();
+    observed.fanOk = true;
+    if (board) for (int i=0;i<board->getNumFans();++i) {
+        uint16_t rpm = 0;
+        if (!board->readTuningFan(i,rpm) || rpm < 500 || rpm > 16000) observed.fanOk = false;
+    }
+    if (!observed.miningActive || !board->readTuningSensors(sensors)) return;
+    observed.asicTempC = sensors.asicTempC; observed.vrmTempC = sensors.vrmTempC;
+    observed.powerW = sensors.powerW; observed.voltageReadbackMv = sensors.coreVoltageMv;
+    const uint64_t now = esp_timer_get_time();
+    const auto counters = HASHRATE_MONITOR.getAsicErrorTelemetry(now,true);
+    if (counters.asicCount != board->getAsicCount() || !counters.errorPercentageAvailable) return;
+    uint64_t counterAt = now;
+    auto *asics = board->getAsics();
+    const double expectedChip = asics ? observed.current.frequencyMHz * asics->getSmallCoreCount() / 1000.0 : 0;
+    if (!std::isfinite(expectedChip) || expectedChip <= 0) return;
+    for (int i=0;i<counters.asicCount;++i) {
+        const auto &chip = counters.chips[i];
+        if (!chip.errorSampleFresh || !chip.errorPercentageAvailable || chip.hashRate <= 0) return;
+        if (chip.hashRate < expectedChip * 0.20) { observationReason = "An ASIC reports too little work for reliable tuning"; return; }
+        observed.hashRateGHs += chip.hashRate;
+        observed.worstErrorPercentage = std::max(observed.worstErrorPercentage, static_cast<double>(chip.errorPercentage));
+        if (chip.sampleCapturedAtUs <= 0) return;
+        counterAt = std::min(counterAt,static_cast<uint64_t>(chip.sampleCapturedAtUs));
+    }
+    observed.capturedAtUs = std::min(acquisitionStarted,std::min(counterAt,static_cast<uint64_t>(sensors.capturedAtUs)));
+    observed.sampleId = counterAt;
+    observed.errorPercentage = counters.errorPercentage;
+    observed.valid = observed.fanOk && sensors.vin >= board->getMinVin() && sensors.vin <= board->getMaxVin() &&
+        sensors.outputCurrentA > 0 && sensors.coreVoltageMv > 0 && observed.capturedAtUs > 0;
+}
+bool revisionCurrent() { return !handoff.load() && !firmwareUpdates.load() && !permanentFreeze.load() && Config::tuningMutationRevision() == mutationRevision; }
+void failTransition(const char *reason) {
+    pending = false; fwt_applied(&controller,false,esp_timer_get_time());
+    adapterReason = reason;
+    // A failed/unconfirmed rail transition cannot be healed by clearing faults.
+    SYSTEM_MODULE.setBoardError(Board::Error::VOUT_FAULT,0);
+    FiveTratumMining::manualOverride(true);
+    FiveTratumMining::updateControl();
+    observed.valid=false; observed.miningActive=false; observed.fault=true;
+}
+bool safeToRestore() {
+    const double backupAsic = backup["settings"][NVS_CONFIG_OVERHEAT_TEMP].as<double>() - 5.0;
+    const double backupVrm = backup["settings"][NVS_CONFIG_FAN1_OVERHEAT].as<double>() - 5.0;
+    // A disabled current channel is absent, not a zero-Celsius barrier to
+    // restoring the original valid protection. Start still denies that state.
+    const double asicLimit = std::min(80.0,controller.limits.maxAsicTempC > 0 ? controller.limits.maxAsicTempC : 80.0);
+    const double vrmLimit = std::min(95.0,controller.limits.maxVrmTempC > 0 ? controller.limits.maxVrmTempC : 95.0);
+    return backupAvailable && observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
+        observed.asicTempC + 3 < std::min(asicLimit,backupAsic) &&
+        observed.vrmTempC + 3 < std::min(vrmLimit,backupVrm);
+}
+void advanceTransition(uint64_t now) {
+    if (!revisionCurrent()) return;
+    if (!observed.miningActive || observed.fault || !observed.fanOk) { failTransition("Tuning transition interrupted by miner protection"); return; }
+    if (now < transitionStarted || now-transitionStarted > 30000000) { failTransition("Tuning voltage readback did not settle; restart required"); return; }
+    if (!sensors.capturedAtUs || !std::isfinite(sensors.coreVoltageMv)) return;
+    auto &power = POWER_MANAGEMENT_MODULE;
+    const uint16_t frequency = static_cast<uint16_t>(target.frequencyMHz);
+    const uint16_t voltage = static_cast<uint16_t>(target.coreVoltageMv);
+    const bool upward = frequency > power.getAppliedTuningFrequency() || voltage > power.getAppliedTuningVoltage();
+    const double asicLimit = restoring ? controller.limits.maxAsicTempC : controller.config.maxAsicTempC;
+    const double vrmLimit = restoring ? controller.limits.maxVrmTempC : controller.config.maxVrmTempC;
+    const double powerLimit = restoring ? controller.limits.maxPowerW : controller.config.maxPowerW;
+    if (upward && (sensors.asicTempC + 2 >= asicLimit || sensors.vrmTempC + 2 >= vrmLimit || sensors.powerW >= powerLimit)) {
+        pending = false;
+        if (!restoring) {
+            fwt_cancel(&controller,"Tuning headroom changed during transition; miner paused");
+            controller.state = FWT_SUSPENDED;
+        }
+        adapterReason = "Temperature or power headroom changed; restore waits for cooling and an explicit resume";
+        FiveTratumMining::manualOverride(true);
+        FiveTratumMining::updateControl();
+        observed.valid=false; observed.miningActive=false;
+        return;
+    }
+    if (frequency < power.getAppliedTuningFrequency()) {
+        if (!revisionCurrent() || !power.commandTuningFrequency(frequency)) { failTransition("Tuning downclock failed"); return; }
+        voltageMatches = 0;
+    }
+    if (voltage != power.getAppliedTuningVoltage()) {
+        if (!revisionCurrent() || !power.commandTuningVoltage(voltage)) { failTransition("Tuning voltage command failed"); return; }
+        voltageMatches = 0; return;
+    }
+    if (std::fabs(sensors.coreVoltageMv - voltage) > 25.0) { voltageMatches = 0; return; }
+    if (++voltageMatches < 2) return;
+    if (frequency != power.getAppliedTuningFrequency()) {
+        if (!revisionCurrent() || !power.commandTuningFrequency(frequency)) { failTransition("Tuning clock transition failed"); return; }
+        voltageMatches = 0; return;
+    }
+    pending = false; fwt_applied(&controller,true,now);
+    controller.generation = FiveTratumMining::workGeneration();
+    if (restoring) {
+        restoring = false; backupRestored = restoreSaved;
+        fwt_cancel(&controller,"Original settings restored"); adapterReason = nullptr;
+    }
+}
+// NVS writes require an internal-RAM task stack. The ordinary power task uses
+// PSRAM; this bounded worker borrows the same hardware owner mutex, revalidates
+// current strict inputs, commits once, then returns actuation to the power task.
+void restoreWorkerLoop(void *) {
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
+        LockGuard<PowerManagementTask> owner(POWER_MANAGEMENT_MODULE);
+        Guard guard;
+        if (!restoring || restoreSaved || restoreCommitFailed || !revisionCurrent()) continue;
+        Board *board=SYSTEM_MODULE.getBoard();acquire(board);
+        if (!safeToRestore()) {adapterReason="Original settings restore waits for a healthy, cool miner";continue;}
+        const uint64_t before=Config::tuningMutationRevision();
+        if (!Config::restoreTuningSettings(backup["settings"].as<JsonObjectConst>())) {
+            restoreCommitFailed=true;adapterReason="Original settings restore could not be saved; retry Disable";continue;
+        }
+        mutationRevision=before+1; // Only our one internal transaction is authorized.
+        if (!revisionCurrent()) {
+            restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;
+        }
+        board->loadSettings();
+        if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
+        if (!board->restoreTuningFanPolarity(board->isInvertFanPolarityEnabled(),revisionCurrent)) {
+            restoreCommitFailed=true;adapterReason="Original fan polarity restore interrupted; retry Disable";continue;
+        }
+        POWER_MANAGEMENT_MODULE.getFanController().loadSettings();
+        if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
+        controller.limits=hardwareLimits(board);
+        restoreSaved=true;adapterReason="Original settings saved; waiting for protected live restore";
+    }
+}
+void pointJson(JsonVariant out,const fwt_point *point) {
+    if (!point) { out.set(nullptr); return; }
+    out["frequencyMHz"] = point->frequencyMHz; out["coreVoltageMv"] = point->coreVoltageMv;
+}
+}
+
+bool transitionAllowed() { return !firmwareUpdates.load() && !permanentFreeze.load() && ((!pending && !restoring) || revisionCurrent()); }
+bool transitionHealthy() {
+    if (!transitionAllowed()) return false;
+    if (!pending) {transitionHealthUntilUs=0;return true;}
+    const uint64_t now=esp_timer_get_time();
+    if (transitionHealthUntilUs && now<transitionHealthUntilUs) return true;
+    transitionHealthUntilUs=0;
+    Board *board=SYSTEM_MODULE.getBoard();TuningSensors fresh{};
+    if (!board || !board->refreshTuningTemperatures() || !board->readTuningSensors(fresh)) return false;
+    const uint64_t checkedAt=esp_timer_get_time();
+    if (!fresh.capturedAtUs || fresh.capturedAtUs>static_cast<int64_t>(checkedAt) ||
+        checkedAt-static_cast<uint64_t>(fresh.capturedAtUs)>5000000 || fresh.vin<board->getMinVin() || fresh.vin>board->getMaxVin() ||
+        fresh.outputCurrentA<=0 || std::fabs(fresh.coreVoltageMv-POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage())>30 ||
+        fresh.asicTempC>=controller.limits.maxAsicTempC || fresh.vrmTempC>=controller.limits.maxVrmTempC) return false;
+    for (int i=0;i<board->getNumFans();++i) {
+        uint16_t rpm=0;if (!board->readTuningFan(i,rpm) || rpm<500 || rpm>16000) return false;
+    }
+    const bool upward=target.frequencyMHz>POWER_MANAGEMENT_MODULE.getAppliedTuningFrequency() || target.coreVoltageMv>POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage();
+    if (upward && (fresh.asicTempC+2>=(restoring?controller.limits.maxAsicTempC:controller.config.maxAsicTempC) ||
+        fresh.vrmTempC+2>=(restoring?controller.limits.maxVrmTempC:controller.config.maxVrmTempC) ||
+        fresh.powerW>=(restoring?controller.limits.maxPowerW:controller.config.maxPowerW))) return false;
+    if (!transitionAllowed()) return false;
+    transitionHealthUntilUs=std::min(checkedAt+800000,static_cast<uint64_t>(fresh.capturedAtUs)+5000000);return true;
+}
+bool ownsSettings() {
+    Guard guard;
+    return firmwareUpdates.load() || permanentFreeze.load() || (initialized && (controller.owns || restoring || pending));
+}
+void externalHandoff(const char *reason) {
+    WriteGuard wire;
+    if (reason && (!strcmp(reason,"Restart requested") || !strcmp(reason,"Shutdown requested"))) permanentFreeze.store(true);
+    handoff.store(reason ? reason : "External control took ownership");
+}
+FirmwareUpdateGuard::FirmwareUpdateGuard() {WriteGuard wire;++firmwareUpdates;handoff.store("Firmware update took ownership");}
+FirmwareUpdateGuard::~FirmwareUpdateGuard() {WriteGuard wire;--firmwareUpdates;}
+void tick() {
+    Board *board = SYSTEM_MODULE.getBoard();
+    Guard guard; initialize(board); if (!initialized) return;
+    const char *external = handoff.exchange(nullptr);
+    const uint64_t revision = Config::tuningMutationRevision();
+    if (external || revision != mutationRevision) {
+        pending = false; restoring = false; backupRestored = false;
+        fwt_cancel(&controller,external ? external : "Manual or scheduled settings took ownership");
+        mutationRevision = revision; adapterReason = nullptr;
+    }
+    controller.limits = hardwareLimits(board);
+    acquire(board);
+    const uint64_t now = esp_timer_get_time();
+    if (!controller.owns && !restoring && !pending && backupAvailable) {
+        backupRestored = observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
+            observed.current.frequencyMHz == backup["frequencyMHz"].as<double>() &&
+            observed.current.coreVoltageMv == backup["coreVoltageMv"].as<double>() &&
+            std::fabs(observed.voltageReadbackMv-observed.current.coreVoltageMv)<=25 && effectiveMatch(board);
+    }
+    if (restoring && !restoreSaved) {
+        if (restoreCommitFailed) {adapterReason="Original settings could not be saved; retry Disable";return;}
+        if (safeToRestore() && restoreWorker) xTaskNotifyGive(restoreWorker);
+        else adapterReason="Original settings restore waits for healthy cooling and an explicit miner resume";
+        return;
+    }
+    if (restoring && !pending) {
+        if (!safeToRestore()) { adapterReason = "Original settings are saved; restore waits for healthy cooling and an explicit miner resume"; return; }
+        pending = true; voltageMatches = 0; transitionStarted = now;
+    }
+    if (pending) { advanceTransition(now); return; }
+    if (!controller.owns) return;
+    const fwt_request request = fwt_tick(&controller,&observed,now);
+    if (request.kind == FWT_REQUEST_APPLY) {
+        target = request.point; pending = true; voltageMatches = 0; transitionStarted = now;
+        advanceTransition(now);
+    } else if (request.kind == FWT_REQUEST_PAUSE) {
+        FiveTratumMining::manualOverride(true);
+        FiveTratumMining::updateControl();
+        observed.valid=false; observed.miningActive=false;
+    }
+}
+
+bool report(JsonDocument &document) {
+    Guard guard; Board *board = SYSTEM_MODULE.getBoard(); initialize(board);
+    document["schemaVersion"] = 1; document["waiverVersion"] = waiverVersion;
+    document["supported"] = initialized && exactFamily(board);
+    auto hardware = document["hardware"].to<JsonObject>();
+    hardware["model"] = board ? board->getDeviceModel() : "Unknown"; hardware["asicCount"] = board ? board->getAsicCount() : 0;
+    hardware["asicSensor"] = board ? board->tuningAsicSensorLabel() : "Unavailable ASIC temperature source";
+    hardware["vrmSensor"] = board ? board->tuningVrmSensorLabel() : "Unavailable VRM temperature source";
+    hardware["powerSource"] = sensors.measuredInputPower ? "Measured regulator input power; not wall power" : "Converter output-derived power estimate; not wall power";
+    writeConfig(document["config"].to<JsonObject>(),controller.config);
+    auto limits = document["limits"].to<JsonObject>();
+    const auto &l=controller.limits;
+    limits["minFrequencyMHz"]=l.minFrequencyMHz; limits["maxFrequencyMHz"]=l.maxFrequencyMHz;
+    limits["minVoltageMv"]=l.minVoltageMv; limits["maxVoltageMv"]=l.maxVoltageMv;
+    limits["maxAsicTempC"]=l.maxAsicTempC; limits["maxVrmTempC"]=l.maxVrmTempC; limits["maxPowerW"]=l.maxPowerW;
+    limits["frequencyStepMHz"]=l.frequencyStepMHz; limits["voltageStepMv"]=l.voltageStepMv;
+    auto guidance = document["guidance"].to<JsonObject>(); guidance["experimental"]=true;
+    guidance["asic"]="Start below the installed ASIC protection threshold. Shared board readings are not a measured hottest-chip junction. The tuner retains at least 5 C below the existing protection setting.";
+    guidance["vrm"]="Use a separate VRM ceiling. External board and internal power-stage sensors differ; the hottest required reading constrains tuning. Existing hardware faults remain authoritative.";
+    guidance["power"]="Power is the regulator measurement or output-derived estimate named above; it is not wall power or a PSU rating. Default voltage and clock ceilings retain your saved operating point.";
+    auto status = document["status"].to<JsonObject>();
+    status["state"] = restoring ? "restoring" : fwt_state_name(controller.state);
+    status["reason"] = adapterReason ? adapterReason : optionsError ? "Stored tuning options are invalid or unreadable" : observationReason ? observationReason : controller.reason;
+    status["active"]=controller.active; status["ownsSettings"]=controller.owns || restoring || pending;
+    status["runId"]=controller.runId; status["experiments"]=controller.experiments;
+    pointJson(status["baseline"],controller.baselineAvailable?&controller.baseline:nullptr);
+    pointJson(status["current"],observed.current.frequencyMHz>0?&observed.current:nullptr);
+    pointJson(status["best"],controller.bestAvailable?&controller.best:nullptr);
+    auto telemetry=status["telemetry"].to<JsonObject>();
+    const uint64_t now=esp_timer_get_time();
+    const bool valid=observed.valid && observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=15000000;
+    telemetry["valid"]=valid; telemetry["miningActive"]=observed.miningActive; telemetry["fault"]=observed.fault; telemetry["fanOk"]=observed.fanOk;
+    if (valid) {
+        telemetry["hashRateGHs"]=observed.hashRateGHs; telemetry["errorPercentage"]=observed.errorPercentage;
+        telemetry["worstErrorPercentage"]=observed.worstErrorPercentage; telemetry["powerW"]=observed.powerW;
+        telemetry["asicTempC"]=observed.asicTempC; telemetry["vrmTempC"]=observed.vrmTempC;
+        telemetry["voltageReadbackMv"]=observed.voltageReadbackMv;
+        telemetry["sampleAgeSeconds"]=(now-observed.capturedAtUs)/1000000.0;
+    } else for (const char *key:{"hashRateGHs","errorPercentage","worstErrorPercentage","powerW","asicTempC","vrmTempC","voltageReadbackMv","sampleAgeSeconds"}) telemetry[key]=nullptr;
+    auto saved=document["backup"].to<JsonObject>(); saved["available"]=backupAvailable; saved["restored"]=backupRestored && backupAvailable && valid && observed.miningActive && !observed.fault && observed.fanOk &&
+        !controller.owns && !restoring && !pending && revisionCurrent();
+    if (backupAvailable) { saved["frequencyMHz"]=backup["frequencyMHz"]; saved["coreVoltageMv"]=backup["coreVoltageMv"]; }
+    else {saved["frequencyMHz"]=nullptr;saved["coreVoltageMv"]=nullptr;}
+    return !document.overflowed();
+}
+
+// The HTTP caller owns the power mutex before entering this bounded transaction.
+const char *command(JsonObjectConst input) {
+    Guard guard; Board *board=SYSTEM_MODULE.getBoard(); initialize(board);
+    if (!initialized || !exactFamily(board)) return "unsupported-hardware";
+    if (!input["action"].is<const char *>()) return "invalid-request";
+    const char *action=input["action"];
+    if (!strcmp(action,"configure")) {
+        if (pending || restoring || controller.awaitingApply) return "transition-in-progress";
+        fwt_config next{};
+        if (input.size()!=2 || !parseConfig(input["config"].as<JsonObjectConst>(),next) || !fwt_config_valid(&next,&controller.limits)) return "invalid-config";
+        if (controller.owns && (controller.current.frequencyMHz<next.minFrequencyMHz || controller.current.frequencyMHz>next.maxFrequencyMHz ||
+            controller.current.coreVoltageMv<next.minVoltageMv || controller.current.coreVoltageMv>next.maxVoltageMv)) return "current-point-outside-bounds";
+        fwt_controller proposed=controller;
+        if (!fwt_configure(&proposed,&next)) return "current-point-outside-bounds";
+        JsonDocument saved;writeConfig(saved.to<JsonObject>(),next);
+        if (!writeVerified("options",saved)) return "storage-unavailable";
+        controller=proposed;
+        optionsError=false;adapterReason=nullptr;return nullptr;
+    }
+    if (!strcmp(action,"start")) {
+        if (input.size()!=3 || !input["waiverAccepted"].is<bool>() || !input["waiverAccepted"].as<bool>() ||
+            !input["waiverVersion"].is<int>() || input["waiverVersion"].as<int>()!=waiverVersion) return "waiver-required";
+        if (optionsError || restoring || pending || controller.owns || firmwareUpdates.load() || permanentFreeze.load()) return "tuner-not-ready";
+        controller.limits = hardwareLimits(board);
+        if (!fwt_config_valid(&controller.config,&controller.limits)) return "limits-changed-reconfigure";
+        const uint64_t before=Config::tuningMutationRevision();
+        acquire(board); const uint64_t now=esp_timer_get_time();
+        if (!observed.valid || !observed.miningActive || observed.fault || !observed.fanOk ||
+            observed.capturedAtUs>now || now-observed.capturedAtUs>15000000) return "telemetry-unavailable";
+        if (observed.current.frequencyMHz!=board->getAsicFrequency() || observed.current.coreVoltageMv!=board->getAsicVoltageMillis() ||
+            std::fabs(observed.voltageReadbackMv-observed.current.coreVoltageMv)>25) return "saved-settings-not-applied";
+        JsonDocument durable;
+        if (!Config::captureTuningSettings(durable.to<JsonObject>())) return "saved-settings-unavailable";
+        for (const auto &entry : {std::pair<const char *,double>{NVS_CONFIG_ASIC_FREQ,observed.current.frequencyMHz},
+                                 std::pair<const char *,double>{NVS_CONFIG_ASIC_VOLTAGE,observed.current.coreVoltageMv}}) {
+            const auto value=durable[entry.first];
+            if (!value.isNull() && (!value.is<uint16_t>() || value.is<bool>() || value.as<double>()!=entry.second)) return "saved-settings-not-applied";
+        }
+        if (observed.current.frequencyMHz<controller.config.minFrequencyMHz || observed.current.frequencyMHz>controller.config.maxFrequencyMHz ||
+            observed.current.coreVoltageMv<controller.config.minVoltageMv || observed.current.coreVoltageMv>controller.config.maxVoltageMv) return "current-point-outside-bounds";
+        if (!ensureBackup(board)) return "original-backup-unavailable";
+        {
+            WriteGuard activation;
+            if (before!=Config::tuningMutationRevision() || handoff.load() || firmwareUpdates.load() || permanentFreeze.load()) return "manual-settings-changed";
+            if (!fwt_start(&controller,&observed,esp_timer_get_time())) return "tuner-not-ready";
+            mutationRevision=before;backupRestored=false;adapterReason=nullptr;
+        }
+        return nullptr;
+    }
+    if (!strcmp(action,"stop")) {
+        if (input.size()!=1) return "invalid-request";
+        fwt_cancel(&controller,"Disable requested; restoring original settings");pending=false;restoring=false;
+        if (!backupAvailable || !backupMatches(board,backup)) return "original-backup-unavailable";
+        restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;
+        mutationRevision=Config::tuningMutationRevision();handoff.store(nullptr);
+        target={backup["frequencyMHz"].as<double>(),backup["coreVoltageMv"].as<double>()};
+        adapterReason="Disable accepted; original settings restore waits for a healthy, cool miner";
+        if (!ensureRestoreWorker()) {restoreCommitFailed=true;adapterReason="Restore worker unavailable; retry Disable";return "storage-unavailable";}
+        return nullptr;
+    }
+    return "invalid-request";
+}
+}
+
+namespace {
+esp_err_t tuneResult(httpd_req_t *req,const char *error) {
+    httpd_resp_set_status(req,error ? (!strcmp(error,"invalid-config") || !strcmp(error,"invalid-request") ? "400 Bad Request" : "409 Conflict") : "200 OK");
+    JsonDocument document; document["ok"]=error==nullptr;
+    if(error)document["error"]=error;else document["restartRequired"]=false;
+    return sendJsonResponse(req,document);
+}
+bool prepareTune(httpd_req_t *req,bool write) {
+    if(is_network_allowed(req)!=ESP_OK){httpd_resp_send_err(req,HTTPD_401_UNAUTHORIZED,"Unauthorized");return false;}
+    httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    if(set_cors_headers(req)!=ESP_OK){httpd_resp_send_500(req);return false;}
+    return !write || validateOTP(req)==ESP_OK;
+}
+}
+esp_err_t GET_five_tratum_autotune(httpd_req_t *req) {
+    ConGuard connection(http_server,req);if(!prepareTune(req,false))return ESP_FAIL;
+    JsonDocument document;if(!FiveTratumAutotune::report(document))return tuneResult(req,"telemetry-unavailable");
+    return sendJsonResponse(req,document);
+}
+esp_err_t POST_five_tratum_autotune(httpd_req_t *req) {
+    ConGuard connection(http_server,req);if(!prepareTune(req,true))return ESP_FAIL;
+    if(!req->content_len || req->content_len>1536)return tuneResult(req,"invalid-request");
+    JsonDocument document;if(getJsonData(req,document)!=ESP_OK)return ESP_FAIL;
+    if(!document.is<JsonObject>())return tuneResult(req,"invalid-request");
+    LockGuard<PowerManagementTask> hardware(POWER_MANAGEMENT_MODULE);
+    return tuneResult(req,FiveTratumAutotune::command(document.as<JsonObjectConst>()));
+}

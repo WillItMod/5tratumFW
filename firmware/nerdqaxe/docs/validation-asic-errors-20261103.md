@@ -60,8 +60,7 @@ checks. Counter accuracy on the physical ASICs, register interpretation under
 all operating conditions, changed clock/voltage points and sustained thermal
 behaviour have not been newly qualified by this display work.
 
-No runtime auto-tuner or Tuning tab is implemented in this change. The separate
-[dynamic tuning design](../../../docs/dynamic-autotuning-design.md) records the
-requested controller, its own tab, three adaptive priorities, continual tuning
-switch and hardware-specific temperature constraints. It must not be described
-as available firmware functionality.
+The ASIC-error checkpoint recorded here did not implement a runtime auto-tuner.
+The later unreleased candidates also implement the controller and Tuning tab;
+see their [current guide](../../../docs/autotuning.md). These ASIC-error test
+results alone do not qualify that controller or establish a public release.

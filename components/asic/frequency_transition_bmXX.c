@@ -9,6 +9,10 @@
 #define STEP_SIZE 6.25 // MHz step size
 
 static const char * TAG = "frequency_transition";
+__attribute__((weak,noinline)) bool autotune_gamma_transition_allowed(void *state) {(void)state; return true;}
+static bool transition_allowed(GlobalState *state) {
+    return autotune_gamma_transition_allowed(state);
+}
 
 void do_frequency_transition(GlobalState * GLOBAL_STATE, set_hash_frequency_fn set_frequency_fn)
 {
@@ -20,6 +24,7 @@ void do_frequency_transition(GlobalState * GLOBAL_STATE, set_hash_frequency_fn s
     }
 
     if (fabs(target_frequency - current_frequency) < STEP_SIZE) {
+        if (!transition_allowed(GLOBAL_STATE)) return;
         current_frequency = target_frequency;
         GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency = set_frequency_fn(current_frequency);
         return;
@@ -35,6 +40,7 @@ void do_frequency_transition(GlobalState * GLOBAL_STATE, set_hash_frequency_fn s
         
         while ((signum > 0 && current_step < target_step) ||
                (signum < 0 && current_step > target_step)) {
+            if (!transition_allowed(GLOBAL_STATE)) return;
             current_step += signum;
 
             current_frequency = current_step * STEP_SIZE;
@@ -45,6 +51,7 @@ void do_frequency_transition(GlobalState * GLOBAL_STATE, set_hash_frequency_fn s
     }
     
     if (fabs(current_frequency - target_frequency) > EPSILON) {
+        if (!transition_allowed(GLOBAL_STATE)) return;
         current_frequency = target_frequency;
         GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency = set_frequency_fn(current_frequency);
     }

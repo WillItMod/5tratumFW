@@ -1,4 +1,5 @@
 #include "mining_control.h"
+#include "autotune/runtime.h"
 #include "mining_board_policy.h"
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
 #include "bm1370_capture_runtime.h"
@@ -66,7 +67,7 @@ public:
         auto *self = static_cast<Backend *>(context);
         updateSchedule();
         const auto input = self->inputs();
-        return !input.requestedPaused && input.runtimeReady && !input.fault &&
+        return FiveTratumAutotune::transitionHealthy() && !input.requestedPaused && input.runtimeReady && !input.fault &&
                POWER_MANAGEMENT_MODULE.refreshProtectionForMining();
     }
     bool start() override {

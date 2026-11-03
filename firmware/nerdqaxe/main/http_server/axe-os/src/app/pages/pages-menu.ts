@@ -2,6 +2,7 @@ import { NbMenuItem } from '@nebular/theme';
 export const MENU_ITEMS: NbMenuItem[] = [
   { title: 'Overview', icon: 'activity-outline', link: '/pages/home', home: true },
   { title: 'Miner controls', icon: 'options-2-outline', link: '/pages/settings' },
+  { title: 'Tuning', icon: 'trending-up-outline', link: '/pages/tuning' },
   { title: 'Scheduler', icon: 'calendar-outline', link: '/pages/scheduler' },
   { title: 'Pool routing', icon: 'shuffle-2-outline', link: '/pages/pool' },
   { title: 'Network', icon: 'wifi-outline', link: '/pages/network' },

@@ -3,6 +3,7 @@
 #include "board.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nerdqaxeplus2.h"
@@ -174,4 +175,21 @@ float NerdOctaxeGamma::getVRTemp()
     }
 
     return vrTemp;
+}
+
+bool NerdOctaxeGamma::tuningAsicTemperature(float &maximum, int64_t &oldest) {
+    if (m_hasTMux[0] || m_hasTMux[1]) {
+        // A partial mux cannot hide the unmeasured half of the chain.
+        return m_hasTMux[0] && m_hasTMux[1] && readTuningChipTemperatures(maximum, oldest);
+    }
+    return NerdQaxePlus::tuningAsicTemperature(maximum, oldest);
+}
+
+bool NerdOctaxeGamma::refreshTuningTemperatures() {
+    if (!m_hasTMux[0] && !m_hasTMux[1]) return true; // Never invoke fallback UART inside a PLL operation.
+    if (!m_hasTMux[0] || !m_hasTMux[1]) return false;
+    float maximum=0;int64_t oldest=0;const int64_t now=esp_timer_get_time();
+    if (readTuningChipTemperatures(maximum,oldest) && now>=oldest && now-oldest<3000000) return true;
+    requestChipTemps(); // Fitted path is exclusively TMP451 mux GPIO/I2C.
+    return readTuningChipTemperatures(maximum,oldest);
 }

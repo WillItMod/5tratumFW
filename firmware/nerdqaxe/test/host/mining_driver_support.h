@@ -1,4 +1,7 @@
 #pragma once
+#include "autotune/write_gate.h"
+namespace FiveTratumAutotune { inline bool ownsSettings() { return false; } inline bool transitionAllowed() { return true; } inline bool transitionHealthy() { return true; } }
+
 #include <algorithm>
 #include <array>
 #include <cassert>

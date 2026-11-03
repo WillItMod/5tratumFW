@@ -1,0 +1,50 @@
+:host{--at-t:var(--fw-text,#dce8ed);--at-m:var(--fw-muted,#93a4b8);--at-a:var(--fw-accent,#72d4b7);--at-b:var(--fw-border,#243044);--at-s:var(--fw-surface,#101824);--at-sa:var(--fw-surface-alt,#15212d);--at-w:var(--fw-warn,#e5b675);--at-d:var(--fw-danger,#ec7b7b);display:block;color:var(--at-t)}
+.tuning-page{max-width:1200px;margin:auto;min-width:0}
+.tuning-heading,.panel-heading,.save-bar,.run-actions{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.tuning-heading{align-items:flex-start;margin-bottom:1rem}
+h1{font-size:1.85rem;font-weight:500;letter-spacing:-.04em;margin:.3rem 0}
+h2{font-size:.95rem;margin:0}
+p{color:var(--at-m);font-size:.8rem;line-height:1.65;margin:.65rem 0 0}
+.state{border:1px solid var(--at-b);border-radius:2rem;padding:.45rem .8rem;font-size:.75rem;white-space:nowrap}
+.panel{background:var(--at-s);border:1px solid var(--at-b);border-radius:8px;padding:1.3rem;margin:1rem 0;min-width:0}
+.panel-heading{flex-wrap:wrap;padding-bottom:.9rem;border-bottom:1px solid var(--at-b)}
+.panel-heading>span,.source-note,.field small,.save-bar small,.footnote,summary span{color:var(--at-m);font-size:.7rem;line-height:1.55}
+.telemetry-grid,.point-grid,.priority-grid,.field-grid{display:grid;gap:1rem;grid-template-columns:repeat(3,minmax(0,1fr))}
+.telemetry-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+.telemetry-grid>div,.point-grid>div,.priority,.continuous span,.field,.save-bar>div{display:flex;flex-direction:column;gap:.5rem;min-width:0}
+.telemetry-grid>div>span,.point-grid span{color:var(--at-m);font-size:.7rem}
+.telemetry-grid strong{font-size:1.5rem;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.telemetry-grid small{font-size:.7rem;color:var(--at-m)}
+.point-grid,.continuous,.guidance{border-top:1px solid var(--at-b);padding-top:1rem;margin-top:1rem}
+.point-grid strong,.guidance strong{font-size:.8rem;font-weight:500}
+.priority{position:relative;border:1px solid var(--at-b);border-radius:6px;padding:1rem;cursor:pointer}
+.priority strong{font-size:.9rem;line-height:1.45;font-weight:500}
+.priority small,.continuous small{color:var(--at-m);font-size:.7rem;line-height:1.6}
+.priority--selected{border-color:var(--at-a);background:var(--at-sa)}
+.continuous,.consent{display:flex;align-items:flex-start;gap:.8rem;font-size:.8rem;margin-top:1rem}
+input[type=checkbox],input[type=radio]{accent-color:var(--at-a);flex:0 0 auto;width:16px;height:16px}
+.field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.field{margin-top:1rem;font-size:.8rem}
+.field input{background:var(--at-sa);color:inherit;border:1px solid var(--at-b);border-radius:5px;padding:.7rem;width:100%;min-width:0;box-sizing:border-box}
+summary{font-size:.9rem;cursor:pointer}
+.save-bar{background:var(--at-sa);border:1px solid var(--at-b);border-radius:8px;padding:1rem}
+.save-bar strong{font-size:.8rem}
+.button{padding:.7rem 1.1rem;font-size:.8rem;min-height:42px;border:1px solid var(--at-a);background:var(--at-a);color:#09151a;border-radius:5px;cursor:pointer;font-weight:550;white-space:nowrap}
+.button:disabled{opacity:.4;cursor:default}
+.button--quiet{background:transparent;color:inherit;border-color:var(--at-b)}
+.button--stop{background:transparent;border-color:var(--at-w);color:var(--at-w)}
+.run-actions{justify-content:flex-start;flex-wrap:wrap;margin:1.2rem 0 .6rem}
+.notice{padding:.8rem 1rem;border:1px solid var(--at-w);border-radius:5px;color:var(--at-w);font-size:.78rem;line-height:1.55;margin:1rem 0}
+.notice--error{border-color:var(--at-d);color:var(--at-d)}
+.notice--success{border-color:var(--at-a);color:var(--at-a)}
+@media(max-width:1050px){.priority-grid{grid-template-columns:1fr}.telemetry-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:600px){h1{font-size:1.6rem}
+.state{font-size:.65rem}
+.panel{padding:1rem}
+.telemetry-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.point-grid,.field-grid{grid-template-columns:1fr}
+.save-bar,.run-actions{align-items:stretch;flex-direction:column}
+summary span{display:block}
+.run-actions .button{width:100%}
+}

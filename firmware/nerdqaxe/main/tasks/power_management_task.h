@@ -98,6 +98,11 @@ class PowerManagementTask {
     // completion. Settings edited while paused become the new running baseline.
     void acknowledgeAsicSettings(uint16_t frequency, uint16_t millivolts);
 
+    uint16_t getAppliedTuningFrequency() const { return m_appliedAsicFrequency; }
+    uint16_t getAppliedTuningVoltage() const { return m_appliedCoreVoltage; }
+    // Only the power-task owner calls these with the hardware mutex held.
+    bool commandTuningFrequency(uint16_t frequency);
+    bool commandTuningVoltage(uint16_t millivolts);
     uint16_t getFanRPM(int channel);
 
     uint16_t getFanPerc(int ch = 0)

@@ -1,9 +1,10 @@
 # Dynamic auto-tuning proposal
 
-Status: **design only, 3 November 2026**. No auto-tuning engine, hardware-control
-endpoint, UI control or automatic operating-point change is implemented by this
-document or by the accompanying Nerd ASIC-error display work. Existing published
-firmware does not gain auto-tuning from the error display alone.
+Status: **original design and qualification requirements, 3 November 2026**.
+The subsequent unreleased Gamma Beta12, QAxe Beta9 and OctAxe Beta7 candidates
+implement a controller and Tuning page. See the [current candidate guide](autotuning.md)
+for implemented behaviour. This design is not a physical validation record;
+existing published images do not gain auto-tuning from documentation alone.
 
 See the [primary-source research and confidence record](dynamic-autotuning-research.md)
 for the evidence behind the control strategy and the remaining measurement and

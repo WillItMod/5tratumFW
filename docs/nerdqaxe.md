@@ -1,9 +1,11 @@
 # NerdQAxe++ BETA
 
 Unreleased development: the next Beta9 source adds [overall and per-chip ASIC
-errors](../firmware/nerdqaxe/docs/asic-errors.md). The public Beta8 files below
+errors](../firmware/nerdqaxe/docs/asic-errors.md) and the [adaptive Tuning page](autotuning.md)
+with a waiver and original-settings backup/restore. The public Beta8 files below
 remain unchanged. [Software validation](../firmware/nerdqaxe/docs/validation-asic-errors-20261103.md)
-does not constitute a new hardware qualification or an auto-tuner release.
+of the earlier error-display checkpoint does not qualify the later tuner or
+constitute a new hardware qualification or public release.
 
 The current public QAxe BETA pair is [`qaxe-v0.1.0-beta.8`](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.8). Use its family-specific matched assets, not Gamma images. Board target: **NERDQAXEPLUS2**, model **NerdQAxe++**, ASIC **BM1370×4**. The tested unit's PCB revision is unidentified; support is not extended to QAxe+, OctAxe or other revisions by a shared name.
 

@@ -169,4 +169,6 @@ float EMC2101_get_external_temp(void);
 float EMC2101_get_internal_temp(void);
 esp_err_t EMC2101_set_ideality_factor(uint8_t);
 esp_err_t EMC2101_set_beta_compensation(uint8_t);
+/* Successful, fault-checked acquisition; never returns a cached temperature. */
+esp_err_t EMC2101_read_strict(float *external_c, uint16_t *fan_rpm);
 #endif /* EMC2101_H_ */

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -17,6 +18,10 @@
 #define BUF_SIZE (1024)
 
 static const char *TAG = "serial";
+static atomic_uint_least32_t tx_failures;
+uint32_t SERIAL_tx_failure_count(void) { return atomic_load(&tx_failures); }
+__attribute__((weak,noinline)) int autotune_gamma_wire_begin(bool safety_power_off) {(void)safety_power_off;return 1;}
+__attribute__((weak,noinline)) void autotune_gamma_wire_end(int token) {(void)token;}
 
 esp_err_t SERIAL_init(void)
 {
@@ -60,6 +65,12 @@ esp_err_t SERIAL_set_baud(int baud)
 
 int SERIAL_send(uint8_t *data, int len, bool debug)
 {
+    const int lease=autotune_gamma_wire_begin(false);
+    if (!lease) {atomic_fetch_add(&tx_failures,1);return 0;}
+    if (lease == 2 && (len <= 0 || len > BUF_SIZE*2 ||
+        uart_wait_tx_done(UART_NUM_1,pdMS_TO_TICKS(500)) != ESP_OK)) {
+        atomic_fetch_add(&tx_failures,1);autotune_gamma_wire_end(lease);return 0;
+    }
     if (debug)
     {
         printf("tx: ");
@@ -67,7 +78,10 @@ int SERIAL_send(uint8_t *data, int len, bool debug)
         printf("\n");
     }
 
-    return uart_write_bytes(UART_NUM_1, (const char *)data, len);
+    int written = uart_write_bytes(UART_NUM_1, (const char *)data, len);
+    if (written != len) atomic_fetch_add(&tx_failures, 1);
+    autotune_gamma_wire_end(lease);
+    return written;
 }
 
 /// @brief waits for a serial response from the device
