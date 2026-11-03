@@ -18,6 +18,9 @@ static esp_err_t i2c_master_register_read(uint8_t,uint8_t reg,uint8_t *out,size_
 #define ESP_LOGI(...) do {} while(0)
 #define ESP_LOGE(...) do {} while(0)
 static int muxFailedPin=-1;
+static std::map<int,int> gpioLevels;
+static constexpr int BM1368_RST_PIN=10,TPS53647_EN_PIN=11,LDO_EN_PIN=13;
+static int gpio_get_level(int pin){return gpioLevels[pin];}
 static esp_err_t gpio_set_level(int pin,int){return pin==muxFailedPin?ESP_FAIL:ESP_OK;}
 #define ESP_RETURN_ON_ERROR(expression,...) do {const int result=(expression);if(result!=ESP_OK)return result;} while(0)
 class Tmp451Mux {public:int m_mux_a0=2,m_mux_a1=12;bool m_mux_active_high=true;esp_err_t select_channel(int);};
@@ -28,7 +31,7 @@ static uint8_t mode=0x17;
 static bool allowed(){return allowWrite;}
 static uint64_t esp_timer_get_time(){return nowUs;}
 static int readWord(uint8_t command,uint16_t *output){if(failedCommand==command)return ESP_FAIL;*output=words[command];return ESP_OK;}
-static int readByte(uint8_t command,uint8_t *output){if(failedCommand==command)return ESP_FAIL;*output=mode;return ESP_OK;}
+static int readByte(uint8_t command,uint8_t *output){if(failedCommand==command)return ESP_FAIL;*output=command==PMBUS_VOUT_MODE?mode:static_cast<uint8_t>(words[command]);return ESP_OK;}
 static int writeWord(uint8_t command,uint16_t){assert(command==PMBUS_VOUT_COMMAND);++writeCount;return ESP_OK;}
 static void initializeWords(){failedCommand=-1;mode=0x17;words={{PMBUS_STATUS_WORD,0},{PMBUS_READ_TEMPERATURE_1,55},{PMBUS_READ_VIN,12},{PMBUS_READ_IOUT,60},{PMBUS_READ_PIN,100},{PMBUS_MFR_SPECIFIC_04,589},{PMBUS_READ_VOUT,1178}};}
 class TPS53647 {
@@ -36,8 +39,10 @@ public:
  bool m_initialized=true;
  float slinear11_to_float(uint16_t);
  int read_word(uint8_t command,uint16_t *output){return readWord(command,output);}
+ int read_byte(uint8_t command,uint8_t *output){return readByte(command,output);}
  bool set_vout(float volts){assert(volts>0);++writeCount;return true;}
  bool readTuningTelemetry(BuckTuningTelemetry &);
+ bool readRecoveryTelemetry(BuckTuningTelemetry &);
  bool setTuningVoltage(float,bool (*)());
 };
 /* BASE_METHODS */
@@ -51,6 +56,7 @@ public:
  bool m_initialized=true;uint16_t m_voltageDomains=2;
  struct {float vout_min=1,vout_max=3;} m_config;
  bool readTuningTelemetry(BuckTuningTelemetry &);
+ bool readRecoveryTelemetry(BuckTuningTelemetry &);
  bool setTuningVoltage(float,bool (*)());
 };
 /* REV_METHODS */
@@ -59,6 +65,7 @@ static bool buckWorks=true;static float externalVrm=48;
 struct FakeBuck {
  bool external=true;
  bool readTuningTelemetry(BuckTuningTelemetry &out){out={};if(!buckWorks)return false;out={12,1.15f,60,100,55,true};return true;}
+ bool readRecoveryTelemetry(BuckTuningTelemetry &out){out={};if(!buckWorks)return false;out.vin=12;out.temperatureC=55;return true;}
  bool uses_external_vr_temperature(){return external;}
  bool setTuningVoltage(float,bool (*guard)()){return guard&&guard();}
 };
@@ -77,6 +84,8 @@ public:
  virtual float tuningVrmOffset() const{return 0;}
  virtual bool tuningAsicTemperature(float &,int64_t &);
  bool readTuningSensors(TuningSensors &);
+ bool readRecoverySensors(TuningSensors &);bool isRecoveryPowerOff();
+ virtual bool refreshTuningTemperatures(){return true;}
  bool setTuningVoltage(float,bool (*)());
  int getNumTempSensors(){return shared.size();}bool isInitialized(){return initialized;}bool isBuckInitialized(){return buckReady;}bool isShutdown(){return shutdown;}
  bool validateVoltage(float volts){return std::isfinite(volts)&&volts>=1.005f&&volts<=1.4f;}
@@ -87,7 +96,7 @@ public:
  bool m_hasTMux[2]={false,false};bool sixPhase=false;
  unsigned refreshCount=0;bool refreshFail=false;
  void requestChipTemps(){++refreshCount;for(int chip=0;chip<8;++chip){nowUs+=250000;setChipTemp(chip,refreshFail&&chip==3?0:50);}}
- bool refreshTuningTemperatures();
+ bool refreshTuningTemperatures() override;
  bool tuningAsicTemperature(float &,int64_t &) override;
  float tuningVrmOffset() const override{return sixPhase?8.0f:0;}
 };
@@ -124,11 +133,24 @@ int main(){
    failedCommand=command;sample.vin=999;assert(!rev.readTuningTelemetry(sample)&&sample.vin==0);assert(!rev.setTuningVoltage(1.15f,allowed));
  }
  initializeWords();words[PMBUS_STATUS_WORD]=0x80;assert(!four.readTuningTelemetry(sample)&&!rev.readTuningTelemetry(sample));
+ initializeWords();four.m_initialized=false;Rev7TPS546::is_initialized=false;
+ words[PMBUS_STATUS_WORD]=0x0840;words[PMBUS_MFR_SPECIFIC_04]=0;words[PMBUS_READ_VOUT]=0;words[PMBUS_READ_IOUT]=0;words[PMBUS_READ_PIN]=0;
+ assert(four.readRecoveryTelemetry(sample)&&rev.readRecoveryTelemetry(sample)&&sample.vin==12&&sample.vout==0&&sample.iout==0);
+ assert(!four.readTuningTelemetry(sample)&&!rev.readTuningTelemetry(sample));
+ for(int command:{PMBUS_STATUS_WORD,PMBUS_READ_TEMPERATURE_1,PMBUS_READ_VIN,PMBUS_STATUS_VOUT,PMBUS_STATUS_IOUT,PMBUS_STATUS_INPUT,PMBUS_STATUS_TEMPERATURE,PMBUS_STATUS_CML}) {
+   failedCommand=command;assert(!four.readRecoveryTelemetry(sample)&&!rev.readRecoveryTelemetry(sample));
+ }
+ failedCommand=-1;for(int command:{PMBUS_STATUS_VOUT,PMBUS_STATUS_IOUT,PMBUS_STATUS_INPUT,PMBUS_STATUS_TEMPERATURE,PMBUS_STATUS_CML}) {
+   words[command]=1;assert(!four.readRecoveryTelemetry(sample)&&!rev.readRecoveryTelemetry(sample));words[command]=0;
+ }
+ words[PMBUS_STATUS_WORD]=0x0844;assert(!four.readRecoveryTelemetry(sample)&&!rev.readRecoveryTelemetry(sample));
+ four.m_initialized=true;Rev7TPS546::is_initialized=true;
  initializeWords();words[PMBUS_READ_TEMPERATURE_1]=128;assert(!four.readTuningTelemetry(sample)&&!rev.readTuningTelemetry(sample));
  initializeWords();mode=0x7f;assert(!rev.readTuningTelemetry(sample)&&!rev.setTuningVoltage(1.15f,allowed));
  initializeWords();allowWrite=false;assert(!four.setTuningVoltage(1.15f,allowed)&&!rev.setTuningVoltage(1.15f,allowed)&&writeCount==0);
  allowWrite=true;assert(four.setTuningVoltage(1.15f,allowed)&&rev.setTuningVoltage(1.15f,allowed)&&writeCount==2);
- NerdQaxePlus2 q;TuningSensors sensors;assert(q.readTuningSensors(sensors)&&sensors.asicTempC==52&&sensors.vrmTempC==55);
+ NerdQaxePlus2 q;TuningSensors sensors;q.initialized=false;assert(q.isRecoveryPowerOff()&&q.readRecoverySensors(sensors)&&sensors.asicTempC==52&&sensors.vin==12&&sensors.powerW==0);
+ gpioLevels[TPS53647_EN_PIN]=1;assert(!q.isRecoveryPowerOff());gpioLevels[TPS53647_EN_PIN]=0;q.initialized=true;assert(q.readTuningSensors(sensors)&&sensors.asicTempC==52&&sensors.vrmTempC==55);
  q.shared[0]=0;assert(!q.readTuningSensors(sensors));q.shared[0]=40;
  externalVrm=0;assert(!q.readTuningSensors(sensors));externalVrm=48;
  buckWorks=false;assert(!q.readTuningSensors(sensors));buckWorks=true;

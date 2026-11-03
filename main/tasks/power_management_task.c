@@ -258,6 +258,7 @@ void POWER_MANAGEMENT_task(void * pvParameters)
         power_management->chip_temp2_avg = Thermal_get_chip_temp2(GLOBAL_STATE);
 
         power_management->vr_temp = Power_get_vreg_temp(GLOBAL_STATE);
+        autotune_gamma_recovery_tick(GLOBAL_STATE);
         // The power task owns ASIC transitions after main has prepared queues/tasks.
         bool wants_stop = current_stop_request(GLOBAL_STATE);
         if (wants_stop && !is_paused) {

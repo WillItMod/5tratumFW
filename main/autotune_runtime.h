@@ -21,6 +21,9 @@ typedef struct {
  * False clears the output; callers must not reuse an older successful copy. */
 bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out, uint64_t now_us);
 void autotune_gamma_init(GlobalState *state);
+/* Serialized power owner only, including while paused. Explicit recovery never
+ * starts from boot; this hook stages durable restore before ordinary resume. */
+void autotune_gamma_recovery_tick(GlobalState *state);
 /* Power-owner only. True supplies a volatile target; no configuration write. */
 bool autotune_gamma_select_target(GlobalState *state, uint16_t *voltage_mv, float *frequency_mhz);
 bool autotune_gamma_transition_finished(GlobalState *state, bool success);

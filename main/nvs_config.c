@@ -12,6 +12,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#ifdef ESP_PLATFORM
+#include "esp_memory_utils.h"
+#endif
 #include "display.h"
 #include "theme_api.h"
 #include "scoreboard.h"
@@ -446,7 +449,8 @@ static esp_err_t journal_load(void)
     return error;
 }
 
-static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bool manual)
+static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bool manual,
+    NvsConfigRestoreGuard guard, void *context)
 {
     if (!changes || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex) return ESP_ERR_INVALID_ARG;
     for (size_t i = 0; i < count; i++) {
@@ -455,6 +459,10 @@ static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bo
     }
     if (manual) notify_autotune_override();
     xSemaphoreTake(nvs_cache_mutex, portMAX_DELAY);
+    if (guard && !guard(context)) {
+        xSemaphoreGive(nvs_cache_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
     NvsConfigMutation before[OPERATING_JOURNAL_COUNT], after[OPERATING_JOURNAL_COUNT], decoded[OPERATING_JOURNAL_COUNT];
     size_t index = 0;
     for (NvsConfigKey key = 0; key < NVS_CONFIG_COUNT; key++) if (operating_key(key)) {
@@ -472,7 +480,8 @@ static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bo
     size_t decoded_count = 0;
     if (old_blob && new_blob) { error = journal_decode(new_blob, new_size, decoded, &decoded_count); prepared = error == ESP_OK; }
     nvs_handle_t writer;
-    if (prepared) {
+    if (prepared && guard && !guard(context)) error = ESP_ERR_INVALID_STATE;
+    else if (prepared) {
         error = nvs_open(NVS_CONFIG_NAMESPACE, NVS_READWRITE, &writer);
         if (error == ESP_OK) {
             error = nvs_set_blob(writer, OPERATING_JOURNAL_KEY, new_blob, new_size);
@@ -495,10 +504,84 @@ static esp_err_t apply_atomic(const NvsConfigMutation *changes, size_t count, bo
 }
 
 esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count) {
-    return apply_atomic(changes, count, true);
+    return apply_atomic(changes, count, true, NULL, NULL);
 }
 esp_err_t nvs_config_apply_autotune_restore(const NvsConfigMutation *changes, size_t count) {
-    return apply_atomic(changes, count, false);
+    return apply_atomic(changes, count, false, NULL, NULL);
+}
+__attribute__((weak,noinline)) bool nvs_config_recovery_stack_internal(void) {
+#ifdef ESP_PLATFORM
+    uint8_t probe;
+    return esp_ptr_internal(&probe);
+#else
+    return true;
+#endif
+}
+esp_err_t nvs_config_apply_autotune_restore_guarded(const NvsConfigMutation *changes, size_t count,
+    NvsConfigRestoreGuard guard, void *context) {
+    if (!guard || !nvs_config_recovery_stack_internal()) return ESP_ERR_INVALID_STATE;
+    return apply_atomic(changes,count,false,guard,context);
+}
+static bool restored_value_equal(NvsConfigKey key, ConfigValue a, ConfigValue b) {
+    if (settings[key].type == TYPE_FLOAT) return isfinite(a.f) && a.f == b.f;
+    if (settings[key].type == TYPE_BOOL) return a.b == b.b;
+    if (settings[key].type == TYPE_U16) return a.u16 == b.u16;
+    return false;
+}
+esp_err_t nvs_config_verify_autotune_restore(const NvsConfigMutation *changes, size_t count) {
+    if (!changes || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex ||
+        !nvs_config_recovery_stack_internal()) return ESP_ERR_INVALID_ARG;
+    for (size_t i=0;i<count;++i) {
+        if (!mutation_valid(&changes[i]) || changes[i].type == TYPE_STR) return ESP_ERR_INVALID_ARG;
+        for (size_t j=0;j<i;++j) if (changes[i].key == changes[j].key) return ESP_ERR_INVALID_ARG;
+    }
+    xSemaphoreTake(nvs_cache_mutex,portMAX_DELAY);
+    nvs_handle_t reader;
+    esp_err_t err=nvs_open(NVS_CONFIG_NAMESPACE,NVS_READONLY,&reader);
+    const bool opened=err==ESP_OK;
+    uint8_t *blob=NULL;
+    NvsConfigMutation *decoded=NULL;
+    size_t bytes=0, decoded_count=0;
+    bool decoded_ok=false;
+    if (err==ESP_OK) {
+        err=nvs_get_blob(reader,OPERATING_JOURNAL_KEY,NULL,&bytes);
+        if (err==ESP_OK && (bytes<12 || bytes>OPERATING_JOURNAL_MAX)) err=ESP_ERR_INVALID_STATE;
+        if (err==ESP_OK) {
+            blob=malloc(bytes);decoded=calloc(OPERATING_JOURNAL_COUNT,sizeof(*decoded));
+            if (!blob || !decoded) err=ESP_ERR_NO_MEM;
+        }
+        if (err==ESP_OK) err=nvs_get_blob(reader,OPERATING_JOURNAL_KEY,blob,&bytes);
+        if (err==ESP_OK) {err=journal_decode(blob,bytes,decoded,&decoded_count);decoded_ok=err==ESP_OK;}
+    }
+    for (size_t i=0;err==ESP_OK && i<count;++i) {
+        const NvsConfigMutation *wanted=&changes[i];
+        const NvsConfigMutation *stored=NULL;
+        for (size_t j=0;j<decoded_count;++j) if (decoded[j].key==wanted->key) {stored=&decoded[j];break;}
+        ConfigValue durable={0}; bool present=stored!=NULL;
+        if (stored) durable=stored->value;
+        else {
+            /* v1 inherits raw cooling keys at boot. Read those same durable
+             * keys now; the earlier boot cache is not independent evidence. */
+            if (cooling_key(wanted->key)) {
+                uint16_t raw=0;
+                esp_err_t raw_error=nvs_get_u16(reader,settings[wanted->key].nvs_key_name,&raw);
+                if (raw_error==ESP_ERR_NVS_NOT_FOUND) {durable=settings[wanted->key].default_value;present=true;}
+                else if (raw_error==ESP_OK && (wanted->type!=TYPE_BOOL || raw<=1)) {
+                    if (wanted->type==TYPE_BOOL) durable.b=raw!=0;else durable.u16=raw;
+                    present=true;
+                } else err=raw_error==ESP_OK?ESP_ERR_INVALID_STATE:raw_error;
+            }
+        }
+        if (!present || wanted->type!=settings[wanted->key].type ||
+            (stored && stored->type!=wanted->type) ||
+            !restored_value_equal(wanted->key,durable,wanted->value) ||
+            !restored_value_equal(wanted->key,settings[wanted->key].value[0],wanted->value)) err=ESP_ERR_INVALID_STATE;
+    }
+    if (decoded_ok) mutations_free(decoded,decoded_count);
+    free(decoded);free(blob);
+    if (opened) nvs_close(reader);
+    xSemaphoreGive(nvs_cache_mutex);
+    return err;
 }
 bool nvs_config_read_atomic(const NvsConfigKey *keys, NvsConfigMutation *values, size_t count) {
     if (!keys || !values || !count || count > OPERATING_JOURNAL_COUNT || !nvs_cache_mutex) return false;

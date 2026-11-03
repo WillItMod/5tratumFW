@@ -15,6 +15,10 @@ void mining_schedule_start_time_sync(void);
 bool mining_schedule_owns_clock(void);
 void mining_schedule_update(void);
 void mining_schedule_manual_override(bool paused);
+/* Recovery uses the normal resume policy only if no newer manual/policy intent
+ * has occurred. Caller holds the tuner wire lease for its own owner epoch. */
+uint32_t mining_schedule_control_revision(void);
+bool mining_schedule_resume_if_unchanged(uint32_t revision);
 void mining_schedule_clear_override(void);
 bool mining_schedule_applied_paused(void);
 void mining_schedule_report_power(bool applied_paused, const char *error);

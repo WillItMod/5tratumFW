@@ -30,6 +30,20 @@ static SemaphoreHandle_t mutex;
 static MiningScheduleSettings saved;
 static MiningScheduleEngine engine;
 static atomic_bool clock_valid;
+static atomic_uint_least32_t control_revision = 1;
+__attribute__((weak,noinline)) void autotune_gamma_manual_override(void) {}
+static void advance_control_revision(void)
+{
+    uint_least32_t revision=atomic_load(&control_revision);
+    while (revision<UINT32_MAX && !atomic_compare_exchange_weak(&control_revision,&revision,revision+1)) {}
+}
+static void note_control_intent(void)
+{
+    advance_control_revision();
+    autotune_gamma_manual_override();
+}
+uint32_t mining_schedule_control_revision(void) { return atomic_load(&control_revision); }
+static bool scheduled_state_known,last_scheduled_pause;
 static bool time_service_ready, time_service_started, applied_paused;
 static time_t override_deadline;
 static bool override_deadline_computed;
@@ -146,6 +160,9 @@ static void evaluate_locked(void)
 {
     struct tm local = {0};
     bool valid = local_clock(&local, NULL, 0);
+    const bool scheduled_pause=mining_schedule_is_paused(&saved.policy,valid,&local);
+    if (scheduled_state_known && scheduled_pause!=last_scheduled_pause) advance_control_revision();
+    scheduled_state_known=true;last_scheduled_pause=scheduled_pause;
     if (!valid) override_deadline_computed = false;
     if (valid && override_deadline && time(NULL) >= override_deadline) {
         mining_schedule_engine_clear_override(&engine);
@@ -248,6 +265,7 @@ void mining_schedule_update(void)
 void mining_schedule_manual_override(bool paused)
 {
     if (!mutex) return;
+    note_control_intent();
     xSemaphoreTake(mutex, portMAX_DELAY);
     if (config_error[0]) {
         // A resume cannot bypass unreadable persisted policy. Repair it first.
@@ -261,9 +279,29 @@ void mining_schedule_manual_override(bool paused)
     xSemaphoreGive(mutex);
 }
 
+bool mining_schedule_resume_if_unchanged(uint32_t revision)
+{
+    if (!mutex || revision==UINT32_MAX) return false;
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool allowed=revision==atomic_load(&control_revision) && !config_error[0];
+    if (allowed) {
+        evaluate_locked();
+        allowed=revision==atomic_load(&control_revision);
+        if (allowed) {
+            mining_schedule_engine_set_override(&engine,false);
+            evaluate_locked();
+            set_override_deadline_locked();
+            allowed=!state->SYSTEM_MODULE.mining_paused;
+        }
+    }
+    xSemaphoreGive(mutex);
+    return allowed;
+}
+
 void mining_schedule_clear_override(void)
 {
     if (!mutex) return;
+    note_control_intent();
     xSemaphoreTake(mutex, portMAX_DELAY);
     mining_schedule_engine_clear_override(&engine);
     override_deadline = 0;
@@ -281,6 +319,7 @@ esp_err_t mining_schedule_save(const MiningScheduleSettings *settings)
     char *document = json ? cJSON_PrintUnformatted(json) : NULL;
     cJSON_Delete(json);
     if (!document) return ESP_ERR_NO_MEM;
+    note_control_intent();
     xSemaphoreTake(mutex, portMAX_DELAY);
     esp_err_t err = nvs_config_set_string_sync(NVS_CONFIG_MINING_SCHEDULE, document);
     if (err == ESP_OK) {

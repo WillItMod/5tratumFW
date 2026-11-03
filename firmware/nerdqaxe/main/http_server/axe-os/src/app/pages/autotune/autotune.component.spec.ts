@@ -341,4 +341,75 @@ describe('Dynamic tuning controls', () => {
     expect(service.command).not.toHaveBeenCalled();
   });
 
+  function pausedRecovery(): void {
+    report.status.recovery={requested:false,phase:'idle',reason:''};
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    report.status.telemetry.miningActive=false;component.load();
+  }
+  it('requires the recovery capability and a fresh explicitly paused report without breaking ordinary restore', () => {
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();
+    expect(component.canRestore).toBeTrue();expect(component.canRestoreAndResume).toBeFalse();expect(component.recoveryText).toContain('matching updated');
+    pausedRecovery();expect(component.canRestoreAndResume).toBeTrue();
+    report.status.telemetry.miningActive=true;component.load();expect(component.canRestoreAndResume).toBeFalse();
+    report.status.telemetry.miningActive=false;(report.status as any).recovery={requested:false,phase:'future-phase',reason:''};component.load();expect(component.canRestoreAndResume).toBeFalse();expect(component.canRestore).toBeTrue();
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('shows original settings and requires explicit confirmation before requesting resume', () => {
+    pausedRecovery();spyOn(window,'confirm').and.returnValue(false);component.restoreAndResume();
+    expect(window.confirm).toHaveBeenCalledWith(jasmine.stringMatching(/525 MHz.*1150 mV.*auto-tuning off/));
+    expect(service.authorize).not.toHaveBeenCalled();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('sends recovery once and waits for original restore plus fresh normal mining, without starting tuning', fakeAsync(() => {
+    pausedRecovery();spyOn(window,'confirm').and.returnValue(true);
+    service.command.and.callFake(()=>{report.status.recovery={requested:true,phase:'restoring',reason:'restoring-original'};report.status.state='restoring';report.status.ownsSettings=true;return of({ok:true,restartRequired:false});});
+    component.restoreAndResume();tick(0);expect(component.busy).toBeTrue();expect(service.command.calls.count()).toBe(1);
+    expect(service.command.calls.mostRecent().args[0]).toEqual({action:'restore-and-resume'});
+    report.status.recovery={requested:false,phase:'complete',reason:''};report.status.state='disabled';report.status.ownsSettings=false;report.backup.restored=true;
+    tick(1000);expect(component.busy).toBeTrue();
+    report.status.telemetry.miningActive=true;tick(1000);expect(component.busy).toBeFalse();expect(component.message).toContain('normal mining verified');
+    expect(service.command.calls.count()).toBe(1);expect(component.waiverAccepted).toBeFalse();expect(report.status.active).toBeFalse();
+  }));
+  it('shows blocked recovery as terminal and never automatically retries it', fakeAsync(() => {
+    pausedRecovery();spyOn(window,'confirm').and.returnValue(true);
+    service.command.and.callFake(()=>{report.status.recovery={requested:false,phase:'blocked',reason:'cooling-not-ready'};return of({ok:true,restartRequired:false});});
+    component.restoreAndResume();tick(0);expect(component.busy).toBeFalse();expect(component.actionError).toContain('cooling not ready');
+    tick(10000);expect(service.command.calls.count()).toBe(1);expect(component.canRestore).toBeTrue();
+  }));
+  it('does not resend a recovery after a lost acknowledgement and requires fresh readback before another request', fakeAsync(() => {
+    pausedRecovery();spyOn(window,'confirm').and.returnValue(true);service.command.and.returnValue(throwError(()=>new Error('connection lost')));
+    component.restoreAndResume();tick(0);expect(component.canRestoreAndResume).toBeFalse();expect(component.actionError).toContain('No repeat request');
+    component.restoreAndResume();expect(service.command.calls.count()).toBe(1);
+    report.status.recovery={requested:true,phase:'validating-off',reason:''};component.load();expect(component.canRestoreAndResume).toBeFalse();
+    expect(component.canRestore).toBeTrue();expect(service.command.calls.count()).toBe(1);
+  }));
+  it('explains a limit-constrained stop without claiming active ownership or a hardware defect', () => {
+    report.status.reason='cannot-reduce-load-within-limits';report.status.state='faulted';report.status.active=false;report.status.ownsSettings=false;report.config.minFrequencyMHz=690;report.config.maxFrequencyMHz=800;component.load();
+    expect(component.activityBanner.label).toBe('STOPPED — LIMIT REACHED');expect(component.activityText).toContain('690 MHz');expect(component.activityText).toContain('not a diagnosis');
+    expect(component.ownedSettingsText).toContain('released');expect(component.optionsLocked).toBeFalse();
+    report.status.telemetry.fault=true;component.load();expect(component.activityBanner.kind).toBe('fault');
+  });
+  it('retains instantaneous rejection evidence separately from complete measurement windows and drops malformed extras', () => {
+    const conditions={asicTempC:60.5,vrmTempC:58,powerW:86,hashRateGHs:4100,errorPercentage:.1,worstErrorPercentage:.2,extra:'discard'};
+    report.status.eventCapacity=8;report.status.events=[event(1,{kind:'rejected',outcome:'failed',reason:'temperature-limit-backoff',measurement:null,conditions})];component.load();
+    expect(component.eventTitle(component.events[0])).toBe('Point rejected by limits');expect(component.eventReason(component.events[0])).toContain('not marked as permanently defective');
+    expect(component.events[0].measurement).toBeNull();expect(component.events[0].conditions!.asicTempC).toBe(60.5);expect((component.events[0].conditions as any).extra).toBeUndefined();
+    conditions.asicTempC=99;expect(component.events[0].conditions!.asicTempC).toBe(60.5);
+    report.status.events=[event(2,{conditions:{...conditions,powerW:Infinity}})];component.load();expect(component.eventFeedAvailable).toBeTrue();expect(component.events[1].conditions).toBeUndefined();
+    report.status.events=[event(3)];component.load();expect(component.eventFeedAvailable).toBeTrue();expect(component.events[2].conditions).toBeUndefined();expect(component.canRestoreAndResume).toBeFalse();
+  });
+
+  it('lets explicit resume supersede only the acknowledged readback wait of an ordinary paused restore', fakeAsync(() => {
+    pausedRecovery();spyOn(window,'confirm').and.returnValue(true);
+    service.command.and.callFake((body:any)=>{
+      report.status.state='restoring';report.status.ownsSettings=true;
+      if(body.action==='restore-and-resume')report.status.recovery={requested:true,phase:'restoring',reason:''};
+      return of({ok:true,restartRequired:false});
+    });
+    component.restore();tick(0);expect(component.busy).toBeTrue();expect(component.canRestoreAndResume).toBeTrue();
+    component.restoreAndResume();tick(0);expect(component.busy).toBeTrue();expect(component.canRestoreAndResume).toBeFalse();
+    expect(service.command.calls.allArgs().map(args=>args[0].action)).toEqual(['stop','restore-and-resume']);
+    report.status.recovery={requested:false,phase:'complete',reason:''};report.status.state='disabled';report.status.ownsSettings=false;report.backup.restored=true;report.status.telemetry.miningActive=true;
+    tick(1000);expect(component.busy).toBeFalse();expect(component.message).toContain('normal mining verified');expect(service.command.calls.count()).toBe(2);
+  }));
+
 });

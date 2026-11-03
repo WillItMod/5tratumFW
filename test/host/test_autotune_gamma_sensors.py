@@ -69,13 +69,13 @@ static esp_err_t smb_read_word(uint8_t reg,uint16_t *out) {
     *out=reg==PMBUS_READ_VIN?raw_vin:reg==PMBUS_READ_VOUT?raw_vout:
         reg==PMBUS_READ_IOUT?raw_iout:reg==PMBUS_READ_TEMPERATURE_1?raw_temp:0;return ESP_OK;
 }
-static esp_err_t smb_write_byte(uint8_t reg,uint8_t value) {(void)reg;(void)value;++writes;return ESP_OK;}
-static esp_err_t smb_write_word(uint8_t reg,uint16_t value) {++writes;register_values[reg]=value;if(reg==PMBUS_VOUT_COMMAND)command_value=value;return ESP_OK;}
+static esp_err_t smb_write_byte(uint8_t reg,uint8_t value) {assert(reg!=PMBUS_CLEAR_FAULTS);(void)value;++writes;return ESP_OK;}
+static esp_err_t smb_write_word(uint8_t reg,uint16_t value) {assert(reg!=PMBUS_CLEAR_FAULTS);++writes;register_values[reg]=value;if(reg==PMBUS_VOUT_COMMAND)command_value=value;return ESP_OK;}
 '''
         for signature in ('static float slinear11_2_float(', 'static bool decode_vout_mode(',
                           'static float ulinear16_2_float(', 'static esp_err_t encode_voltage_in_mode(', 'static esp_err_t encode_voltage_checked(',
                           'static esp_err_t TPS546_write_vout_limit_ratios(', 'static esp_err_t TPS546_write_initial_vout_settings(', 'esp_err_t TPS546_set_vout(',
-                          'esp_err_t TPS546_read_strict('):
+                          'static esp_err_t read_strict(', 'esp_err_t TPS546_read_strict(', 'esp_err_t TPS546_read_strict_off('):
             harness+=method(actual,signature)
         harness+=r'''
 int main(void) {
@@ -112,7 +112,13 @@ int main(void) {
     mode=0x9c;assert(TPS546_read_strict(&sample)!=ESP_OK); /* Valid hardware -4, too coarse for adaptive5mV. */
     mode=0;assert(TPS546_read_strict(&sample)!=ESP_OK); /* Unsupported exponent. */
     mode=0x17;raw_iout=0x7ff;assert(TPS546_read_strict(&sample)!=ESP_OK);
-    raw_iout=10;raw_vout=0;assert(TPS546_read_strict(&sample)!=ESP_OK);raw_vout=600;
+    raw_iout=0;raw_vout=0;assert(TPS546_read_strict(&sample)!=ESP_OK);
+    reads=0;assert(TPS546_read_strict_off(&sample)==ESP_OK&&sample.vout==0&&sample.iout==0);
+    for(unsigned bad=1;bad<=total_reads;++bad) {
+        reads=0;fail_at=bad;memset(&sample,0xA5,sizeof(sample));TPS546_StrictTelemetry before=sample;
+        assert(TPS546_read_strict_off(&sample)!=ESP_OK&&!memcmp(&sample,&before,sizeof(sample)));
+    }
+    fail_at=0;raw_iout=10;raw_vout=600;
     raw_temp=151;assert(TPS546_read_strict(&sample)!=ESP_OK);raw_temp=55;
     reads=writes=0;fail_at=1;assert(TPS546_set_vout(1.15f)!=ESP_OK&&writes==0);
     reads=writes=0;fail_at=0;mode=0x37;assert(TPS546_set_vout(1.15f)!=ESP_OK&&writes==0);

@@ -55,6 +55,7 @@ public:
     float get_vout() override;
     bool set_vout(float volts) override;
     bool readTuningTelemetry(BuckTuningTelemetry &output) override;
+    bool readRecoveryTelemetry(BuckTuningTelemetry &output) override;
     bool setTuningVoltage(float volts, bool (*allowed)()) override;
     uint16_t get_vout_vid();
 

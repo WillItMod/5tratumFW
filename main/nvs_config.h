@@ -160,6 +160,13 @@ typedef struct {
 esp_err_t nvs_config_apply_atomic(const NvsConfigMutation *changes, size_t count);
 /* Internal tuner restore: same journal transaction, without a manual handoff. */
 esp_err_t nvs_config_apply_autotune_restore(const NvsConfigMutation *changes, size_t count);
+/* Explicit recovery only: reject a superseded owner inside the cache transaction,
+ * then independently reopen/decode the durable journal before ASIC resume. */
+typedef bool (*NvsConfigRestoreGuard)(void *context);
+esp_err_t nvs_config_apply_autotune_restore_guarded(const NvsConfigMutation *changes, size_t count,
+    NvsConfigRestoreGuard guard, void *context);
+esp_err_t nvs_config_verify_autotune_restore(const NvsConfigMutation *changes, size_t count);
+bool nvs_config_recovery_stack_internal(void);
 bool nvs_config_read_atomic(const NvsConfigKey *keys, NvsConfigMutation *values, size_t count);
 
 esp_err_t nvs_config_init(void);

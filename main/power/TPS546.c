@@ -1280,7 +1280,7 @@ esp_err_t TPS546_set_vout(float volts) {
     return ESP_OK;
 }
 
-esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
+static esp_err_t read_strict(TPS546_StrictTelemetry *sample, bool allow_off)
 {
     if (!sample) return ESP_ERR_INVALID_ARG;
     TPS546_StrictTelemetry result = {0};
@@ -1305,11 +1305,24 @@ esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
     result.vin = slinear11_2_float(vin);
     result.iout = slinear11_2_float(iout);
     result.temperature_c = slinear11_2_float(temperature);
-    if (!isfinite(result.vin) || result.vin <= 0 || !isfinite(result.vout) || result.vout <= 0 ||
+    if (!isfinite(result.vin) || result.vin <= 0 || !isfinite(result.vout) ||
+        (allow_off ? result.vout < 0 : result.vout <= 0) ||
         !isfinite(result.iout) || result.iout < 0 || !isfinite(result.temperature_c) ||
         result.temperature_c < -40 || result.temperature_c >= 150) return ESP_FAIL;
     *sample = result;
     return ESP_OK;
+}
+
+esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
+{
+    return read_strict(sample,false);
+}
+
+esp_err_t TPS546_read_strict_off(TPS546_StrictTelemetry *sample)
+{
+    /* Recovery validates the zero rail/current and all status fields itself.
+     * This must never make a zero rail valid for the running tuner. */
+    return read_strict(sample,true);
 }
 
 void TPS546_show_voltage_settings(void)

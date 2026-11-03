@@ -26,7 +26,7 @@ static inline const char *fwt_event_short_label(const fwt_event *event) {
  if(!event||!event->id) return "No decisions yet";
  switch(event->kind) {
  case FWT_EVENT_STARTED:return "Run started";case FWT_EVENT_BASELINE:return "Reference measured";
- case FWT_EVENT_ACCEPTED:return "Better result found";case FWT_EVENT_REJECTED:return "Trial not better";
+ case FWT_EVENT_ACCEPTED:return "Better result found";case FWT_EVENT_REJECTED:return event->outcome==FWT_OUTCOME_FAILED ? "Limits reached" : "Trial not better";
  case FWT_EVENT_RETAINED:return "Best point checked";case FWT_EVENT_ERRORS:return "Errors too high";
  case FWT_EVENT_ADJUSTMENT:
   if(event->outcome==FWT_OUTCOME_FAILED) return "Change failed";
@@ -67,10 +67,10 @@ static inline void fwt_history_capture(fwt_history *history,const fwt_controller
  else {fwt_history_add(history,b);fwt_history_add(history,a);}
 }
 #ifdef __cplusplus
-static_assert(sizeof(fwt_event)<=128,"Keep decision records bounded");
-static_assert(sizeof(fwt_history)<=1100,"Keep history outside controller copies");
+static_assert(sizeof(fwt_event)<=144,"Keep decision records bounded");
+static_assert(sizeof(fwt_history)<=1200,"Keep history outside controller copies");
 #else
-_Static_assert(sizeof(fwt_event)<=128,"Keep decision records bounded");
-_Static_assert(sizeof(fwt_history)<=1100,"Keep history outside controller copies");
+_Static_assert(sizeof(fwt_event)<=144,"Keep decision records bounded");
+_Static_assert(sizeof(fwt_history)<=1200,"Keep history outside controller copies");
 #endif
 #endif

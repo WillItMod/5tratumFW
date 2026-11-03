@@ -472,6 +472,21 @@ bool validTuningSettings(JsonObjectConst input) {
     for (const char *key : tuningKeys) if (!input[key].is<uint16_t>() || input[key].is<bool>()) return false;
     return true;
 }
+static bool verifyRestoredDocument(const JsonDocument &document) {
+    if(!FiveTratumAutotune::storageContextAllowed()) return false;
+    const size_t length=measureJson(document);
+    if(!length) return false;
+    char *expected=static_cast<char *>(malloc(length+1)),*actual=static_cast<char *>(malloc(length));
+    if(!expected||!actual){free(expected);free(actual);return false;}
+    bool valid=serializeJson(document,expected,length+1)==length;
+    nvs_handle_t handle;
+    if(valid&&nvs_open(NVS_CONFIG_NAMESPACE,NVS_READONLY,&handle)==ESP_OK) {
+        size_t stored=0;valid=nvs_get_blob(handle,NVS_JSON_KEY,nullptr,&stored)==ESP_OK&&stored==length;
+        if(valid)valid=nvs_get_blob(handle,NVS_JSON_KEY,actual,&stored)==ESP_OK&&stored==length&&!memcmp(expected,actual,length);
+        nvs_close(handle);
+    }else valid=false;
+    free(expected);free(actual);return valid;
+}
 bool restoreTuningSettings(JsonObjectConst input) {
     if (!FiveTratumAutotune::storageContextAllowed()) return false;
     if (!validTuningSettings(input)) return false;
@@ -480,7 +495,7 @@ bool restoreTuningSettings(JsonObjectConst input) {
         JsonDocument next(s_doc.allocator());
         if (!next.set(s_doc)) return false;
         for (const char *key : tuningKeys) next[key] = input[key].as<uint16_t>();
-        if (next.overflowed() || !write_document_to_nvs(next)) return false;
+        if (next.overflowed() || !write_document_to_nvs(next) || !verifyRestoredDocument(next)) return false;
         swap(s_doc, next); s_dirty = false;
     }
     // Never acquire the physical-frame gate while retaining the config mutex.

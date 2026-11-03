@@ -25,6 +25,8 @@ class BuckConverter {
 
     // Strict, current acquisitions only. Default denies unreviewed converters.
     virtual bool readTuningTelemetry(BuckTuningTelemetry &) { return false; }
+    // Recovery preflight: fresh input/temperature/status only; output may be off.
+    virtual bool readRecoveryTelemetry(BuckTuningTelemetry &) { return false; }
     // Tuning must never clear faults, enable a stopped rail or change limits.
     virtual bool setTuningVoltage(float, bool (*)()) { return false; }
     virtual bool set_vout(float volts) = 0;

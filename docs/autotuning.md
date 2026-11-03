@@ -87,6 +87,13 @@ new minimum. Gamma supports fractional MHz requests; the Nerd control interface
 uses whole MHz. Both use whole mV requests. Search increments and computed PLL
 frequency are not independent measurements of the actual silicon clock.
 
+The minimum clock also limits protective backoff. A narrow range such as
+690–800MHz can prevent a miner from meeting a newly lowered temperature target.
+If it reaches the minimum and still needs to reduce load, mining pauses. The
+stopped point is recorded as rejected under those constraints; this does not
+mean the ASIC or that operating point is permanently defective. Review the
+minimum as well as the maximum when changing temperature or power limits.
+
 Nerd limits come from the detected board profile. The standard supported
 QAxe/OctAxe profile is capped at 800MHz; the recognized QAxe rev7 regulator
 profile exposes 1,000MHz. The normal settings editor and Tuning both use the
@@ -141,6 +148,19 @@ waits. The backup remains available and the page reports the reason. Restoration
 does not clear a fault, restart a stopped ASIC or force old settings onto unsafe
 hardware. Use the miner's existing explicit recovery controls when the underlying
 condition has been corrected, then retry restoration as reported.
+
+For a miner which is already paused, **Restore original settings and resume
+mining** is a separate explicit recovery action. It keeps auto-tuning off. The
+firmware first validates the powered-off state, cooling and protection, restores
+and verifies the durable original configuration, then requests normal mining
+startup. Recovery is not complete until live settings, fans and mining state
+are verified. It never clears a hardware fault or bypasses normal startup
+protection. A manual power action or an update cancels a pending recovery.
+
+The original operating and cooling settings may differ from the current tuning
+targets. Recovery does not promise that an original point will satisfy stricter
+limits selected later. It requires explicit confirmation; an over-temperature
+stop cannot silently authorize a higher-load rollback.
 
 A completed restore is reported only after saved-settings checks and successful
 live readback. The browser never automatically repeats the state-changing

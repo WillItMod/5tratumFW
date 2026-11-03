@@ -1,3 +1,4 @@
+#include "autotune/recovery_guard.h"
 #include "TPS53667.h"
 #include "esp_log.h"
 #include "pmbus_commands.h"
@@ -43,7 +44,7 @@ bool TPS53667::init(int num_phases, int imax, float ifault)
     ESP_LOGI(TAG, "Found TPS53667 controller");
 
     // clear flags
-    write_command(PMBUS_CLEAR_FAULTS);
+    if (!FiveTratumAutotune::preserveRecoveryFaults()) write_command(PMBUS_CLEAR_FAULTS);
 
     // restore all from nvm
     write_command(PMBUS_RESTORE_DEFAULT_ALL);

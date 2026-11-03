@@ -1,3 +1,5 @@
+#include "autotune/recovery_guard.h"
+#include <initializer_list>
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
@@ -587,6 +589,7 @@ void TPS546_set_mfr_info(void)
 
 void TPS546_clear_faults(void)
 {
+    if (FiveTratumAutotune::preserveRecoveryFaults()) return;
     if (smb_write_command(PMBUS_CLEAR_FAULTS) != ESP_OK) {
         ESP_LOGW(TAG, "Could not clear TPS546 faults");
     }
@@ -1068,6 +1071,18 @@ static bool tuning_mode(uint8_t &mode, int &exponent) {
     exponent = raw & 0x10 ? raw - 32 : raw;
     return (mode & 0x60) == 0 && exponent >= -16 && exponent <= 0;
 }
+bool TPS546::readRecoveryTelemetry(BuckTuningTelemetry &output) {
+    output={};uint16_t status=0,temp=0,vin=0;
+    if(smb_read_word(PMBUS_STATUS_WORD,&status)!=ESP_OK || (status & ~uint16_t(0x0840)) ||
+       smb_read_word(PMBUS_READ_TEMPERATURE_1,&temp)!=ESP_OK || smb_read_word(PMBUS_READ_VIN,&vin)!=ESP_OK) return false;
+    for(uint8_t command : {PMBUS_STATUS_VOUT,PMBUS_STATUS_IOUT,PMBUS_STATUS_INPUT,PMBUS_STATUS_TEMPERATURE,PMBUS_STATUS_CML}) {
+        uint8_t value=0;if(smb_read_byte(command,&value)!=ESP_OK || value) return false;
+    }
+    const float temperature=slinear11_2_float(temp),input=slinear11_2_float(vin);
+    if(!isfinite(temperature)||temperature<=0||temperature>=125.0f||!isfinite(input)||input<=0) return false;
+    output.temperatureC=temperature;output.vin=input;return true;
+}
+
 bool TPS546::readTuningTelemetry(BuckTuningTelemetry &output) {
     output = {};
     uint16_t status = 0, temp = 0, vin = 0, vout = 0, iout = 0;

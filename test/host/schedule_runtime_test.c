@@ -12,6 +12,8 @@ static GlobalState global;
 static esp_err_t read_result = ESP_ERR_NVS_NOT_FOUND, save_result = ESP_OK;
 static const char *stored;
 static unsigned writes;
+static unsigned tuning_revocations;
+void autotune_gamma_manual_override(void) {++tuning_revocations;}
 static char last_written[2048];
 static int fail_allocation = -1;
 static void *test_malloc(size_t size) {
@@ -139,7 +141,30 @@ int main(int argc, char **argv)
     mining_schedule_start_time_sync();
     assert(register_mining_schedule_api((void *)1) == ESP_OK && route_count == 3);
     assert(writes == 0);
-    if (strcmp(scenario, "corrupt") == 0 || strcmp(scenario, "wrong-type") == 0 || strcmp(scenario, "bad-zone") == 0 || strcmp(scenario, "trailing") == 0) {
+    if (strcmp(scenario,"recovery-boundary")==0) {
+        apply(weekly);sync_time();
+        const uint32_t old=mining_schedule_control_revision();
+        at(2026,10,5,20,0);
+        /* The guarded path re-evaluates time even without an earlier GET/tick. */
+        assert(!mining_schedule_resume_if_unchanged(old) && global.SYSTEM_MODULE.mining_paused);
+    } else if (strcmp(scenario,"recovery-revision")==0) {
+        uint32_t old=mining_schedule_control_revision();
+        mining_schedule_manual_override(true);
+        assert(tuning_revocations==1 && mining_schedule_control_revision()!=old);
+        assert(!mining_schedule_resume_if_unchanged(old) && global.SYSTEM_MODULE.mining_paused);
+        uint32_t current=mining_schedule_control_revision();
+        assert(mining_schedule_resume_if_unchanged(current) && !global.SYSTEM_MODULE.mining_paused && tuning_revocations==1);
+        mining_schedule_manual_override(true);old=mining_schedule_control_revision();
+        mining_schedule_clear_override();assert(mining_schedule_control_revision()!=old);
+        assert(!mining_schedule_resume_if_unchanged(old));
+        old=mining_schedule_control_revision();apply(disabled);
+        assert(mining_schedule_control_revision()!=old && !mining_schedule_resume_if_unchanged(old));
+        old=mining_schedule_control_revision();save_result=ESP_FAIL;
+        cJSON *json=cJSON_Parse(disabled);MiningScheduleSettings settings;
+        assert(json && mining_schedule_parse(json,&settings));cJSON_Delete(json);
+        assert(mining_schedule_save(&settings)!=ESP_OK && mining_schedule_control_revision()!=old);
+        assert(!mining_schedule_resume_if_unchanged(old));
+    } else if (strcmp(scenario, "corrupt") == 0 || strcmp(scenario, "wrong-type") == 0 || strcmp(scenario, "bad-zone") == 0 || strcmp(scenario, "trailing") == 0) {
         cJSON *json = snapshot(), *status = cJSON_GetObjectItemCaseSensitive(json, "status"), *schedule = cJSON_GetObjectItemCaseSensitive(json, "schedule");
         assert(boolean(status, "requestedPaused") && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(status, "error")));
         assert(!boolean(schedule, "enabled") && cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(schedule, "windows")) == 0);

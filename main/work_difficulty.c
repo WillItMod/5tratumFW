@@ -88,7 +88,8 @@ uint64_t work_difficulty_prepare(const work_source_stamp *stamp)
 }
 bool work_difficulty_target(uint32_t bits,double *out)
 {
-    if(!out)return false;*out=0;
+    if (!out) return false;
+    *out = 0;
     const unsigned size=bits>>24;uint32_t word=bits&0x007fffffU;
     if(!word||(bits&0x00800000U)||size>34||(word>0xffU&&size>33)||(word>0xffffU&&size>32))return false;
     unsigned exponent=size;

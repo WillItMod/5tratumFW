@@ -1,3 +1,5 @@
+#include "autotune/recovery_guard.h"
+#include <initializer_list>
 
 #include <math.h>
 #include <stdint.h>
@@ -284,7 +286,7 @@ bool TPS53647::init(int num_phases, int imax, float ifault)
     ESP_LOGI(TAG, "found TPS53647 controller");
 
     // clear flags
-    write_command(PMBUS_CLEAR_FAULTS);
+    if (!FiveTratumAutotune::preserveRecoveryFaults()) write_command(PMBUS_CLEAR_FAULTS);
 
     // restore all from nvm
     write_command(PMBUS_RESTORE_DEFAULT_ALL);
@@ -327,7 +329,7 @@ bool TPS53647::init(int num_phases, int imax, float ifault)
 }
 
 void TPS53647::clear_faults() {
-    write_command(PMBUS_CLEAR_FAULTS);
+    if (!FiveTratumAutotune::preserveRecoveryFaults()) write_command(PMBUS_CLEAR_FAULTS);
 }
 
 
@@ -576,6 +578,18 @@ uint8_t TPS53647::get_status_temp(void)
 
 
 // Autonomous decisions cannot use the legacy getters' zero-on-error contract.
+bool TPS53647::readRecoveryTelemetry(BuckTuningTelemetry &output) {
+    output={};uint16_t status=0,temp=0,vin=0;
+    if(read_word(PMBUS_STATUS_WORD,&status)!=ESP_OK || (status & ~uint16_t(0x0840)) ||
+       read_word(PMBUS_READ_TEMPERATURE_1,&temp)!=ESP_OK || read_word(PMBUS_READ_VIN,&vin)!=ESP_OK) return false;
+    for(uint8_t command : {PMBUS_STATUS_VOUT,PMBUS_STATUS_IOUT,PMBUS_STATUS_INPUT,PMBUS_STATUS_TEMPERATURE,PMBUS_STATUS_CML}) {
+        uint8_t value=0;if(read_byte(command,&value)!=ESP_OK || value) return false;
+    }
+    const float temperature=slinear11_to_float(temp),input=slinear11_to_float(vin);
+    if(!isfinite(temperature)||temperature<=0||temperature>=127.9f||!isfinite(input)||input<=0) return false;
+    output.temperatureC=temperature;output.vin=input;return true;
+}
+
 bool TPS53647::readTuningTelemetry(BuckTuningTelemetry &output) {
     output = {};
     uint16_t temp = 0, vin = 0, vout = 0, iout = 0, pin = 0, status = 0;

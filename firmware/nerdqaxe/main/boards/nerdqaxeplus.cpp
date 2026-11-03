@@ -526,6 +526,27 @@ bool NerdQaxePlus::tuningAsicTemperature(float &maximum, int64_t &oldest) {
     }
     return true;
 }
+bool NerdQaxePlus::isRecoveryPowerOff() {
+    return !isInitialized() && gpio_get_level(BM1368_RST_PIN)==0 &&
+        gpio_get_level(TPS53647_EN_PIN)==0 && gpio_get_level(LDO_EN_PIN)==0;
+}
+bool NerdQaxePlus::readRecoverySensors(TuningSensors &output) {
+    output={};if(!m_tps || isShutdown()) return false;
+    const int64_t started=esp_timer_get_time();
+    BuckTuningTelemetry buck;float asic=0;int64_t asicAt=started;
+    if(!m_tps->readRecoveryTelemetry(buck)||!refreshTuningTemperatures()||!tuningAsicTemperature(asic,asicAt)) return false;
+    float vrm=buck.temperatureC;
+    if(m_tps->uses_external_vr_temperature()) {
+        const float external=TMP1075_read_temperature(1);
+        if(!std::isfinite(external)||external<=0||external>=125) return false;
+        vrm=std::max(vrm,external+tuningVrmOffset());
+    }
+    const int64_t now=esp_timer_get_time();
+    if(now<started||now-started>5000000||now<asicAt||now-asicAt>5000000) return false;
+    output.asicTempC=asic;output.vrmTempC=vrm;output.vin=buck.vin;
+    output.capturedAtUs=std::min(started,asicAt);return true;
+}
+
 bool NerdQaxePlus::readTuningSensors(TuningSensors &output) {
     output = {};
     if (!m_tps || !isInitialized() || !isBuckInitialized() || isShutdown()) return false;

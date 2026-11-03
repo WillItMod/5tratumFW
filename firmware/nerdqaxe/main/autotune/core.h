@@ -48,7 +48,8 @@ typedef struct {
  uint64_t atUs; const char *reason;
  fwt_point from, point;
  double hashRateGHs, powerW, errorPercentage, worstErrorPercentage, score, requiredScore;
- bool hasMeasurement, hasScore;
+ double asicTempC, vrmTempC;
+ bool hasMeasurement, hasScore, hasConditions;
 } fwt_event;
 typedef struct {
  fwt_limits limits; fwt_config config;
@@ -273,7 +274,19 @@ static inline fwt_request fwt_backoff(fwt_controller *c,const fwt_input *i,uint6
  p.frequencyMHz=fwt_clamp(p.frequencyMHz-steps*c->limits.frequencyStepMHz,
   c->config.minFrequencyMHz,c->config.maxFrequencyMHz);
  p.coreVoltageMv=fwt_clamp(p.coreVoltageMv,c->config.minVoltageMv,c->config.maxVoltageMv);
- if(fwt_point_equal(p,c->current)) return fwt_pause(c,"cannot-reduce-load-within-limits");
+ if(fwt_point_equal(p,c->current)) {
+  /* The current point failed this run's constraints, not necessarily the
+   * silicon. Retain the actual initiating cause without inventing a mean. */
+  fwt_event_record(c,&c->lastDecision,FWT_EVENT_REJECTED,FWT_OUTCOME_FAILED,
+   c->current,c->current,reason,now);
+  if(c->lastDecision.id && fwt_input_valid(i,now)) {
+   fwt_event *event=&c->lastDecision;event->hasConditions=true;
+   event->asicTempC=i->asicTempC;event->vrmTempC=i->vrmTempC;
+   event->powerW=i->powerW;event->hashRateGHs=i->hashRateGHs;
+   event->errorPercentage=i->errorPercentage;event->worstErrorPercentage=i->worstErrorPercentage;
+  }
+  return fwt_pause(c,"cannot-reduce-load-within-limits");
+ }
  (void)i;c->bestAvailable=false;c->trial=false;c->recovering=true;c->active=true;
  c->noImprovement=0;c->searchIndex=0;
  return fwt_apply(c,p,now,reason);

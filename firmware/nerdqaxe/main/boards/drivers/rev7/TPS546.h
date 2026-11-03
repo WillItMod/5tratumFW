@@ -152,6 +152,7 @@ class TPS546 : public BuckConverter {
 
     bool set_vout(float volts) override;
     bool readTuningTelemetry(BuckTuningTelemetry &output) override;
+    bool readRecoveryTelemetry(BuckTuningTelemetry &output) override;
     bool setTuningVoltage(float volts, bool (*allowed)()) override;
     bool disable_vout() override;
 

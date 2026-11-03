@@ -50,6 +50,10 @@ class ScheduleRuntimeTests(unittest.TestCase):
     def test_missing_key_defaults_disabled_without_writes(self):
         self.run_case("missing")
 
+    def test_recovery_resume_is_cancelled_by_manual_clear_and_saved_policy_intents(self):
+        self.run_case("recovery-revision")
+        self.run_case("recovery-boundary")
+
     def test_corrupt_wrong_type_unknown_zone_and_trailing_data_fail_closed(self):
         for scenario in ("corrupt", "wrong-type", "bad-zone", "trailing"):
             with self.subTest(scenario=scenario):

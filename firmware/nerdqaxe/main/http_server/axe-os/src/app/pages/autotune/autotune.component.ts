@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { EMPTY, Subject, catchError, exhaustMap, filter, finalize, map, switchMap, take, takeUntil, tap, throwError, timeout, timer } from 'rxjs';
 import { AutotuneService } from '../../services/autotune.service';
-import { AutotuneConfig, AutotuneEvent, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
+import { AutotuneConfig, AutotuneConditions, AutotuneRecovery, AutotuneEvent, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
 
 type ObservedMetric = 'ths' | 'joules' | 'asicTempC' | 'vrmTempC' | 'powerW' | 'boardErrors' | 'worstErrors';
 interface TabObservation { at: number; ths: number | null; joules: number | null; asicTempC: number | null; vrmTempC: number | null; powerW: number | null; boardErrors: number | null; worstErrors: number | null; }
@@ -30,6 +30,11 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   private readEpoch = 0;
   private baseline = '';
   private startUnconfirmed = false;
+  private recoveryUnconfirmed = false;
+  private recoverySubmittedAt = Infinity;
+  private readonly cancelActionReadback = new Subject<void>();
+  private pendingAction = '';
+  private actionAcknowledged = false;
   // These are tab observations, not the controller's unique counter samples.
   readonly historyLimit = 120;
   history: TabObservation[] = [];
@@ -59,7 +64,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       }));
     }), takeUntil(this.destroyed)).subscribe();
   }
-  ngOnDestroy(): void { this.destroyed.next(); this.destroyed.complete(); }
+  ngOnDestroy(): void { this.destroyed.next(); this.destroyed.complete(); this.cancelActionReadback.complete(); }
 
   load(): void {
     if (this.busy || this.loading) return;
@@ -125,6 +130,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     this.report = report;
     this.requestedAt = requestedAt;
     this.readError = '';
+    if (this.recovery && requestedAt >= this.recoverySubmittedAt) this.recoveryUnconfirmed=false;
     if (!this.viewInitialized) {this.viewMode=report.status.active||report.status.ownsSettings?'live':'options';this.viewInitialized=true;}
     this.observeEvents();
     this.observe();
@@ -194,8 +200,40 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       && report.status.telemetry.miningActive === true && report.status.telemetry.fault === false && this.waiverAccepted;
   }
   get canRestore(): boolean { return !this.busy && !this.loading && (this.report?.backup?.available === true || this.report?.status.ownsSettings === true || this.startUnconfirmed); }
+  get recovery(): AutotuneRecovery | null {
+    const value=this.report?.status.recovery;
+    if(!value || typeof value!=='object' || Array.isArray(value) || typeof value.requested!=='boolean'
+      || !['idle','validating-off','restoring','resuming','verifying','complete','blocked'].includes(value.phase)
+      || typeof value.reason!=='string' || value.reason.length>256) return null;
+    const pending=['validating-off','restoring','resuming','verifying'].includes(value.phase);
+    return value.requested===pending ? value : null;
+  }
+  get canRestoreAndResume(): boolean {
+    const canUpgradeStop=this.busy && this.pendingAction==='stop' && this.actionAcknowledged;
+    return (!this.busy || canUpgradeStop) && !this.loading && this.isFresh && !!this.recovery && !this.recovery.requested
+      && !this.recoveryUnconfirmed && this.report!.backup.available && this.report!.status.telemetry.miningActive===false;
+  }
+  get recoveryText(): string {
+    if(!this.isFresh)return 'Refresh the miner status before requesting recovery.';
+    const value=this.recovery;
+    if(!value)return 'Restore-and-resume requires a matching updated application and web interface. Ordinary backup restore remains available.';
+    if(this.recoveryUnconfirmed)return 'The previous request is not confirmed. Refresh status before making another request.';
+    const reason=value.reason.replace(/[-_]/g,' ');
+    if(value.phase==='blocked')return `Recovery blocked: ${reason || 'check the miner and its protection state'}. No automatic retry is sent; a new request needs your explicit confirmation.`;
+    if(value.requested)return ({'validating-off':'Confirming that mining is paused and the ASIC is off before restoring.',restoring:'Restoring the original saved settings while mining stays off.',resuming:'Original settings are restored; the miner is checking whether normal mining can safely resume.',verifying:'Verifying original settings and fresh mining readings after resuming.'} as Record<string,string>)[value.phase]+(reason ? ` Miner reason: ${reason}.` : '');
+    if(value.phase==='complete')return 'The miner reports recovery complete. Auto-tuning stays off; current readings show whether normal mining is still running.';
+    if(!this.report!.backup.available)return 'No original tuning backup is available.';
+    if(this.report!.status.telemetry.miningActive!==false)return 'This action requires confirmed paused mining. Use Disable and restore backup for a running tune; it does not resume mining.';
+    return 'Restore the retained original settings, then request normal mining with auto-tuning off. The miner checks its actual power state, cooling and faults before resuming.';
+  }
+  get limitReached(): boolean {return this.report?.status.reason==='cannot-reduce-load-within-limits';}
+  get limitStopText(): string {
+    const minimum=this.optionsUsable ? `${this.report!.config.minFrequencyMHz} MHz` : 'the saved minimum clock';
+    return `The miner could not reduce load further within the limits active at the stop. The current saved minimum is ${minimum}. This is a limit-constrained rejection, not a diagnosis of defective hardware. Review cooling and allow a lower minimum within the board limits, or explicitly restore the original settings and resume mining when safe.`;
+  }
   get stateLabel(): string {
     if (!this.isFresh) return this.report ? 'Status unavailable' : 'Connecting';
+    if (this.limitReached && !this.isEngaged) return 'Stopped · limit reached';
     if (!this.isEngaged && this.report?.status.telemetry.fault !== true) return this.report?.status.state === 'disabled' ? 'Disabled' : 'Inactive';
     return ({disabled:'Disabled',qualifying:'Checking miner',baseline:'Measuring baseline',evaluating:'Evaluating',applying:'Adjusting',restoring:'Restoring backup',settling:'Settling',
       measuring:'Measuring',holding:'Holding result',observing:'Monitoring conditions',suspended:'Suspended',faulted:'Faulted'} as Record<string,string>)[this.report?.status.state || ''] || 'Checking status';
@@ -211,6 +249,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get ownershipText(): string {
     if (!this.isFresh) return 'Status unavailable';
+    if (this.limitReached && !this.isEngaged) return 'Stopped by limits · control released';
     if (this.isEngaged && this.report!.status.state === 'restoring') return 'Restoration in progress';
     if (this.report!.status.active) return 'Run in progress';
     if (this.report!.status.ownsSettings) return 'Holding result · Disable and restore to release control';
@@ -220,6 +259,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (!this.isFresh) return {label:this.report ? 'TUNING STATUS UNAVAILABLE' : 'CHECKING TUNING STATUS',detail:'Waiting for a fresh miner report. Do not infer the current state from older readings.',kind:'unknown'};
     const report=this.report!, status=report.status;
     if (status.telemetry.fault === true) return {label:'TUNING FAULT',detail:'Miner protection is authoritative. Check the reported reason before taking action.',kind:'fault'};
+    if (this.limitReached && !this.isEngaged) return {label:'STOPPED — LIMIT REACHED',detail:this.limitStopText,kind:'suspended'};
     if (!this.isEngaged) return {label:'AUTO-TUNING OFF',detail:report.backup.restored ? 'The miner reports its original pre-tuning settings restored.' : 'The miner reports no active tuning ownership. Any previous phase is historical; check the reported reason before a new Start.',kind:'off'};
     if (status.state === 'restoring') return {label:'RESTORING ORIGINAL SETTINGS',detail:'Restoration is pending until the miner confirms the backup is restored and control is released.',kind:'restoring'};
     if (!report.supported) return {label:'TUNING UNAVAILABLE',detail:'This hardware or operating state does not currently support automatic tuning.',kind:'unknown'};
@@ -235,6 +275,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (!this.isFresh) return 'Waiting for a fresh report. Earlier observations are kept below; they do not show the miner’s current condition.';
     const report = this.report!;
     if (report.status.telemetry.fault === true) return 'The miner reports an active protection fault. Tuning cannot clear it or force settings through it; check the miner’s reason below.';
+    if (this.limitReached) return this.limitStopText;
     if (!report.supported) return 'Automatic tuning is unavailable for this hardware or operating state. Restore remains available when the miner has a backup or owns settings.';
     const reasons: Record<string,string> = {
       'temperature-limit-backoff':'Backing off because a saved temperature ceiling is close or exceeded. Safety can require a larger step than a normal experiment.',
@@ -361,6 +402,12 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         minimum:values.length ? low.toFixed(chart.digits) : '—',maximum:values.length ? high.toFixed(chart.digits) : '—'};
     });
   }
+  private cleanConditions(value: AutotuneConditions | null | undefined): AutotuneConditions | undefined {
+    if(!value || typeof value!=='object' || Array.isArray(value))return undefined;
+    const keys=['asicTempC','vrmTempC','powerW','hashRateGHs','errorPercentage','worstErrorPercentage'] as const;
+    if(!keys.every(key=>this.finite(value[key])&&value[key]>=0)||value.errorPercentage>100||value.worstErrorPercentage>100)return undefined;
+    return {asicTempC:value.asicTempC,vrmTempC:value.vrmTempC,powerW:value.powerW,hashRateGHs:value.hashRateGHs,errorPercentage:value.errorPercentage,worstErrorPercentage:value.worstErrorPercentage};
+  }
   private eventValid(event: AutotuneEvent): boolean {
     const text=(value:unknown,max:number) => typeof value === 'string' && value.length>0 && value.length<=max;
     const measurement=event?.measurement;
@@ -400,7 +447,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       byId.set(event.id,{id:event.id,atSeconds:event.atSeconds,kind:event.kind,reason:event.reason,outcome:event.outcome,
         from:event.from ? point(event.from) : null,point:point(event.point),
         measurement:measurement ? {hashRateGHs:measurement.hashRateGHs,powerW:measurement.powerW,errorPercentage:measurement.errorPercentage,worstErrorPercentage:measurement.worstErrorPercentage} : null,
-        score:event.score,requiredScore:event.requiredScore});
+        score:event.score,requiredScore:event.requiredScore,conditions:this.cleanConditions(event.conditions)});
     }
     this.events=Array.from(byId.values()).sort((a,b)=>a.id-b.id).slice(-this.eventHistoryLimit);
     const earliest=this.events[0]?.id || 0;this.eventGaps=this.eventGaps.filter(gap=>gap.beforeId>=earliest).slice(-this.eventHistoryLimit);
@@ -414,12 +461,14 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return this.events.length ? 'Newest first. Requests are updated in place when the miner reports applied or failed; a request alone is not confirmation.' : 'No controller decisions have been reported for this run yet.';
   }
   eventTitle(event: AutotuneEvent): string {
+    if(event.kind==='rejected' && event.outcome==='failed')return 'Point rejected by limits';
     return ({started:'Tuning started',baseline:'Round reference measured',accepted:'Measured point accepted',rejected:'Comparison rejected',retained:'Best point rechecked',errors:'ASIC error window',adjustment:'Operating-point adjustment'} as Record<string,string>)[event.kind] || 'Controller event';
   }
   eventOutcome(event: AutotuneEvent): string {
     return ({requested:'Requested · awaiting confirmation',applied:'Applied · miner confirmed',failed:'Failed · check the reason',measured:'Measured'} as Record<string,string>)[event.outcome] || `Reported outcome: ${event.outcome}`;
   }
   eventReason(event: AutotuneEvent): string {
+    if(event.kind==='rejected' && event.outcome==='failed')return `The controller could not reduce load further within its then-active limits (${event.reason.replace(/[-_]/g,' ')}). This point was rejected under those constraints, not marked as permanently defective.`;
     return ({'measuring-starting-point':'The run started at this operating point.',
       'round-reference-measured':'A valid measurement window established this round’s reference.',
       'score-beat-required-margin':'The measured goal score cleared the controller’s required comparison margin.',
@@ -475,15 +524,30 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     this.execute({action:'stop'}, report => !report.status.active && !report.status.ownsSettings && report.backup.restored === true && this.backupMatches(report),
       'Auto-tuning disabled and the pre-tuning backup restored.');
   }
+  restoreAndResume(): void {
+    if(!this.canRestoreAndResume)return;
+    const original=this.pointText({frequencyMHz:this.report!.backup.frequencyMHz!,coreVoltageMv:this.report!.backup.coreVoltageMv!});
+    if(!window.confirm(`Restore original settings (${original}) and resume normal mining with auto-tuning off? The miner must be paused and will check cooling and faults before restarting mining. This does not reboot the miner or start another tuning run.`))return;
+    // Only cancel the acknowledged Stop's GET wait; never cancel or repeat its POST.
+    if(this.busy)this.cancelActionReadback.next();
+    this.waiverAccepted=false;
+    this.execute({action:'restore-and-resume'}, report=>this.recovery?.phase==='complete' && this.recovery.requested===false
+      && !report.status.active && !report.status.ownsSettings && report.backup.restored===true && this.backupMatches(report)
+      && this.telemetryFresh && report.status.telemetry.miningActive===true && report.status.telemetry.fault===false && report.status.telemetry.fanOk===true,
+      'Original settings restored and normal mining verified. Auto-tuning remains off.');
+  }
   private execute(body: Record<string,unknown>, confirms: (report: AutotuneReport) => boolean, success: string): void {
     this.busy = true;
+    this.pendingAction=String(body['action']);this.actionAcknowledged=false;
     this.readEpoch++;
     this.actionError = this.message = '';
     this.service.authorize().pipe(take(1),switchMap(({totp}) => {
       if (body['action'] === 'start') this.startUnconfirmed = true;
+      if (body['action'] === 'restore-and-resume') {this.recoveryUnconfirmed=true;this.recoverySubmittedAt=performance.now();}
       return this.service.command(body,totp);
     }),switchMap(ack => {
       if (ack?.ok !== true || ack.restartRequired !== false) return throwError(() => new Error('unconfirmed'));
+      this.actionAcknowledged=true;
       // Retry reads only while a bounded asynchronous transition completes.
       // The state-changing request is never repeated.
       return timer(0,1000).pipe(exhaustMap(() => {
@@ -491,16 +555,17 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         return this.service.get().pipe(map(report => ({report,requestedAt})));
       }),tap(({report,requestedAt}) => {
         if (!this.accept(report,requestedAt)) throw new Error('unconfirmed');
-        if (report.status.state === 'faulted') throw new Error('transition-fault');
+        if (body['action']==='restore-and-resume') {if(this.recovery?.phase==='blocked')throw new Error('recovery-blocked');}
+        else if (report.status.state === 'faulted') throw new Error('transition-fault');
       }),filter(({report}) => confirms(report)),take(1),timeout({first:30000}));
-    }),takeUntil(this.destroyed),finalize(() => this.busy = false)).subscribe({
+    }),takeUntil(this.destroyed),takeUntil(this.cancelActionReadback),finalize(() => {this.busy=false;this.pendingAction='';this.actionAcknowledged=false;})).subscribe({
       next: ({report}) => {
         this.startUnconfirmed = false;
         if (body['action'] === 'start') {this.viewMode='live';document.querySelector('.run-banner')?.scrollIntoView({block:'start'});}
         if (body['action'] === 'configure') { this.edit = this.config(report.config); this.baseline = JSON.stringify(this.edit); }
         this.message = success;
       },
-      error: () => { this.actionError = 'The request could not be confirmed. Refresh status and check the miner before trying again.'; },
+      error: error => { this.actionError = error?.message==='recovery-blocked' ? this.recoveryText : 'The request could not be confirmed. Refresh status and check the miner before trying again. No repeat request was sent.'; },
     });
   }
   private backupMatches(report: AutotuneReport): boolean {

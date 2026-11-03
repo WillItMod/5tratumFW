@@ -230,5 +230,8 @@ typedef struct {
     uint8_t status_vout, status_iout, status_input, status_temperature, status_cml;
 } TPS546_StrictTelemetry;
 esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample);
+/* Same fresh transactions, allowing a zero Vout solely for explicit off-state
+ * recovery validation. Does not clear any status register or fault. */
+esp_err_t TPS546_read_strict_off(TPS546_StrictTelemetry *sample);
 
 #endif /* TPS546_H_ */

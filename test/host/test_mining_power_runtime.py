@@ -10,6 +10,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 HOST = Path(__file__).resolve().parent
 
+def method(source,signature):
+    start=source.index(signature);brace=source.index('{',start);end=brace+1;depth=1
+    while depth:
+        depth+=(source[end]=='{')-(source[end]=='}');end+=1
+    return source[start:end]+'\n'
+
 
 class MiningPowerTests(unittest.TestCase):
     @classmethod
@@ -24,11 +30,16 @@ class MiningPowerTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('#include "power_runtime_stubs.h"\n')
         cls.binary = directory / "power-runtime-test"
+        runtime=(ROOT/'main/autotune_runtime.c').read_text()
+        (directory/'gamma_recovery_wire_methods.inc').write_text(''.join(method(runtime,s) for s in (
+            'void autotune_gamma_manual_override(', 'int autotune_gamma_wire_begin(',
+            'void autotune_gamma_wire_end(', 'void autotune_gamma_owner_idle(',
+            'bool autotune_gamma_transition_cancelled(')))
         command = shlex.split(os.environ.get("CC", "cc")) + [
             "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-const-variable",
             "-I", str(directory), "-I", str(HOST), "-I", str(ROOT / "main"),
             "-include", str(HOST / "power_runtime_stubs.h"), str(HOST / "power_runtime_test.c"),
-            "-lm", "-o", str(cls.binary),
+            "-pthread", "-lm", "-o", str(cls.binary),
         ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
@@ -41,6 +52,11 @@ class MiningPowerTests(unittest.TestCase):
 
     def test_pause_cuts_power_and_reset_without_changing_saved_clocks(self):
         self.run_case("stop")
+
+    def test_real_resume_uses_original_settings_under_recovery_wire_lease(self):
+        self.run_case("recovery-wire-resume")
+        self.run_case("recovery-wire-revoked")
+        self.run_case("recovery-wire-pre-revoked")
 
     def test_cutoff_and_reset_failures_never_claim_applied_pause(self):
         self.run_case("stop-fail")

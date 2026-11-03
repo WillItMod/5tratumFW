@@ -25,7 +25,7 @@ static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
-    controller={};history={};lastOwnerTickUs=0;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
+    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryPhase="idle";recoveryReason="No recovery requested";observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
     ++hostGeneration;
@@ -58,7 +58,61 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
-    if(scenario.rfind("events-",0)==0) {
+    if(scenario.rfind("recovery-",0)==0) {
+        using namespace FiveTratumAutotune;
+        start();const auto baselineRecord=nvstore["fwtune/baseline"];
+        if(scenario=="recovery-running") {const unsigned writesBefore=hostNvsCalls;assert(response("{\"action\":\"restore-and-resume\"}")["error"]=="miner-not-paused"&&hostNvsCalls==writesBefore&&controller.active);return 0;}
+        if(scenario=="recovery-floor") {
+            auto beforeFloor=snapshot();auto config=beforeFloor["config"].as<JsonObjectConst>();JsonDocument body;body["action"]="configure";body["config"].set(config);body["config"]["minFrequencyMHz"]=600;body["config"]["minVoltageMv"]=1150;
+            std::string json;serializeJson(body,json);assert(response(json.c_str())["ok"]==true);
+            asicDegrees=62;step();assert(paused&&!controller.active);
+            auto afterFloor=snapshot();auto failed=afterFloor["status"]["events"].as<JsonArrayConst>();bool found=false;
+            for(auto event:failed)if(event["kind"]=="rejected"&&event["outcome"]=="failed") {found=true;assert(event["reason"]=="temperature-limit-backoff"&&event["conditions"]["asicTempC"]==62&&event["measurement"].isNull());}
+            assert(found);asicDegrees=50;
+        } else {
+            Config::cfgSetU16("asicfrequency",650);Config::cfgSetU16("asicvoltage",1200);hostBoard.loadSettings();
+            POWER_MANAGEMENT_MODULE.appliedFrequency=650;POWER_MANAGEMENT_MODULE.appliedVoltage=1200;paused=true;
+        }
+        fanReadFail=true;
+        if(scenario=="recovery-fault")SYSTEM_MODULE.error=Board::TEMP_FAULT;
+        if(scenario=="recovery-hot")asicDegrees=72;
+        if(scenario=="recovery-sensor")offSensorFail=true;
+        if(scenario=="recovery-gpio")offGpioGood=false;
+        if(scenario=="recovery-after-stop"){assert(response("{\"action\":\"stop\"}")["ok"]==true);step();assert(restoring&&recoveryResumeCalls==0);}
+        assert(response("{\"action\":\"restore-and-resume\"}")["ok"]==true);
+        if(scenario=="recovery-duplicate"){const unsigned calls=hostNvsCalls;assert(response("{\"action\":\"restore-and-resume\"}")["error"]=="transition-in-progress"&&calls==hostNvsCalls);}
+        assert(snapshot()["status"]["active"]==false&&snapshot()["status"]["recovery"]["requested"]==true);
+        if(scenario=="recovery-storage")storageFail=true;
+        if(scenario=="recovery-readback")restoreReadbackFail=true;
+        if(scenario=="recovery-policy")++hostPolicyRevision;
+        if(scenario=="recovery-manual")Config::cfgSetU16("asicfrequency",700);
+        if(scenario=="recovery-ota")externalHandoff("Firmware update took ownership");
+        if(scenario=="recovery-stop")assert(response("{\"action\":\"stop\"}")["ok"]==true);
+        if(scenario=="recovery-fan")fanRemainsOff=true;
+        if(scenario=="recovery-resume-failure")resumeFail=true;
+        if(scenario=="recovery-hot"||scenario=="recovery-sensor") {
+            for(int i=0;i<4;++i){step();}
+            assert(recoveryRequested&&recoveryResumeCalls==0&&paused);
+            asicDegrees=50;offSensorFail=false;
+        }
+        for(int i=0;i<35;++i)step();
+        const bool succeeds=scenario=="recovery-cold"||scenario=="recovery-after-stop"||scenario=="recovery-duplicate"||scenario=="recovery-hot"||scenario=="recovery-sensor"||scenario=="recovery-floor";
+        auto result=snapshot();
+        if(succeeds) {
+            assert(result["status"]["recovery"]["phase"]=="complete"&&!recoveryRequested&&!paused&&recoveryResumeCalls==1);
+            assert(result["backup"]["restored"]==true&&!controller.active&&!controller.owns&&!restoring);
+            assert(POWER_MANAGEMENT_MODULE.appliedFrequency==600&&POWER_MANAGEMENT_MODULE.appliedVoltage==1150);
+            assert(Config::cfgGetU16("asicfrequency")==600&&Config::cfgGetU16("asicvoltage")==1150);
+            if(scenario=="recovery-floor") {bool found=false;for(auto event:result["status"]["events"].as<JsonArrayConst>())if(event["kind"]=="rejected"&&event["outcome"]=="failed")found=true;assert(found);}
+        } else {
+            assert(!recoveryRequested&&result["backup"]["restored"]==false&&paused);
+            assert(recoveryResumeCalls==((scenario=="recovery-fan"||scenario=="recovery-resume-failure")?1U:0U));
+            if(scenario=="recovery-manual")assert(Config::cfgGetU16("asicfrequency")==700);
+            if(scenario=="recovery-fault")assert(SYSTEM_MODULE.error==Board::TEMP_FAULT);
+        }
+        assert(nvstore["fwtune/baseline"]==baselineRecord&&!preserveRecoveryFaults());
+        return 0;
+    } else if(scenario.rfind("events-",0)==0) {
         using namespace FiveTratumAutotune;
         const char *configuration=R"({"action":"configure","config":{"priority":"efficiency","continuous":false,"minFrequencyMHz":590,"maxFrequencyMHz":600,"minVoltageMv":1145,"maxVoltageMv":1150,"maxAsicTempC":65,"maxVrmTempC":80,"maxPowerW":200}})";
         assert(response(configuration)["ok"]==true);start();

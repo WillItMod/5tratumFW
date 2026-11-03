@@ -61,6 +61,36 @@ int main(void) {
  fwt_applied(&core,false,now);fwt_history_capture(&history,&core);
  assert(core.state==FWT_FAULTED&&fwt_history_latest(&history)->id==failed_id&&fwt_history_latest(&history)->outcome==FWT_OUTCOME_FAILED);
  assert(!strcmp(fwt_event_short_label(fwt_history_latest(&history)),"Change failed"));
+ /* A minimum-bound thermal stop records the rejected point and true cause.
+  * It is not misreported as a completed measurement window. */
+ fwt_config bounded=config;bounded.minFrequencyMHz=500;
+ point=(fwt_point){500,1150};now+=FWT_SECOND;input=sample(now,point,++generation);
+ fwt_init(&core,&limits,&bounded);memset(&history,0,sizeof(history));
+ assert(fwt_start(&core,&input,now));now+=FWT_SECOND;
+ input=sample(now,point,generation);input.asicTempC=bounded.maxAsicTempC;
+ request=fwt_tick(&core,&input,now);fwt_history_capture(&history,&core);
+ assert(request.kind==FWT_REQUEST_PAUSE&&!core.active&&!core.owns);
+ assert(!strcmp(core.reason,"cannot-reduce-load-within-limits"));
+ const fwt_event *blocked=fwt_history_latest(&history);
+ assert(blocked&&blocked->kind==FWT_EVENT_REJECTED&&blocked->outcome==FWT_OUTCOME_FAILED);
+ assert(!strcmp(blocked->reason,"temperature-limit-backoff")&&!blocked->hasMeasurement&&!blocked->hasScore);
+ assert(fwt_point_equal(blocked->point,point)&&!strcmp(fwt_event_short_label(blocked),"Limits reached"));
+ assert(blocked->hasConditions&&blocked->asicTempC==bounded.maxAsicTempC&&blocked->vrmTempC==55&&blocked->powerW==20);
+ /* Regression from the observed OctAxe limit stop. Power and errors are
+  * intentionally within bounds here: thermal margin alone must explain it. */
+ {
+  const fwt_limits octLimits={100,800,1050,1400,80,85,200,10,5};
+  const fwt_config octConfig={FWT_PERFORMANCE,true,690,800,1175,1200,60,70,200};
+  fwt_controller oct;fwt_point minimum={690,1180};now+=FWT_SECOND;
+  fwt_input octInput=sample(now,minimum,1);octInput.asicTempC=62.05;octInput.vrmTempC=56.8;
+  octInput.powerW=190;octInput.hashRateGHs=11000;
+  fwt_init(&oct,&octLimits,&octConfig);assert(fwt_start(&oct,&octInput,now));
+  const fwt_request stop=fwt_tick(&oct,&octInput,now);
+  assert(stop.kind==FWT_REQUEST_PAUSE && oct.state==FWT_FAULTED && !oct.active);
+  assert(!strcmp(oct.reason,"cannot-reduce-load-within-limits"));
+  assert(!strcmp(oct.lastDecision.reason,"temperature-limit-backoff"));
+  assert(oct.lastDecision.hasConditions && oct.lastDecision.asicTempC==62.05);
+ }
  printf("PASS: measured decisions, requested/applied/failed identity, bounded history, read-only capture, new-run reset; event=%zu history=%zu controller=%zu bytes\n",sizeof(fwt_event),sizeof(fwt_history),sizeof(fwt_controller));
  return 0;
 }

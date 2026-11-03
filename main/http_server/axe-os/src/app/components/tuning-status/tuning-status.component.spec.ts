@@ -98,4 +98,11 @@ describe('Global passive tuning activity',()=>{
     report.fault=true;advance(5000);expect(component.badge.label).toBe('Tuning last blocked');component.ngOnDestroy();
   }));
 
+  it('labels a released limit stop separately from active tuning and hardware protection',fakeAsync(()=>{
+    report.active=false;report.ownsSettings=false;report.state='faulted';report.reason='cannot-reduce-load-within-limits';begin();
+    expect(component.badge.label).toBe('Tuning stopped');expect(component.badge.phase).toContain('limits reached');expect(component.badge.tone).toBe('suspended');
+    report.fault=true;advance(5000);expect(component.badge.label).toBe('Tuning blocked');
+    report.fault=false;advance(5000);service.get.and.returnValue(throwError(()=>({status:404})));advance(5000);expect(component.hiddenLegacy).toBeFalse();expect(component.badge.label).toBe('Tuning last stopped');component.ngOnDestroy();
+  }));
+
 });

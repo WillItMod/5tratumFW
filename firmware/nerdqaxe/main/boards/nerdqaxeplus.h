@@ -63,6 +63,8 @@ class NerdQaxePlus : public Board {
     const char *tuningAsicSensorLabel() const override { return "Shared TMP1075 ASIC-area temperature"; }
     const char *tuningVrmSensorLabel() override;
     bool readTuningSensors(TuningSensors &output) override;
+    bool readRecoverySensors(TuningSensors &output) override;
+    bool isRecoveryPowerOff() override;
     bool setTuningVoltage(float volts, bool (*allowed)()) override;
     bool tuningAsicTemperature(float &maximum, int64_t &oldest) override;
     virtual float tuningVrmOffset() const { return 0; }

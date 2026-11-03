@@ -4,19 +4,24 @@
 #include <math.h>
 #include <setjmp.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <pthread.h>
 
 // Include the real implementation to exercise its private transition helpers.
 #include "tasks/power_management_task.c"
 
 static GlobalState global;
-static unsigned guard_calls,guard_deny_at;
+static unsigned guard_calls,guard_deny_at,asic_wire_frames;
+static pthread_mutex_t wire_gate=PTHREAD_MUTEX_INITIALIZER;
+static atomic_uint_least32_t manual_epoch,transition_epoch;
+static atomic_bool transition_live;
+#include "gamma_recovery_wire_methods.inc"
 /* The existing power-transition suite keeps the optional tuner disabled. Its
  * enabled production adapter is exercised by test_autotune_gamma.py. */
-void autotune_gamma_interrupt(const char *reason) {(void)reason;}
-void autotune_gamma_owner_idle(void) {}
+void autotune_gamma_interrupt(const char *reason) {(void)reason;autotune_gamma_manual_override();}
+void autotune_gamma_recovery_tick(GlobalState *state) {(void)state;}
 bool autotune_gamma_select_target(GlobalState *state,uint16_t *mv,float *mhz) {(void)state;(void)mv;(void)mhz;return false;}
 bool autotune_gamma_transition_allowed(void *state) {(void)state;return ++guard_calls!=guard_deny_at;}
-bool autotune_gamma_transition_cancelled(void) {return false;}
 bool autotune_gamma_transition_finished(GlobalState *state,bool success) {(void)state;return success;}
 static uint16_t saved_voltage = 1173;
 static float saved_frequency = 625.125f;
@@ -28,7 +33,7 @@ static uint8_t detected_chips = 1;
 static bool serial_ready, applied, pause_on_cooling, overheat_enabled;
 static char reported_error[96];
 static unsigned delay_count, exit_delay, cooling_count;
-static unsigned pause_at_delay;
+static unsigned pause_at_delay,revoke_at_delay;
 static bool frequency_failure, pause_on_frequency;
 static char settings_events[64];
 static size_t settings_event_count;
@@ -44,9 +49,12 @@ void nvs_config_set_u16(NvsConfigKey key, uint16_t value) { setting_writes++; if
 void nvs_config_set_float(NvsConfigKey key, float value) { assert(key == NVS_CONFIG_ASIC_FREQUENCY); setting_writes++; saved_frequency = value; }
 void nvs_config_set_bool(NvsConfigKey key, bool value) { (void)key; (void)value; setting_writes++; }
 esp_err_t VCORE_set_voltage(GlobalState *state, float voltage) {
-    (void)state; voltage_calls++; last_voltage = voltage; setting_event('v');
-    if (voltage == 0 && off_failures_remaining) { off_failures_remaining--; return ESP_FAIL; }
-    return voltage == 0 ? off_result : restore_result;
+    (void)state;const int token=autotune_gamma_wire_begin(voltage==0);
+    if (!token) return ESP_FAIL;
+    voltage_calls++; last_voltage = voltage; setting_event('v');
+    esp_err_t result=voltage==0?off_result:restore_result;
+    if (voltage == 0 && off_failures_remaining) {off_failures_remaining--;result=ESP_FAIL;}
+    autotune_gamma_wire_end(token);return result;
 }
 int16_t VCORE_get_voltage_mv(GlobalState *state) { (void)state; return 1173; }
 esp_err_t VCORE_check_fault(GlobalState *state) { (void)state; return ESP_OK; }
@@ -63,6 +71,9 @@ uint8_t asic_initialize(GlobalState *state, asic_init_mode_t mode, uint32_t wait
     assert(mode == ASIC_INIT_RECOVERY && wait == 0);
     assert(fabsf(last_voltage - saved_voltage / 1000.0f) < 0.00001f);
     assert(state->POWER_MANAGEMENT_MODULE.frequency_value == saved_frequency);
+    const int token=autotune_gamma_wire_begin(false);
+    if (!token) return 0;
+    ++asic_wire_frames;autotune_gamma_wire_end(token);
     init_calls++; state->ASIC_initalized = detected_chips > 0;
     if (detected_chips) state->POWER_MANAGEMENT_MODULE.actual_frequency = state->POWER_MANAGEMENT_MODULE.frequency_value;
     return detected_chips;
@@ -80,6 +91,7 @@ void vTaskDelay(unsigned ticks) {
     if (ticks == 5000) { cooling_count++; if (pause_on_cooling) global.SYSTEM_MODULE.mining_paused = true; }
     delay_count++;
     if (pause_at_delay == delay_count) global.SYSTEM_MODULE.mining_paused = true;
+    if (revoke_at_delay == delay_count) autotune_gamma_manual_override();
     if (exit_delay && delay_count >= exit_delay) longjmp(task_exit, 1);
 }
 void vTaskDelete(void *task) { (void)task; longjmp(task_exit, 1); }
@@ -93,7 +105,21 @@ int main(int argc, char **argv) {
     global.POWER_MANAGEMENT_MODULE.frequency_value = saved_frequency;
     global.POWER_MANAGEMENT_MODULE.expected_hashrate = 1275;
     const char *scenario = argv[1];
-    if (strcmp(scenario,"revoked-pll-noop-reporting")==0) {
+    if (!strncmp(scenario,"recovery-wire-",14)) {
+        global.ASIC_initalized=false;applied=true;
+        atomic_store(&transition_epoch,atomic_load(&manual_epoch));atomic_store(&transition_live,true);
+        if (!strcmp(scenario,"recovery-wire-pre-revoked")) autotune_gamma_manual_override();
+        if (!strcmp(scenario,"recovery-wire-revoked")) revoke_at_delay=1;
+        const uint8_t chips=mining_start(&global);
+        assert(setting_writes==0);
+        if (!strcmp(scenario,"recovery-wire-resume")) {
+            assert(chips==1 && asic_wire_frames==1 && voltage_calls==1 && !applied);
+            assert(global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==saved_voltage);
+        } else {
+            assert(chips==0 && asic_wire_frames==0 && applied && last_voltage==0 && global.SYSTEM_MODULE.hardware_fault);
+            assert(voltage_calls==(!strcmp(scenario,"recovery-wire-revoked")?2u:1u));
+        }
+    } else if (strcmp(scenario,"revoked-pll-noop-reporting")==0) {
         float last_frequency=saved_frequency;
         global.POWER_MANAGEMENT_MODULE.actual_frequency=saved_frequency;
         global.POWER_MANAGEMENT_MODULE.frequency_value=saved_frequency-6.25;

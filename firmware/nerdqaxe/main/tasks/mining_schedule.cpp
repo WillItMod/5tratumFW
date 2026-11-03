@@ -13,6 +13,7 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static ScheduleSettings saved;
 static MiningScheduleEngine engine{};
 static std::atomic_bool requested{false};
+static std::atomic<uint64_t> revision{0};
 static bool initialized = false, configError = false;
 static bool environmentReady = false;
 static char timezoneEnvironment[128];
@@ -29,9 +30,10 @@ static void evaluateLocked() {
     tm local{}; time_t now{}; const bool valid = clockNow(local, now);
     if (!valid) deadlineComputed = false;
     if (valid && overrideDeadline && now >= overrideDeadline) {
-        mining_schedule_engine_clear_override(&engine); overrideDeadline = 0;
+        ++revision;mining_schedule_engine_clear_override(&engine); overrideDeadline = 0;
     }
-    requested.store(configError || mining_schedule_engine_evaluate(&engine, &saved.policy, valid, &local));
+    const bool next=configError || mining_schedule_engine_evaluate(&engine,&saved.policy,valid,&local);
+    if(requested.exchange(next)!=next) ++revision;
     if (!engine.manual_override_active) { overrideDeadline = 0; deadlineComputed = false; }
 }
 static void computeDeadlineLocked() {
@@ -79,15 +81,22 @@ void updateSchedule() {
     if (engine.manual_override_active && !deadlineComputed) computeDeadlineLocked();
 }
 bool requestedPaused() { return requested.load(); }
+uint64_t policyRevision() { return revision.load(); }
+bool resumeForRecovery(uint64_t expected,uint64_t &applied) {
+    Guard guard;if(!initialized||configError||revision.load()!=expected) return false;
+    evaluateLocked();if(revision.load()!=expected||!requested.load()) return false;
+    mining_schedule_engine_set_override(&engine,false);evaluateLocked();computeDeadlineLocked();
+    ++revision;applied=revision.load();return !requested.load();
+}
 bool hasScheduleError() { Guard guard; return !initialized || configError; }
 bool manualOverride(bool paused) {
     Guard guard; if (!initialized || configError) return false;
-    evaluateLocked(); mining_schedule_engine_set_override(&engine, paused);
+    evaluateLocked(); ++revision; mining_schedule_engine_set_override(&engine, paused);
     evaluateLocked(); computeDeadlineLocked(); return true;
 }
 bool clearOverride() {
     Guard guard; if (!initialized || configError) return false;
-    mining_schedule_engine_clear_override(&engine); overrideDeadline = 0; deadlineComputed = false;
+    ++revision;mining_schedule_engine_clear_override(&engine); overrideDeadline = 0; deadlineComputed = false;
     evaluateLocked(); return true;
 }
 bool saveSchedule(JsonObjectConst input) {
@@ -106,7 +115,7 @@ bool saveSchedule(JsonObjectConst input) {
     if (err == ESP_OK) { err = nvs_set_blob(handle, "power", buffer, length); if (err == ESP_OK) err = nvs_commit(handle); nvs_close(handle); }
     if (err != ESP_OK) return false;
     if (!next.policy.enabled) engine.effective_paused = requested.load();
-    saved = next; configError = false;
+    ++revision;saved = next; configError = false;
     snprintf(timezoneEnvironment, sizeof(timezoneEnvironment), "TZ=%s", timezoneRule(saved.timezone));
     tzset(); evaluateLocked(); computeDeadlineLocked(); return true;
 }

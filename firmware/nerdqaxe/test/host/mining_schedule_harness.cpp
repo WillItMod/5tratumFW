@@ -42,7 +42,11 @@ int main() {
     const auto persisted = flash;
     sntp.synchronized = true;
     at("2026-10-07T11:59:59"); assert(!requestedPaused());
+    assert(manualOverride(true));const uint64_t oldRecoveryRevision=policyRevision();
     at("2026-10-07T12:00:00"); assert(requestedPaused());
+    uint64_t ignoredRevision=0;assert(policyRevision()!=oldRecoveryRevision);
+    assert(!resumeForRecovery(oldRecoveryRevision,ignoredRevision)&&requestedPaused()); // New scheduled pause wins even when effective state was already paused.
+
     assert(manualOverride(false)); assert(!requestedPaused());
     at("2026-10-07T17:59:59"); assert(!requestedPaused() && report()["status"]["manualOverride"] == "running");
     at("2026-10-07T18:00:00"); assert(!requestedPaused() && report()["status"]["manualOverride"] == "none");

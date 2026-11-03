@@ -4,6 +4,7 @@
 #include "storage_context.h"
 #include "presentation.h"
 #include "events.h"
+#include "recovery_guard.h"
 #include "global_state.h"
 #include "tasks/mining_control.h"
 #include "tasks/mining_schedule.h"
@@ -45,6 +46,11 @@ bool storagePrepared=false,powerInitialized=false,baselineLoadError=false;
 BlobStatus optionsStatus=BlobStatus::Unloaded,baselineStatus=BlobStatus::Unloaded;
 JsonDocument bootOptions;
 bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
+bool recoveryRequested=false;
+const char *recoveryPhase="idle",*recoveryReason="No recovery requested";
+uint64_t recoveryPolicy=0,recoveryStarted=0,recoveryLastSample=0;
+unsigned recoverySamples=0;
+std::atomic_uint recoveryStartups{0};
 TaskHandle_t restoreWorker = nullptr;
 constexpr uint32_t restoreStackBytes=8192;
 uint32_t restoreMinFreeBytes=UINT32_MAX;
@@ -308,7 +314,7 @@ void acquire(Board *board) {
     observed.valid = observed.fanOk && sensors.vin >= board->getMinVin() && sensors.vin <= board->getMaxVin() &&
         sensors.outputCurrentA > 0 && sensors.coreVoltageMv > 0 && observed.capturedAtUs > 0;
 }
-bool revisionCurrent() { return !handoff.load() && !firmwareUpdates.load() && !permanentFreeze.load() && Config::tuningMutationRevision() == mutationRevision; }
+bool revisionCurrent() { return !handoff.load() && !firmwareUpdates.load() && !permanentFreeze.load() && Config::tuningMutationRevision() == mutationRevision && (!recoveryRequested || FiveTratumMining::policyRevision()==recoveryPolicy); }
 void failTransition(const char *reason) {
     pending = false; fwt_applied(&controller,false,esp_timer_get_time()); fwt_history_capture(&history,&controller);
     adapterReason = reason;
@@ -374,6 +380,24 @@ void advanceTransition(uint64_t now) {
         fwt_cancel(&controller,"Original settings restored"); adapterReason = nullptr;
     }
 }
+bool hardRecoveryFault(Board *board) {
+    return !board||!exactFamily(board)||board->isShutdown()||POWER_MANAGEMENT_MODULE.isShutdown()||SYSTEM_MODULE.getBoardError()!=Board::Error::NONE;
+}
+void blockRestore(const char *reason) {
+    restoreCommitFailed=true;adapterReason=reason;
+    if(recoveryRequested){recoveryRequested=false;recoveryPhase="blocked";recoveryReason=reason;}
+}
+bool recoverySensorsSafe(Board *board,bool requireOff) {
+    if(hardRecoveryFault(board)||!revisionCurrent()||(requireOff&&!board->isRecoveryPowerOff())) return false;
+    TuningSensors sample{};if(!board->readRecoverySensors(sample)) return false;
+    const uint64_t now=esp_timer_get_time();
+    const double asic=std::min(std::min(80.0,controller.limits.maxAsicTempC>0?controller.limits.maxAsicTempC:80.0),backup["settings"][NVS_CONFIG_OVERHEAT_TEMP].as<double>()-5);
+    const double vrm=std::min(std::min(95.0,controller.limits.maxVrmTempC>0?controller.limits.maxVrmTempC:95.0),backup["settings"][NVS_CONFIG_FAN1_OVERHEAT].as<double>()-5);
+    return sample.capturedAtUs>0&&static_cast<uint64_t>(sample.capturedAtUs)<=now&&now-sample.capturedAtUs<=5000000&&
+        std::isfinite(sample.vin)&&sample.vin>=board->getMinVin()&&sample.vin<=board->getMaxVin()&&
+        std::isfinite(sample.asicTempC)&&sample.asicTempC>0&&sample.asicTempC+3<asic&&
+        std::isfinite(sample.vrmTempC)&&sample.vrmTempC>0&&sample.vrmTempC+3<vrm;
+}
 // NVS writes require an internal-RAM task stack. The ordinary power task uses
 // PSRAM; this bounded worker borrows the same hardware owner mutex, revalidates
 // current strict inputs, commits once, then returns actuation to the power task.
@@ -382,8 +406,7 @@ bool recordWorkerBudget() {
     const uint32_t freeBytes=uxTaskGetStackHighWaterMark(nullptr);
     restoreMinFreeBytes=std::min(restoreMinFreeBytes,freeBytes);
     if (freeBytes<1024) {
-        restoreStackLow=true;restoreCommitFailed=true;
-        adapterReason="Original settings restore needs a larger verified stack budget";return false;
+        restoreStackLow=true;blockRestore("Original settings restore needs a larger verified stack budget");return false;
     }
     return true;
 }
@@ -393,14 +416,24 @@ void restoreWorkerLoop(void *) {
         LockGuard<PowerManagementTask> owner(POWER_MANAGEMENT_MODULE);
         Guard guard;
         if (!restoring || restoreSaved || restoreCommitFailed || !revisionCurrent()) continue;
-        if (!storageContextAllowed()) {restoreCommitFailed=true;adapterReason="Restore storage requires an internal task stack";continue;}
+        if (!storageContextAllowed()) {blockRestore("Restore storage requires an internal task stack");continue;}
         if (!recordWorkerBudget()) continue;
-        Board *board=SYSTEM_MODULE.getBoard();acquire(board);
-        if (!recordWorkerBudget()) continue;
-        if (!safeToRestore()) {adapterReason="Original settings restore waits for a healthy, cool miner";continue;}
+        Board *board=SYSTEM_MODULE.getBoard();
+        if(recoveryRequested) {
+            if(FiveTratumMining::policyRevision()!=recoveryPolicy){restoring=false;recoveryRequested=false;recoveryPhase="blocked";recoveryReason="Power policy changed";continue;}
+            if(hardRecoveryFault(board)){blockRestore("Hardware protection blocks recovery; resolve it and retry");continue;}
+            if(!board->isRecoveryPowerOff()){blockRestore("Recovery requires the ASIC power to remain off");continue;}
+            if(!recoverySensorsSafe(board,true)){recoveryPhase="validating-off";recoveryReason="Waiting for fresh, cool sensors and valid input power";continue;}
+            if(!ensureBackup(board)){blockRestore("Original backup could not be verified; retry recovery");continue;}
+            recoveryPhase="restoring";recoveryReason="Saving verified original settings while ASIC power is off";
+        } else {
+            acquire(board);
+            if (!recordWorkerBudget()) continue;
+            if (!safeToRestore()) {adapterReason="Original settings restore waits for a healthy, cool miner";continue;}
+        }
         const uint64_t before=Config::tuningMutationRevision();
         if (!Config::restoreTuningSettings(backup["settings"].as<JsonObjectConst>())) {
-            restoreCommitFailed=true;adapterReason="Original settings restore could not be saved; retry Disable";continue;
+            blockRestore("Original settings restore could not be saved and read back; retry restore");continue;
         }
         mutationRevision=before+1; // Only our one internal transaction is authorized.
         if (!revisionCurrent()) {
@@ -410,13 +443,14 @@ void restoreWorkerLoop(void *) {
         board->loadSettings();
         if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
         if (!board->restoreTuningFanPolarity(board->isInvertFanPolarityEnabled(),revisionCurrent)) {
-            restoreCommitFailed=true;adapterReason="Original fan polarity restore interrupted; retry Disable";continue;
+            blockRestore("Original fan polarity restore interrupted; retry restore");continue;
         }
         POWER_MANAGEMENT_MODULE.getFanController().loadSettings();
         if (!recordWorkerBudget()) continue;
         if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
         controller.limits=hardwareLimits(board);
         restoreSaved=true;adapterReason="Original settings saved; waiting for protected live restore";
+        if(recoveryRequested){recoveryPhase="resuming";recoveryReason="Original settings verified; waiting for guarded normal resume";}
     }
 }
 void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
@@ -455,6 +489,10 @@ void eventsJson(JsonObject status) {
             measured["hashRateGHs"]=event->hashRateGHs;measured["powerW"]=event->powerW;
             measured["errorPercentage"]=event->errorPercentage;measured["worstErrorPercentage"]=event->worstErrorPercentage;
         } else value["measurement"]=nullptr;
+        if(event->hasConditions) {
+            auto conditions=value["conditions"].to<JsonObject>();conditions["asicTempC"]=event->asicTempC;conditions["vrmTempC"]=event->vrmTempC;
+            conditions["powerW"]=event->powerW;conditions["hashRateGHs"]=event->hashRateGHs;conditions["errorPercentage"]=event->errorPercentage;conditions["worstErrorPercentage"]=event->worstErrorPercentage;
+        } else value["conditions"]=nullptr;
         if(event->hasScore && std::isfinite(event->score)) value["score"]=event->score;else value["score"]=nullptr;
         if(event->hasScore && std::isfinite(event->requiredScore)) value["requiredScore"]=event->requiredScore;else value["requiredScore"]=nullptr;
     }
@@ -476,6 +514,10 @@ void searchJson(JsonObject status,uint64_t now) {
 }
 }
 
+bool preserveRecoveryFaults(){return recoveryStartups.load()!=0;}
+RecoveryStartupGuard::RecoveryStartupGuard(){++recoveryStartups;}
+RecoveryStartupGuard::~RecoveryStartupGuard(){--recoveryStartups;}
+
 bool preloadStorage() {
     if (!storageContextAllowed()) return false;
     Guard guard;
@@ -495,6 +537,7 @@ void powerReady() {
 bool transitionAllowed() { return !firmwareUpdates.load() && !permanentFreeze.load() && ((!pending && !restoring) || revisionCurrent()); }
 bool transitionHealthy() {
     if (!transitionAllowed()) return false;
+    if(preserveRecoveryFaults()) return recoveryRequested && FiveTratumMining::policyRevision()==recoveryPolicy && recoverySensorsSafe(SYSTEM_MODULE.getBoard(),false);
     if (!pending) {transitionHealthUntilUs=0;return true;}
     const uint64_t now=esp_timer_get_time();
     if (transitionHealthUntilUs && now<transitionHealthUntilUs) return true;
@@ -534,18 +577,46 @@ void tick() {
     const uint64_t revision = Config::tuningMutationRevision();
     if (external || revision != mutationRevision) {
         pending = false; restoring = false; backupRestored = false;
+        if(recoveryRequested){recoveryRequested=false;recoveryPhase="blocked";recoveryReason=external?external:"Manual settings changed";}
         fwt_cancel(&controller,external ? external : "Manual or scheduled settings took ownership");
         mutationRevision = revision; adapterReason = nullptr;
     }
     controller.limits = hardwareLimits(board);
     acquire(board);
     const uint64_t now = esp_timer_get_time();
+    if(recoveryRequested) {
+        if(FiveTratumMining::policyRevision()!=recoveryPolicy) {recoveryRequested=false;restoring=false;recoveryPhase="blocked";recoveryReason="Power policy changed";return;}
+        if(hardRecoveryFault(board)){blockRestore("Hardware protection blocks recovery; resolve it and retry");return;}
+        if(!restoreSaved){if(restoreWorker)xTaskNotifyGive(restoreWorker);return;}
+        if(!strcmp(recoveryPhase,"resuming")) {
+            if(!recoverySensorsSafe(board,true)){recoveryReason="Waiting for fresh, cool sensors before resume";return;}
+            uint64_t next=0;
+            if(!FiveTratumMining::resumeForRecovery(recoveryPolicy,next)){blockRestore("Power policy changed; retry recovery");return;}
+            recoveryPolicy=next;
+            {RecoveryStartupGuard startup;FiveTratumMining::updateControl();}
+            if(!revisionCurrent()||FiveTratumMining::policyRevision()!=recoveryPolicy){recoveryRequested=false;restoring=false;recoveryPhase="blocked";recoveryReason="External control interrupted recovery";return;}
+            if(hardRecoveryFault(board)||!board->isInitialized()||!FiveTratumMining::miningWritesAllowed()){blockRestore("Normal mining resume failed; resolve protection and retry");return;}
+            recoveryPhase="verifying";recoveryReason="Checking original voltage, clock, fans and fresh mining work";
+            recoveryStarted=esp_timer_get_time();recoveryLastSample=0;recoverySamples=0;return;
+        }
+        if(!strcmp(recoveryPhase,"verifying")) {
+            const bool healthy=observed.valid&&observed.miningActive&&!observed.fault&&observed.fanOk&&
+                observed.current.frequencyMHz==target.frequencyMHz&&observed.current.coreVoltageMv==target.coreVoltageMv&&
+                std::fabs(observed.voltageReadbackMv-target.coreVoltageMv)<=25&&safeToRestore()&&effectiveMatch(board);
+            if(healthy&&observed.sampleId!=recoveryLastSample){recoveryLastSample=observed.sampleId;++recoverySamples;}
+            if(!healthy)recoverySamples=0;
+            if(recoverySamples>=2){recoveryRequested=false;restoring=false;backupRestored=true;recoveryPhase="complete";recoveryReason="Original settings restored and normal mining verified";adapterReason=nullptr;fwt_cancel(&controller,"Original settings restored; mining resumed");return;}
+            if(now<recoveryStarted||now-recoveryStarted>45000000){FiveTratumMining::manualOverride(true);recoveryPolicy=FiveTratumMining::policyRevision();FiveTratumMining::updateControl();blockRestore("Recovery verification failed; ASIC paused, retry restore");}
+            return;
+        }
+    }
     if (!controller.owns && !restoring && !pending && backupAvailable) {
         backupRestored = observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
             observed.current.frequencyMHz == backup["frequencyMHz"].as<double>() &&
             observed.current.coreVoltageMv == backup["coreVoltageMv"].as<double>() &&
             std::fabs(observed.voltageReadbackMv-observed.current.coreVoltageMv)<=25 && effectiveMatch(board);
     }
+    if(!recoveryRequested&&!strcmp(recoveryPhase,"blocked")&&restoreCommitFailed) return;
     if (restoring && !restoreSaved) {
         if (restoreCommitFailed) {adapterReason="Original settings could not be saved; retry Disable";return;}
         if (safeToRestore() && restoreWorker) xTaskNotifyGive(restoreWorker);
@@ -622,6 +693,7 @@ bool activity(JsonDocument &document) {
     document["priority"]=fwt_priority_name(controller.config.priority);
     document["continuous"]=controller.config.continuous;
     document["runId"]=controller.runId;
+    auto recovery=document["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
     if(lastOwnerTickUs && now>=lastOwnerTickUs) document["controllerAgeSeconds"]=(now-lastOwnerTickUs)/1000000.0;
     else document["controllerAgeSeconds"]=nullptr;
     pthread_mutex_unlock(&mutex);
@@ -654,6 +726,7 @@ bool report(JsonDocument &document) {
     const bool revoked=!revisionCurrent();
     status["active"]=controller.active && !revoked; status["ownsSettings"]=(controller.owns || restoring || pending) && !revoked;
     status["runId"]=controller.runId; status["experiments"]=controller.experiments;
+    auto recovery=status["recovery"].to<JsonObject>();recovery["requested"]=recoveryRequested;recovery["phase"]=recoveryPhase;recovery["reason"]=recoveryReason;
     pointJson(status,"baseline",controller.baselineAvailable?&controller.baseline:nullptr);
     pointJson(status,"current",observed.current.frequencyMHz>0?&observed.current:nullptr);
     pointJson(status,"best",controller.bestAvailable?&controller.best:nullptr);
@@ -739,8 +812,28 @@ const char *command(JsonObjectConst input) {
         }
         return nullptr;
     }
+    if (!strcmp(action,"restore-and-resume")) {
+        if(input.size()!=1)return "invalid-request";
+        if(recoveryRequested||pending||controller.awaitingApply)return "transition-in-progress";
+        if(firmwareUpdates.load()||permanentFreeze.load())return "firmware-update-in-progress";
+        if(!FiveTratumMining::requestedPaused()||FiveTratumMining::miningWritesAllowed()||board->isInitialized())return "miner-not-paused";
+        const uint64_t before=Config::tuningMutationRevision(),policy=FiveTratumMining::policyRevision();
+        const char *priorHandoff=handoff.load();
+        if(!backupAvailable||!backupMatches(board,backup)||!ensureBackup(board))return "original-backup-unavailable";
+        {
+            WriteGuard activation;
+            if(before!=Config::tuningMutationRevision()||policy!=FiveTratumMining::policyRevision()||handoff.load()!=priorHandoff||firmwareUpdates.load()||permanentFreeze.load())return "manual-settings-changed";
+            fwt_cancel(&controller,"Explicit original-settings recovery requested");pending=false;restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;
+            recoveryRequested=true;recoveryPhase="validating-off";recoveryReason="Waiting for verified off-state sensors";
+            recoveryPolicy=policy;mutationRevision=before;handoff.store(nullptr);
+            target={backup["frequencyMHz"].as<double>(),backup["coreVoltageMv"].as<double>()};
+        }
+        if(!ensureRestoreWorker()){blockRestore("Recovery worker unavailable; retry recovery");return "storage-unavailable";}
+        return nullptr;
+    }
     if (!strcmp(action,"stop")) {
         if (input.size()!=1) return "invalid-request";
+        recoveryRequested=false;recoveryPhase="idle";recoveryReason="No recovery requested";
         fwt_cancel(&controller,"Disable requested; restoring original settings");pending=false;restoring=false;
         if (!backupAvailable || !backupMatches(board,backup)) return "original-backup-unavailable";
         restoring=true;restoreSaved=false;restoreCommitFailed=false;backupRestored=false;

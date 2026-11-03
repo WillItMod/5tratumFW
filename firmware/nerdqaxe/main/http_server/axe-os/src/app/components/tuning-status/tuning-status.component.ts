@@ -55,7 +55,7 @@ export class TuningStatusComponent implements OnInit,OnDestroy {
       this.problem=(value as any)?.schemaVersion===1&&(value as any)?.available===false?'Controller snapshot is busy; checking again':'Unrecognised activity report; matching application and web interface are required';
       return;
     }
-    this.everEngaged=this.everEngaged||value.active||value.ownsSettings||value.fault;
+    this.everEngaged=this.everEngaged||value.active||value.ownsSettings||value.fault||value.reason==='cannot-reduce-load-within-limits';
     const transit=(performance.now()-at)/1000;
     if(value.controllerAgeSeconds===null||transit<0||value.controllerAgeSeconds+transit>15) {
       const evidence=(report:Activity|null)=>report?.fault?2:report&&(report.active||report.ownsSettings)?1:0;
@@ -71,12 +71,13 @@ export class TuningStatusComponent implements OnInit,OnDestroy {
   get badge():Badge {
     const current=this.last;
     if(!this.fresh||!current) {
-      const label=current?.fault?'Tuning last blocked':current?.active?'Tuning last active':current?.ownsSettings?'Tuning last held':'Tuning checking';
+      const label=current?.fault?'Tuning last blocked':current?.active?'Tuning last active':current?.ownsSettings?'Tuning last held':current?.reason==='cannot-reduce-load-within-limits'?'Tuning last stopped':'Tuning checking';
       return {label,phase:'Current state unknown',tone:'unknown',goal:'',description:`${this.problem||'Controller heartbeat is stale'}. ${current&&(current.active||current.ownsSettings)?'The last reported tuner still held control; do not assume it stopped. ':''}Open Tuning for fresh details.`};
     }
     const goal={efficiency:'Efficiency',balanced:'Balanced',performance:'Performance'}[current.priority];
     const result=(label:string,phase:string,tone:string):Badge=>({label,phase,tone,goal,description:`${label}. ${phase}. ${current.reason.replace(/[-_]/g,' ')}. Open Tuning for details.`});
     if(current.fault)return result('Tuning blocked','Protection reported','fault');
+    if(!current.active&&!current.ownsSettings&&current.reason==='cannot-reduce-load-within-limits')return result('Tuning stopped','Mining paused — limits reached','suspended');
     if(!current.active&&!current.ownsSettings)return result('Tuning off','Control released','off');
     if(current.state==='faulted')return result('Tuning faulted','Check Tuning','fault');
     if(current.state==='restoring')return result('Tuning restoring','Backup restore','restoring');

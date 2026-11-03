@@ -2,6 +2,7 @@
 #include <ArduinoJson.h>
 #include "autotune/core.h"
 #include "autotune/events.h"
+#include "autotune/recovery_guard.h"
 #include "autotune/display_snapshot.h"
 #include "autotune/write_gate.h"
 #include "boards/drivers/BuckConverter.h"
@@ -27,6 +28,9 @@ constexpr int ESP_OK=0,ESP_FAIL=-1,ESP_ERR_NVS_NOT_FOUND=-2,NVS_READONLY=0,NVS_R
 static uint64_t hostNow=20000000,hostGeneration=1;
 static bool storageFail=false,verifyFail=false,voltageFail=false,sensorFail=false,networkAllowed=true,otpAllowed=true,paused=false;
 static bool sensorValid=true;
+static bool restoreReadbackFail=false;
+static bool offSensorFail=false,offGpioGood=true,resumeFail=false,fanRemainsOff=false;
+static uint64_t hostPolicyRevision=0;static unsigned recoveryResumeCalls=0;
 static bool miningGateOpen=true,counterValid=true;
 static float voltageOffset=0,asicDegrees=50,vrmDegrees=55,watts=100,chipErrorWork=1;
 static bool weakChip=false; static std::vector<std::string> writes;
@@ -62,7 +66,7 @@ int nvs_get_blob(nvs_handle_t handle,const char *key,void *out,size_t *length){
     assert(hostInternalStack);++hostNvsCalls;
     const auto full=handles[handle]+"/"+key;const auto found=nvstore.find(full);
     if(found==nvstore.end())return ESP_ERR_NVS_NOT_FOUND;
-    if(verifyFail && out)return ESP_FAIL;
+    if((verifyFail || (restoreReadbackFail&&full=="main/json_cfg")) && out)return ESP_FAIL;
     if(out){if(*length<found->second.size())return ESP_FAIL;memcpy(out,found->second.data(),found->second.size());}
     *length=found->second.size();return ESP_OK;
 }
@@ -158,6 +162,8 @@ public:
  PidSettings *getPidSettings(int ch){return &pid[ch];}
  void loadSettings(){frequency=Config::cfgGetU16("asicfrequency",600);voltage=Config::cfgGetU16("asicvoltage",1150);fanPolarity=Config::cfgGetU16("pwmfanpol",0);for(int i=0;i<2;++i){pid[i].targetTemp=Config::cfgGetU16(i?"fan1_pid_temp":"pid_temp",55);}}
  bool readTuningSensors(TuningSensors &);
+ bool isRecoveryPowerOff(){return paused&&offGpioGood;}
+ bool readRecoverySensors(TuningSensors &out){++hostSensorReads;out={};if(offSensorFail)return false;out.asicTempC=asicDegrees;out.vrmTempC=vrmDegrees;out.vin=12;out.capturedAtUs=hostNow-1000;return true;}
 };
 static Board hostBoard;
 struct FanController {
@@ -185,8 +191,11 @@ struct Stratum {bool isAnyConnected(){return true;}};
 static Stratum manager;static Stratum *STRATUM_MANAGER=&manager;
 namespace FiveTratumMining {
 bool controlSupported(){return true;}bool miningWritesAllowed(){return !paused&&miningGateOpen;}uint64_t workGeneration(){return hostGeneration;}
-bool manualOverride(bool value){paused=value;return true;}
-void updateControl(){}
+bool manualOverride(bool value){++hostPolicyRevision;paused=value;return true;}
+bool requestedPaused(){return paused;}
+uint64_t policyRevision(){return hostPolicyRevision;}
+bool resumeForRecovery(uint64_t expected,uint64_t &applied){if(expected!=hostPolicyRevision||!paused)return false;paused=false;applied=++hostPolicyRevision;return true;}
+void updateControl(){if(FiveTratumAutotune::preserveRecoveryFaults()){++recoveryResumeCalls;if(resumeFail){paused=true;SYSTEM_MODULE.error=Board::VOUT_FAULT;}else{POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;fanReadFail=fanRemainsOff;}}}
 unsigned expectedStandaloneChain(const char *model,const char *asic){return strcmp(asic,"BM1370")?0:!strcmp(model,"NerdQAxe++")?4:!strcmp(model,"NerdOCTAXE-γ")?8:0;}
 }
 bool readFiveTratumPhysicalDeviceId(char *out){strcpy(out,"5tratum-0123456789abcdef");return true;}

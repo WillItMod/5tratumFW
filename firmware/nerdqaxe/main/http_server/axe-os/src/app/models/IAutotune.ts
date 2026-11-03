@@ -29,11 +29,14 @@ export interface AutotuneSearch {
   samples: number; minimumSamples: number; roundExperiments: number; roundExperimentLimit: number;
   rejectedWindows: number; reference: AutotuneMeans | null; best: AutotuneMeans | null;
 }
+export interface AutotuneConditions {asicTempC:number;vrmTempC:number;powerW:number;hashRateGHs:number;errorPercentage:number;worstErrorPercentage:number;}
+export interface AutotuneRecovery {requested:boolean;phase:'idle'|'validating-off'|'restoring'|'resuming'|'verifying'|'complete'|'blocked';reason:string;}
 export interface AutotuneEvent {
   id: number; atSeconds: number; kind: string; reason: string; outcome: string;
   from: AutotunePoint | null; point: AutotunePoint;
   measurement: {hashRateGHs: number; powerW: number; errorPercentage: number; worstErrorPercentage: number} | null;
   score: number | null; requiredScore: number | null;
+  conditions?: AutotuneConditions | null;
 }
 export interface AutotuneReport {
   schemaVersion: 1; supported: boolean; waiverVersion: 1;
@@ -47,6 +50,7 @@ export interface AutotuneReport {
     /** Additive presentation data; never required to authorize Restore. */
     search?: AutotuneSearch;
     eventCapacity?: number; events?: AutotuneEvent[];
+    recovery?: AutotuneRecovery;
   };
   backup: { available: boolean; restored: boolean; frequencyMHz: number | null; coreVoltageMv: number | null };
 }

@@ -180,6 +180,8 @@ public:
     virtual const char *tuningAsicSensorLabel() const { return "Unavailable ASIC temperature source"; }
     virtual const char *tuningVrmSensorLabel() { return "Unavailable VRM temperature source"; }
     virtual bool readTuningSensors(TuningSensors &) { return false; }
+    virtual bool readRecoverySensors(TuningSensors &) { return false; }
+    virtual bool isRecoveryPowerOff() { return false; }
     // Power owner only. Shared sensors are read by readTuningSensors; fitted
     // I2C mux boards may refresh their temperature scan without ASIC UART.
     virtual bool refreshTuningTemperatures() { return true; }
