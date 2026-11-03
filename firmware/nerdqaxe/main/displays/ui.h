@@ -40,6 +40,10 @@ protected:
     lv_obj_t *ui_PortalScreen = nullptr;
     lv_obj_t *ui_MiningScreen = nullptr;
     lv_obj_t *ui_AsicScreen = nullptr;
+    lv_obj_t *ui_TuningScreen = nullptr;
+    lv_obj_t *ui_lbTuningState = nullptr, *ui_lbTuningGoal = nullptr, *ui_lbTuningPoint = nullptr;
+    lv_obj_t *ui_lbTuningWork = nullptr, *ui_lbTuningThermal = nullptr;
+    lv_obj_t *ui_lbTuningLimits = nullptr, *ui_lbTuningProgress = nullptr;
     lv_obj_t *ui_SettingsScreen = nullptr;
     lv_obj_t *ui_lbSSID = nullptr;
     lv_obj_t *ui_imgSplash1 = nullptr;
@@ -140,6 +144,7 @@ public:
 
     void miningScreenInit(void);
     void asicScreenInit(void);
+    void tuningScreenInit(void);
     void settingsScreenInit(void);
     void splash1ScreenInit(void);
     void splash2ScreenInit(void);

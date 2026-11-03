@@ -11,6 +11,7 @@
 #include "display_data.h"
 #include "boot_status.h"
 #include "display_profile.h"
+#include "autotune/display_snapshot.h"
 #include "stratum/stratum_manager.h"
 
 /* INCLUDES ------------------------------------------------------------------*/
@@ -82,6 +83,7 @@ class DisplayDriver {
         Portal,
         Mining,
         AsicScreen,
+        TuningScreen,
         SettingsScreen,
         BTCScreen,
         GlobalStats,
@@ -135,6 +137,7 @@ class DisplayDriver {
     FiveTratumDisplay::IdleBrandCycle m_brandCycle;
     int64_t m_telemetryUpdatedAtUs = -1;
     int64_t m_temperatureValidUntilUs = -1;
+    FiveTratumAutotune::DisplaySnapshot m_tuningSnapshot{};
 
     UI *m_ui = nullptr;
 
@@ -149,6 +152,7 @@ class DisplayDriver {
     void updateCoinContext(const StratumManager::MuxDisplayState &view);
     void updateAsicReadings();
     void updateThermalReadings(int64_t nowUs);
+    void updateTuningReadings(int64_t nowUs);
     void updateOverlayPriority();
     void renderBootStatus();
 

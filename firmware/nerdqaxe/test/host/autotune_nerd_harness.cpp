@@ -57,7 +57,41 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
-    if(scenario=="storage-bootstrap-context") {
+    if(scenario=="search-display") {
+        using namespace FiveTratumAutotune;
+        const unsigned nvs=hostNvsCalls,sensorReads=hostSensorReads;
+        assert(initial["status"]["search"]["minimumSamples"]==8 && initial["status"]["search"]["roundExperimentLimit"]==24);
+        assert(initial["status"]["search"]["phaseElapsedSeconds"].isNull() && initial["status"]["search"]["reference"].isNull());
+        controller.state=FWT_BASELINE;controller.owns=controller.active=true;
+        controller.config.priority=FWT_PERFORMANCE;controller.config.continuous=true;
+        controller.observationStartedUs=hostNow-12000000;controller.samples=6;
+        controller.roundExperiments=3;controller.rejected=2;controller.bestAvailable=true;
+        controller.baselineHash=4000;controller.baselinePower=100;controller.bestHash=4100;controller.bestPower=99;
+        DisplaySnapshot view;
+        {HostStackContext external(false);assert(tryDisplaySnapshot(view));}
+        assert(sizeof(view)<=256 && view.available && view.fresh(hostNow) && view.priority==FWT_PERFORMANCE && view.continuous);
+        assert(view.current.frequencyMHz==600 && view.search.timed && view.search.phaseElapsedSeconds==12 && view.search.minimumSeconds==75 && view.search.samples==6);
+        auto report=snapshot();auto search=report["status"]["search"];
+        assert(search["phaseElapsedSeconds"].as<double>()==12 && search["minimumSeconds"]==75);
+        assert(search["roundExperiments"]==3 && search["rejectedWindows"]==2 && search["reference"]["hashRateGHs"]==4000 && search["best"]["powerW"]==99);
+        pthread_mutex_lock(&mutex);
+        assert(!tryDisplaySnapshot(view) && !view.available && view.current.frequencyMHz==0 && !view.valid);
+        pthread_mutex_unlock(&mutex);
+        observed.fault=true;controller.active=false;controller.owns=false;controller.state=FWT_DISABLED;
+        assert(tryDisplaySnapshot(view) && view.fault && !view.valid && view.current.frequencyMHz==0 && view.hashRateGHs==0); // Inactive faults remain visible, old readings do not.
+        observed.fault=false;firmwareUpdates.store(1);
+        assert(tryDisplaySnapshot(view) && view.updating && !view.valid && view.current.frequencyMHz==0);
+        report=snapshot();assert(report["status"]["search"]["reference"].isNull() && report["status"]["search"]["best"].isNull());
+        firmwareUpdates.store(0);hostNow+=16000000;
+        assert(tryDisplaySnapshot(view) && !view.valid && !view.fresh(hostNow) && view.current.frequencyMHz==0 && view.powerW==0);
+        report=snapshot();assert(!report["status"]["telemetry"]["valid"].as<bool>());
+        controller.bestHash=NAN;controller.baselinePower=0;
+        report=snapshot();assert(report["status"]["search"]["reference"].isNull() && report["status"]["search"]["best"].isNull());
+        controller.limits.maxFrequencyMHz=0;
+        assert(!tryDisplaySnapshot(view) && !view.available && view.current.coreVoltageMv==0);
+        assert(hostNvsCalls==nvs && hostSensorReads==sensorReads && writes.empty());
+        return 0;
+    } else if(scenario=="storage-bootstrap-context") {
         using namespace FiveTratumAutotune;
         initialized=false;storagePrepared=false;powerInitialized=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;
         const unsigned calls=hostNvsCalls;

@@ -611,6 +611,55 @@ static const char *inactive_fault_reason(void) {
     if (tuner.strict.iout >= 25.0) return "Voltage regulator output current reaches the 25 A tuning limit";
     return "Miner protection is active; tuning is disabled";
 }
+static bool live_mining(void) {
+    return tuner.device && mining_state_work_allowed(tuner.device) &&
+        !tuner.device->SELF_TEST_MODULE.is_active && !tuner.device->SYSTEM_MODULE.is_firmware_update;
+}
+static bool current_fault(void) {
+    return tuner.input.fault || (tuner.device &&
+        (tuner.device->SYSTEM_MODULE.hardware_fault || tuner.device->SYSTEM_MODULE.overheat_mode));
+}
+static bool fresh_input(uint64_t now) {
+    return live_mining() && tuner.input.valid && tuner.input.capturedAtUs &&
+        now >= tuner.input.capturedAtUs && now-tuner.input.capturedAtUs <= TUNE_FRESH_US;
+}
+static const char *presentation_reason(uint64_t now) {
+    if (!tuner.storage_ok) return "storage-unavailable";
+    const char *reason = inactive_fault_reason();
+    if (reason) return reason;
+    reason = tuner.override_reason ? tuner.override_reason : tuner.core.reason;
+    /* Boot/pause cancellation text is historical once this exact idle state
+     * has fresh healthy inputs. Do not erase handoff/fault/restore evidence. */
+    if (reason && !strcmp(reason,"mining-paused-or-faulted") && tuner.core.state == FWT_DISABLED && !tuner.core.active &&
+        !tuner.core.owns && !tuner.restore_pending && !tuner.confirming && !tuner.commanded &&
+        !tuner.rail_wait && !tuner.frozen && !tuner.core.awaitingApply &&
+        fresh_input(now) && !current_fault() && tuner.input.fanOk) return "disabled";
+    return reason ? reason : "disabled";
+}
+static bool obscured_search(void) {
+    return tuner.restore_pending || tuner.frozen || tuner.override_reason != NULL;
+}
+bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out, uint64_t now) {
+    if (!out) return false;
+    memset(out,0,sizeof(*out));
+    /* LVGL timer callbacks already hold the LVGL port lock. A trylock only,
+     * with no stale fallback, avoids any blocking LVGL -> tuner lock order. */
+    if (pthread_mutex_trylock(&tuner_mutex) != 0) return false;
+    out->supported = tuner.initialized && tuner.supported;
+    out->available = out->supported && tuner.storage_ok;
+    out->telemetryFresh = fresh_input(now);
+    out->fault = current_fault();
+    out->active = tuner.core.active; out->ownsSettings = tuner.core.owns || tuner.restore_pending;
+    out->restoring = tuner.restore_pending; out->state = tuner.core.state; out->priority = tuner.core.config.priority;
+    out->search = fwt_search_read(&tuner.core,now,obscured_search());
+    out->currentAvailable = out->telemetryFresh && fwt_positive(tuner.input.current.frequencyMHz) &&
+        fwt_positive(tuner.input.current.coreVoltageMv);
+    if (out->currentAvailable) out->current = tuner.input.current;
+    snprintf(out->reason,sizeof(out->reason),"%s",presentation_reason(now));
+    pthread_mutex_unlock(&tuner_mutex);
+    return true;
+}
+_Static_assert(sizeof(GammaAutotuneDisplaySnapshot) <= 256,"Keep display snapshots small and on-stack");
 static cJSON *report(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) return NULL;
@@ -649,9 +698,7 @@ static cJSON *report(void) {
     STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Frequency and voltage upper bounds initially match your saved settings; raising them is an explicit experimental choice. PLL frequency is computed from commands, not measured clock readback.");
     BOOL(guidance,"experimental",true);
     STR(status,"state",tuner.restore_pending ? "restoring" : fwt_state_name(tuner.core.state));
-    const char *fault_reason = inactive_fault_reason();
-    STR(status,"reason",!tuner.storage_ok ? "storage-unavailable" :
-        fault_reason ? fault_reason : tuner.override_reason ? tuner.override_reason : tuner.core.reason);
+    STR(status,"reason",presentation_reason(now));
     BOOL(status,"active",tuner.core.active); BOOL(status,"ownsSettings",tuner.core.owns || tuner.restore_pending);
     NUM(status,"runId",tuner.core.runId); NUM(status,"experiments",tuner.core.experiments);
     if (!add_point(status,"baseline",tuner.core.baselineAvailable,tuner.core.baseline) ||
@@ -659,13 +706,29 @@ static cJSON *report(void) {
         !add_point(status,"best",tuner.core.bestAvailable,tuner.core.best)) goto failed;
     cJSON *telemetry = cJSON_AddObjectToObject(status,"telemetry");
     if (!telemetry) goto failed;
-    const bool mining_active = tuner.device && mining_state_work_allowed(tuner.device) &&
-        !tuner.device->SELF_TEST_MODULE.is_active && !tuner.device->SYSTEM_MODULE.is_firmware_update;
-    const bool fault = tuner.input.fault || (tuner.device &&
-        (tuner.device->SYSTEM_MODULE.hardware_fault || tuner.device->SYSTEM_MODULE.overheat_mode));
-    const bool fresh = mining_active && tuner.input.valid && now >= tuner.input.capturedAtUs && now-tuner.input.capturedAtUs <= TUNE_FRESH_US;
+    const bool mining_active = live_mining();
+    const bool fault = current_fault();
+    const bool fresh = fresh_input(now);
     BOOL(telemetry,"valid",fresh); BOOL(telemetry,"miningActive",mining_active);
     BOOL(telemetry,"fault",fault); BOOL(telemetry,"fanOk",fresh && tuner.input.fanOk);
+    cJSON *search = cJSON_AddObjectToObject(status,"search");
+    if (!search) goto failed;
+    const fwt_search_view progress = fwt_search_read(&tuner.core,now,obscured_search());
+    if (progress.timed) {
+        NUM(search,"phaseElapsedSeconds",progress.phaseElapsedSeconds); NUM(search,"minimumSeconds",progress.minimumSeconds);
+    } else if (!cJSON_AddNullToObject(search,"phaseElapsedSeconds") || !cJSON_AddNullToObject(search,"minimumSeconds")) goto failed;
+    NUM(search,"samples",progress.samples); NUM(search,"minimumSamples",progress.minimumSamples);
+    NUM(search,"roundExperiments",progress.roundExperiments); NUM(search,"roundExperimentLimit",progress.roundExperimentLimit);
+    NUM(search,"rejectedWindows",progress.rejectedWindows);
+    const char *metric_keys[] = {"reference","best"};
+    for (unsigned i=0;i<2;++i) {
+        if (i ? progress.bestAvailable : progress.referenceAvailable) {
+            cJSON *metric = cJSON_AddObjectToObject(search,metric_keys[i]);
+            if (!metric) goto failed;
+            NUM(metric,"hashRateGHs",i ? progress.bestHash : progress.referenceHash);
+            NUM(metric,"powerW",i ? progress.bestPower : progress.referencePower);
+        } else if (!cJSON_AddNullToObject(search,metric_keys[i])) goto failed;
+    }
     /* Cached evidence only. A GET neither polls hardware nor rejuvenates an
      * unsuccessful acquisition's previous successful regulator sample. */
     BOOL(diagnostic,"sensorReadSucceeded",tuner.sensor_ok);

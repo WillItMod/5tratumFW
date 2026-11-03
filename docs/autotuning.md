@@ -22,6 +22,19 @@ Open **Tuning** in the firmware web interface. The Scheduler remains separate.
 These change the optimisation objective, not a preset clock/voltage pair.
 All priorities obey the same hardware and user constraints.
 
+**Efficiency** compares useful work per reported watt. It can deliberately
+choose less TH/s when the efficiency improves enough. **Balanced** scores both
+normalised useful hashrate (55%) and normalised efficiency (45%). **Performance**
+scores sustained useful hashrate; power, temperatures and errors still constrain
+the search. It can use more power for a measured speed gain. These are goals,
+not successively higher fixed voltages or guaranteed speed levels.
+
+A Performance run cannot test a higher clock than its saved maximum. The
+initial maximum matches the miner's existing clock, so raising that maximum is
+an explicit experimental choice. A downward-only qualification run cannot prove
+the miner's maximum TH/s. Nor does a lower-voltage result at one clock prove
+that voltage will remain stable at a higher clock.
+
 **Continuous tuning On** keeps observing and starts another bounded evaluation
 when conditions change or the reassessment interval expires. Stable conditions
 need not cause any write. **Off** completes one bounded search and holds its
@@ -118,6 +131,20 @@ a later explicit restore.
 
 ## Measurements and search behaviour
 
+The Tuning page explains the current state in plain language alongside the
+actual controller reason. The visual loop represents repeated tests, not a
+linear progress bar for the entire tune. A settling or observation duration is
+a **minimum**, not a promise of completion: the miner still needs enough fresh,
+distinct hardware intervals. Invalid readings and busy snapshots appear as
+unavailable rather than as zero or a healthy result.
+
+Live values and completed measurement means have different purposes. Any
+reference/best comparison is for the **current search round**. A later round
+can remeasure its reference as conditions change; that reference is not the
+immutable original-settings backup. Browser trend observations start when the
+page is opened, contain connection gaps and are not additional controller
+samples. Reopening the page does not reconstruct a complete tuning history.
+
 The controller uses unique complete hardware-counter intervals. Receiving the
 same reading in several browser requests does not create more evidence. After
 a verified change it allows settling, discards the possible pre-window counter
@@ -131,6 +158,30 @@ margin. Per-chip errors and work checks prevent a good average from hiding a wea
 chip. Each search has bounded experiments and recovery attempts. Missing sensors,
 counter resets, time regression, stale observations, failed transitions or lost
 ownership cannot authorise another upward adjustment.
+
+Normal neighboring probes change one setting at a time: 6.25MHz for Gamma,
+10MHz for QAxe/OctAxe, or 5mV. The measured result must beat the current best by
+more than the observed noise margin, with a minimum 0.2% score margin. A rejected
+probe returns to the better measured point when there is sufficient headroom.
+No improvement is a valid result; the starting settings can remain the best.
+
+Board errors above 0.5% or worst-chip errors above 1% trigger the bounded error
+recovery policy after a full window. An additional 5mV is considered only with
+both thermal and power headroom and within the user's voltage ceiling.
+Otherwise the controller reduces clock. Thermal/power protection backoffs can
+be larger than a normal search step (approximately 5%, rounded to the clock
+step); they are load reduction, not an optimisation probe. These are
+experimental engineering policies, not manufacturer-certified error or safety
+limits. Searches are local and bounded, not a guaranteed global optimum.
+
+## Physical tuning display
+
+The additional Tuning page on the miner is read-only and uses the normal screen
+navigation. It reports the current goal, state and available measurements;
+limited displays abbreviate that information. Selecting it cannot start tuning,
+change limits or accept a waiver. Setup, update, shutdown and fault screens
+retain priority. The full explanations and controls remain in the web Tuning
+tab. Native rendered fixtures are separate from physical panel qualification.
 
 Candidates remain in RAM. The tuner does not repeatedly save experimental
 clocks/voltages to NVS. A restart returns to the durable user configuration with

@@ -23,10 +23,12 @@ env=dict(os.environ,ASAN_OPTIONS="detect_leaks=0:halt_on_error=1",UBSAN_OPTIONS=
 subprocess.run([cmake,"-S",str(ROOT/"test/host/oled_native"),"-B",str(BUILD),
                 "-DCMAKE_BUILD_TYPE=Debug",f"-DFIVETRATUM_OLED_LVGL_SOURCE={LVGL_SOURCE}"],check=True,env=env)
 subprocess.run([cmake,"--build",str(BUILD),"-j","8"],check=True,env=env)
-result=subprocess.run([str(BUILD/"oled_native"),str(OUT)],check=True,capture_output=True,text=True,env=env)
+result=subprocess.run([str(BUILD/"oled_native"),str(OUT)],check=True,capture_output=True,text=True,env=env,timeout=60)
 print(result.stdout)
-runtime=subprocess.run([str(BUILD/"oled_screen_runtime")],check=True,capture_output=True,text=True,env=env)
-print(runtime.stdout)
+runtime_outputs=[]
+for board in ("601","602"):
+    runtime=subprocess.run([str(BUILD/"oled_screen_runtime"),board],check=True,capture_output=True,text=True,env=env,timeout=60)
+    print(runtime.stdout);runtime_outputs.append(runtime.stdout)
 images=[]
 for pgm in sorted(OUT.glob("*.pgm")):
     image=Image.open(pgm)
@@ -55,10 +57,20 @@ for index in range(6):
     donut_draw.text((x,y),f"CANDIDATE {index+1}",fill="#80d6e8")
     donuts.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(x,y+22))
 donuts.save(OUT/"oled-candidate-contact-sheet.png")
+tuning_names=["tuning-disabled","tuning-measuring","tuning-settling","tuning-holding",
+              "tuning-restoring","tuning-blocked","tuning-stale","tuning-unavailable"]
+tuning=Image.new("RGB",(1080,4*164+44),"#101820")
+tuning_draw=ImageDraw.Draw(tuning)
+tuning_draw.text((14,10),"SIMULATED TUNING - actual read-only LVGL 128 x 32, enlarged 4x",fill="white")
+for index,name in enumerate(tuning_names):
+    x=14+(index%2)*540;y=44+(index//2)*164
+    tuning_draw.text((x,y),name.replace("-"," ").upper(),fill="#80d6e8")
+    tuning.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(x,y+22))
+tuning.save(OUT/"oled-tuning-contact-sheet.png")
 (OUT/"oled-native-report.json").write_text(json.dumps({
     "fixtureOnly":True,"hardwareCalls":False,"runtimeDependencies":"Actual LVGL9 and production portfolio font",
     "lvglVersion":LVGL_VERSION,
     "targetConfiguration":"main/lv_conf.h; host only substitutes OS NONE and libc allocator",
-    "sanitizers":["ASan","UBSan"],"views":images,"stdout":result.stdout+runtime.stdout,
+    "sanitizers":["ASan","UBSan"],"views":images,"stdout":result.stdout+"".join(runtime_outputs),
 },indent=2)+"\n")
 print(OUT/"oled-simulated-contact-sheet.png")

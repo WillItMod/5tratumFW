@@ -42,6 +42,7 @@ typedef enum {
     SCR_HEALTH,
     SCR_SHARES,
     SCR_OPERATING,
+    SCR_TUNING,
     MAX_SCREENS,
 } screen_t;
 
@@ -73,7 +74,7 @@ static lv_obj_t * screens[MAX_SCREENS];
 static int delays_ms[MAX_SCREENS] = {
     [SCR_CONNECTION]=1000, [SCR_BITAXE_LOGO]=3000, [SCR_OSMU_LOGO]=3000,
     [SCR_URLS]=8000, [SCR_STATS]=10000, [SCR_MINING]=8000, [SCR_WIFI]=8000,
-    [SCR_HEALTH]=8000, [SCR_SHARES]=8000, [SCR_OPERATING]=8000,
+    [SCR_HEALTH]=8000, [SCR_SHARES]=8000, [SCR_OPERATING]=8000, [SCR_TUNING]=10000,
 };
 
 static int current_screen_time_ms;
@@ -95,7 +96,7 @@ static const FiveTratumOledPage compact_pages[MAX_SCREENS] = {
     [SCR_CONNECTION]=OLED_CONNECTION, [SCR_BITAXE_LOGO]=OLED_BOOT, [SCR_OSMU_LOGO]=OLED_CREDITS,
     [SCR_CANDIDATE]=OLED_CANDIDATE, [SCR_URLS]=OLED_ROUTE, [SCR_STATS]=OLED_RATE,
     [SCR_MINING]=OLED_JOB, [SCR_WIFI]=OLED_WIFI, [SCR_HEALTH]=OLED_HEALTH,
-    [SCR_SHARES]=OLED_SHARES, [SCR_OPERATING]=OLED_OPERATING,
+    [SCR_SHARES]=OLED_SHARES, [SCR_OPERATING]=OLED_OPERATING, [SCR_TUNING]=OLED_TUNING,
 };
 
 static lv_obj_t *self_test_message_label;
@@ -763,6 +764,10 @@ static FiveTratumOledData compact_data(void)
         .filename=s->firmware_update_filename, .update_status=s->firmware_update_status,
         .board_name=GLOBAL_STATE->DEVICE_CONFIG.family.name, .board_version=GLOBAL_STATE->DEVICE_CONFIG.board_version,
     };
+    /* This callback is already inside LVGL's port lock. The snapshot API is
+     * deliberately nonblocking; a busy tuner produces an unavailable page,
+     * never a wait under LVGL or an old cached operating point. */
+    autotune_gamma_try_display_snapshot(&d.tuning,presentation_now);
     return d;
 }
 

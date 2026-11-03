@@ -1,6 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 #include "autotune/core.h"
+#include "autotune/display_snapshot.h"
 #include "autotune/write_gate.h"
 #include "boards/drivers/BuckConverter.h"
 #include <thread>
@@ -36,6 +37,7 @@ static bool revokeDuringBackup=false,fanReadFail=false;
 static thread_local bool hostInternalStack=true;
 static bool hostReadFailure=false,hostBlobAllocationFail=false,hostWorkerExternal=false;
 static std::atomic<unsigned> hostNvsCalls{0};
+static unsigned hostSensorReads=0;
 static uintptr_t esp_cpu_get_sp(){return hostInternalStack?0x3fc90000U:0x3d090000U;}
 static bool esp_ptr_in_dram(const void *p){return reinterpret_cast<uintptr_t>(p)>=0x3fc80000U&&reinterpret_cast<uintptr_t>(p)<0x3fd00000U;}
 #include "autotune/storage_context.h"
@@ -172,6 +174,7 @@ public:
 };
 static PowerManagementTask POWER_MANAGEMENT_MODULE;
 bool Board::readTuningSensors(TuningSensors &out){
+ ++hostSensorReads;
  out={};if(sensorFail||!sensorValid)return false;
  out={asicDegrees,vrmDegrees,watts,12,static_cast<float>(POWER_MANAGEMENT_MODULE.appliedVoltage)+voltageOffset,60,static_cast<int64_t>(hostNow-1000),true};return true;
 }

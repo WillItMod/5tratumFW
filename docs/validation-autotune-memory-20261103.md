@@ -1,6 +1,6 @@
 # Adaptive tuning qualification and memory repair — 3 November 2026
 
-**3 November 2026. Not a release announcement.** The Gamma Beta12, NerdQAxe++ Beta9 and NerdOctAxe Gamma Beta7 development candidates are not physically qualified for publication. Live testing was stopped after failures, and every updated miner was returned to its previous firmware. A separate additional QAxe++ was left unchanged.
+**3 November 2026. Not a release announcement.** The Gamma Beta12, NerdQAxe++ Beta9 and NerdOctAxe Gamma Beta7 development candidates remain unpublished. The first test window stopped after the failures below and returned the updated miners to their previous firmware. A later, explicitly extended window tested the repaired source; its separate results are recorded below. Further presentation work is not part of those installed images.
 
 ## Source and qualification boundaries
 
@@ -8,11 +8,13 @@
 |---|---|
 | `9356792c` | Original candidate. Software, build and simulated updater checks passed; physical checks exposed the failures below. |
 | `7dd79818` | Local correction for Gamma regulator encoding, required Nerd point fields and manual same-point ownership handoff. Built and checked offline; **never installed on a miner**. It does not fix the later memory issues. |
-| Memory repair in this checkout | Source and host regressions pass independent review. Fresh target stack analysis, matched packages and separate physical qualification remain required. |
+| `35719b8e` | Memory repair. Fresh target builds, stack analysis and the limited repaired-source physical checks below. |
+| `7b205d93` | Gamma-only additive cached regulator diagnostics; installed on the Gamma 601 only. No tuner policy or admission relaxation. |
+| Later presentation changes | Additional explanations, graphs and physical tuning pages remain separate from those installed-image observations. |
 
 Passing host tests, browser fixtures, image checks and simulated 5tratumOS updates did not establish safe physical startup, flash access or task-stack headroom. Existing software results remain useful evidence within those limits.
 
-## Physical observations and final state
+## First-window observations and recovery
 
 - **Bitaxe Gamma 601/602:** the original Beta12 application failed startup voltage restoration because its regulator handling rejected a valid voltage mode with the REL flag set. Tuning had not started. Both were returned to **Gamma Beta10**, with their existing matching web image untouched. Saved settings survived, and normal hashing and fans were observed after recovery.
 - **NerdQAxe++:** Beta9 installed, but the actual API omitted the required `baseline`, `current` and `best` point members. This was reproduced with the production ArduinoJson library and corrected in `7dd79818`. A regulator temperature warning near 96°C also made its strict tuning telemetry ineligible; that warning and its protection limits were left intact. No tuning Start was sent on this unit. It was returned to **NerdQAxe++ Beta8**; all 108 packaged web assets, original observable settings, profiles and schedules were verified, with normal hashing and fans.
@@ -44,7 +46,7 @@ distinct; storage failure disables tuning without taking over ordinary mining.
 The tuner now copies at most eight chip records into a bounded object, leaving
 the existing general 64-chip dashboard API unchanged. The source requests 8KiB
 for both the boot and internal restore tasks; the HTTP task remains 12KiB.
-These sizes require final target verification. Restore diagnostics retain its
+These sizes were subsequently verified in the fresh target builds below. Restore diagnostics retain its
 observed minimum free stack and freeze restoration below a 1KiB margin. A
 post-commit diagnostic failure adopts the authorized configuration revision
 before retaining ownership, so it cannot fall through to normal actuation.
@@ -58,8 +60,119 @@ monitor tests compare four/eight-chip results, reject mismatches and exercise
 concurrent publication. All **32 Nerd host entrypoints** pass. These are software
 checks, not physical stack measurements or a successful target reboot claim.
 
-## Required next qualification
+## Repaired-source target checks
 
-Move flash loading off PSRAM task stacks, keep the normal power loop free of flash calls, remove the oversized counter snapshot from sensor-call stacks and establish target stack margin. Add regressions for present/missing/corrupt records and task context, then inspect the final compiled call chains. Only after those checks pass should supervised backup, Stop/restore, reboot with records present and inactive restore be tested again. Dynamic search follows those gates.
+Fresh QAxe and OctAxe target builds at `35719b8e` request 8192-byte internal boot
+and restore stacks, with the existing 12288-byte HTTP stack. Target stack-usage
+analysis reduced the acquisition frame from 2688 to 464 bytes. A partial call
+chain is not a formal whole-program stack bound; the physical minimum-free
+measurements below are separate evidence. A present-record Continuous On boot
+variant also passed native/GNU sanitizer checks without flash access from the
+external-stack power ticks or automatic tuning Start.
 
-No repaired candidate is described as physically qualified. Publication remains on hold pending repair and qualification.
+Matched application/web packages passed checksum, source, model and partition
+checks, plus simulated production 5tratumOS paired updates. These simulations
+did not update an installed OS or constitute physical updater qualification.
+
+## Continued-window observations
+
+The owner explicitly extended the powered test window and accepted bounded
+experimental tests. Clock and voltage ceilings remained at or below each
+unit's recorded original point. These checks do not establish a maximum TH/s
+overclock or a stable undervolt boundary.
+
+- **Additional NerdQAxe++**, originally stock v1.1.0-rc2, received the `35719b8e`
+  QAxe Beta9 application and all 108 matching web assets. Its original point was
+  600MHz /1150mV. Fixed-point backup/restore, reboot with both tuning records
+  present, and inactive restore passed. A completed Efficiency /Continuous Off
+  round rejected four measured neighboring trials at 600MHz /1145mV and
+  590MHz /1150mV, retaining 600MHz /1150mV. A second Balanced /Continuous On round
+  completed one candidate comparison and was deliberately stopped before full
+  convergence. Full restoration then passed. A normal reboot retained Continuous
+  On and the immutable backup while leaving the tuner inactive, followed by a
+  successful inactive restore. The final restore worker reported 5516 bytes
+  free of its 8192-byte stack, with no low-stack flag. Original exposed settings
+  were retained; the owner confirmed the screen and both fans normal. The
+  original QAxe with the regulator temperature warning remained on Beta8 and
+  was not tuned.
+- **NerdOctAxe Gamma** received the `35719b8e` Beta7 application and all 108
+  matching web assets. At its original 700MHz /1180mV point, fixed-point
+  Stop/full restore, present-record reboot and inactive restore passed. Restore
+  diagnostics observed at least 5408 bytes free of the 8192-byte stack, with no
+  low-stack flag. A completed Efficiency /Continuous Off round rejected four
+  measured trials at 700MHz /1175mV and 690MHz /1180mV, retaining the original
+  point. The owner confirmed its standard screen and both fans normal. A second
+  Performance /Continuous On run completed two candidate windows and rejected
+  both before being deliberately stopped; it did not complete another full
+  round or continuous reassessment cycle. Full restoration passed, followed by
+  a normal reboot with Continuous On saved but no automatic Start, and a final
+  inactive Stop/full restore. The final worker minimum free stack was 5516
+  bytes, with no low-stack flag. Original settings, profiles and schedules were
+  retained; the final state was disabled at 700MHz /1180mV with the original
+  backup available and restored.
+- **Bitaxe Gamma 601/602** received the `35719b8e` Beta12 pair with all 11 web
+  assets and saved settings verified. Both mined normally, but strict tuner
+  admission reported a fault that the original interface could not explain.
+  The 601 subsequently received the `7b205d93` application exposing cached raw
+  regulator status. Its six reported status registers were zero with valid
+  temperatures, voltage and current; one controlled identical web-image repeat
+  did not reproduce the earlier strict fault. The 602 retained the unexplained
+  strict fault on `35719b8e`. Both were left at their original settings with
+  tuning disabled, no tuner backup and no tuner Start/Stop request. Their screen
+  and fan operation was confirmed, but Gamma tuning, backup and restoration
+  have **not** been physically qualified.
+
+The short repaired-source checks do not qualify another PCB or regulator,
+larger displays, increased clock/voltage, a sustained soak, injected cooling
+failure, or every protection/recovery path. Additional UI/display changes need
+their own builds and checks. Publication remains on hold until the unresolved
+Gamma admission issue and required final qualification are addressed. The last
+device write in this window completed at 17:36:17 UTC; final OctAxe readback was
+recorded at 17:37:14, before the agreed 17:40 write cutoff. No subsequent UI
+change is included in that physical test claim.
+
+## Subsequent read-only presentation work
+
+The web Tuning page now explains the three objectives before selection, labels
+the saved goal separately from unsaved choices, explains controller phases and
+known backoff reasons, and shows completed current-round means separately from
+live readings and the original backup. Tab-local trend graphs are capped at
+120 observations/ten minutes and retain gaps for unavailable readings. They
+are explicitly not additional hardware-counter samples. Minimum phase duration
+and sample count are not a finish estimate. Restore is available near the top
+of the page; the existing waiver, authentication and readback paths remain.
+
+Both display families gain a read-only Tuning page through their normal screen
+navigation. Bounded RAM snapshots use a nonblocking mutex attempt; they do not
+initialize storage, poll hardware, renew an observer lease or control tuning.
+Busy, stale or blocked snapshots do not supply apparently current measurements.
+The original safety, update, setup, QR and shutdown precedence remains.
+
+Software validation of these additions passed before target packaging:
+
+- Gamma Angular **225/225** and shared Nerd Angular **202/202** tests; production
+  web builds for Gamma, QAxe and OctAxe, with unchanged hard build budgets.
+- **36** browser cases against the compiled production bundles on loopback,
+  including desktop/mobile layouts, goals, stale/failed observations, malformed
+  optional progress data, derived-number overflow, graph gaps, retained backup
+  controls and explicit waiver/start/restore. Preview data is synthetic.
+- Gamma production adapter/API **35** sanitizer cases; Nerd production runtime
+  **60** cases on native Clang and isolated pinned GNU, plus all **33** Nerd host
+  entrypoints. The shared read-only progress helper runs under C and C++
+  AddressSanitizer/UndefinedBehaviorSanitizer checks.
+- Actual LVGL9 Gamma **44** rendered views and production `screen.c` carousel
+  tests for both 601 and 602. A first full generic extra page exceeded the
+  existing fixed display pool; the final three-object page fits without raising
+  it. Both runtime fixtures reported allocator peak usage 54,152 bytes, current
+  free 7,720 bytes and largest free block 2,840 bytes. These are native allocator
+  observations, not physical free-heap measurements.
+- Actual LVGL8 Nerd **60-page** suites at both 320×170 and 480×320, retaining the
+  real UI initialization, normal screens, QR buffer and warning/candidate
+  overlays together. The unchanged custom allocator reported requested-byte
+  peaks of 106,561 and 151,139 respectively; the Tuning widgets added 2,508
+  requested bytes. The cached snapshot is 192 bytes. These do not measure
+  physical allocator overhead or remaining target PSRAM.
+
+The source changes do not modify the controller's search, electrical limits,
+storage transactions or actuator policy. Fresh target builds, final package
+checks and the remaining supervised Gamma qualification stay separate gates.

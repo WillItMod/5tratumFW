@@ -36,7 +36,7 @@ typedef struct {
     unsigned pool_tls, fallback_pool_tls;
 } SystemModule;
 enum {STRATUM_PROTOCOL_V1=1, STRATUM_PROTOCOL_V2=2};
-typedef struct {
+typedef struct GlobalState {
     SystemModule SYSTEM_MODULE;
     PowerManagementModule POWER_MANAGEMENT_MODULE;
     SelfTestModule SELF_TEST_MODULE;

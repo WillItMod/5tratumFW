@@ -8,6 +8,7 @@
 #include "display_graphics.h"
 #include "display_data.h"
 #include "boot_status.h"
+#include "autotune/display_snapshot.h"
 #include <cstdio>
 #include <cmath>
 
@@ -392,6 +393,84 @@ inline void updateAsicTemperatures(lv_obj_t *thermal, lv_obj_t *title, lv_obj_t 
     }
     if (anyChipTemperature) lv_obj_clear_flag(title, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(title, LV_OBJ_FLAG_HIDDEN);
+}
+
+struct TuningWidgets {
+    lv_obj_t *state, *goal, *point, *work, *thermal, *limits, *progress;
+};
+
+inline TuningWidgets tuning(lv_obj_t *parent) {
+    header(parent, "TUNING");
+    TuningWidgets fields{};
+    fields.state=text(parent,"Status unavailable",8,35,304,&ui_font_OpenSansBold14,Cyan);
+    fields.goal=text(parent,"Goal unavailable",8,56,304,&ui_font_OpenSansBold13,Muted);
+    fields.point=text(parent,"Requested -- MHz / -- mV",8,77,304,&ui_font_OpenSansBold13);
+    fields.work=text(parent,"-- TH/s | errors --",8,99,304,&ui_font_OpenSansBold13,Cyan);
+    fields.thermal=text(parent,"ASIC -- C / VR -- C / -- W",8,120,304,&lv_font_montserrat_10,Amber);
+    fields.limits=text(parent,"Caps unavailable",8,136,304,&lv_font_montserrat_10,Muted);
+    fields.progress=text(parent,"Live measurements unavailable",8,153,304,&lv_font_montserrat_10,Muted);
+    lv_obj_update_layout(parent); // Cache refresh also runs before this page is first shown.
+    return fields;
+}
+
+inline const char *tuningState(const FiveTratumAutotune::DisplaySnapshot &view) {
+    if(!view.available) return "Status unavailable";
+    if(view.fault) return "Protection active";
+    if(view.updating) return "Firmware update";
+    if(view.storageBlocked) return "Tuning storage blocked";
+    if(view.restoring) return "Restoring original";
+    switch(view.state) {
+        case FWT_DISABLED:return "Disabled";
+        case FWT_BASELINE:return "Baseline";
+        case FWT_SETTLING:return "Settling";
+        case FWT_MEASURING:return "Measuring";
+        case FWT_APPLYING:return "Applying settings";
+        case FWT_HOLDING:return "Holding result";
+        case FWT_OBSERVING:return "Observing conditions";
+        case FWT_SUSPENDED:return "Waiting for data";
+        case FWT_FAULTED:return "Stopped by protection";
+    }
+    return "Status unavailable";
+}
+
+inline void updateTuning(const TuningWidgets &fields,
+                         const FiveTratumAutotune::DisplaySnapshot &view,uint64_t now) {
+    char buffer[96];
+    lv_label_set_text(fields.state,tuningState(view));
+    if(view.available) {
+        const char *goal=view.priority==FWT_EFFICIENCY?"Efficiency":view.priority==FWT_PERFORMANCE?"Performance":"Balanced";
+        std::snprintf(buffer,sizeof(buffer),"%s | continuous %s",goal,view.continuous?"on":"off");
+        lv_label_set_text(fields.goal,buffer);
+    } else lv_label_set_text(fields.goal,"Goal unavailable");
+    const bool fresh=view.fresh(now) && fwt_positive(view.current.frequencyMHz) &&
+        fwt_positive(view.current.coreVoltageMv) && fwt_positive(view.hashRateGHs) &&
+        fwt_positive(view.powerW) && fwt_positive(view.asicTempC) && fwt_positive(view.vrmTempC) &&
+        std::isfinite(view.errorPercentage) && view.errorPercentage>=0 && view.errorPercentage<=100;
+    if(fresh) {
+        std::snprintf(buffer,sizeof(buffer),"Requested %.0f MHz / %.0f mV",view.current.frequencyMHz,view.current.coreVoltageMv);
+        lv_label_set_text(fields.point,buffer);
+        std::snprintf(buffer,sizeof(buffer),"%.2f TH/s | errors %.2f%%",view.hashRateGHs/1000.0,view.errorPercentage);
+        lv_label_set_text(fields.work,buffer);
+        std::snprintf(buffer,sizeof(buffer),"ASIC %.1f C / VR %.1f C / %.1f W",view.asicTempC,view.vrmTempC,view.powerW);
+        lv_label_set_text(fields.thermal,buffer);
+    } else {
+        lv_label_set_text(fields.point,"Requested -- MHz / -- mV");
+        lv_label_set_text(fields.work,"-- TH/s | errors --");
+        lv_label_set_text(fields.thermal,"ASIC -- C / VR -- C / -- W");
+    }
+    if(view.available && fwt_positive(view.maxAsicTempC) && fwt_positive(view.maxVrmTempC) && fwt_positive(view.maxPowerW)) {
+        std::snprintf(buffer,sizeof(buffer),"Caps ASIC %.0f C / VR %.0f C / %.0f W",view.maxAsicTempC,view.maxVrmTempC,view.maxPowerW);
+        lv_label_set_text(fields.limits,buffer);
+    } else lv_label_set_text(fields.limits,"Caps unavailable");
+    if(fresh && view.search.timed) {
+        std::snprintf(buffer,sizeof(buffer),"%.0f/%.0f s min | samples %u (min %u)",
+            view.search.phaseElapsedSeconds,view.search.minimumSeconds,view.search.samples,view.search.minimumSamples);
+        lv_label_set_text(fields.progress,buffer);
+    } else if(fresh && view.ownsSettings) {
+        std::snprintf(buffer,sizeof(buffer),"Trials %u/%u | rejected windows %u",view.search.roundExperiments,
+            view.search.roundExperimentLimit,view.search.rejectedWindows);
+        lv_label_set_text(fields.progress,buffer);
+    } else lv_label_set_text(fields.progress,fresh?"Read only | Start in the web interface":"Live measurements unavailable");
 }
 
 struct SettingsWidgets {

@@ -2,6 +2,7 @@
 #include "core.h"
 #include "write_gate.h"
 #include "storage_context.h"
+#include "presentation.h"
 #include "global_state.h"
 #include "tasks/mining_control.h"
 #include "tasks/mining_schedule.h"
@@ -422,6 +423,25 @@ void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
     auto out=parent[key].to<JsonObject>();
     out["frequencyMHz"] = point->frequencyMHz; out["coreVoltageMv"] = point->coreVoltageMv;
 }
+bool presentationObscured() {
+    return restoring || pending || firmwareUpdates.load() || permanentFreeze.load() ||
+           handoff.load()!=nullptr || adapterReason!=nullptr;
+}
+void searchJson(JsonObject status,uint64_t now) {
+    const auto view=fwt_search_read(&controller,now,presentationObscured());
+    auto search=status["search"].to<JsonObject>();
+    if(view.timed) {search["phaseElapsedSeconds"]=view.phaseElapsedSeconds;search["minimumSeconds"]=view.minimumSeconds;}
+    else {search["phaseElapsedSeconds"]=nullptr;search["minimumSeconds"]=nullptr;}
+    search["samples"]=view.samples;search["minimumSamples"]=view.minimumSamples;
+    search["roundExperiments"]=view.roundExperiments;search["roundExperimentLimit"]=view.roundExperimentLimit;
+    search["rejectedWindows"]=view.rejectedWindows;
+    for(const auto &item:{std::pair<const char *,bool>{"reference",view.referenceAvailable},{"best",view.bestAvailable}}) {
+        if(!item.second) {search[item.first]=nullptr;continue;}
+        auto measured=search[item.first].to<JsonObject>();
+        measured["hashRateGHs"]=!strcmp(item.first,"reference")?view.referenceHash:view.bestHash;
+        measured["powerW"]=!strcmp(item.first,"reference")?view.referencePower:view.bestPower;
+    }
+}
 }
 
 bool preloadStorage() {
@@ -517,6 +537,34 @@ void tick() {
     }
 }
 
+bool tryDisplaySnapshot(DisplaySnapshot &out) {
+    out={};
+    if(pthread_mutex_trylock(&mutex)!=0) return false;
+    if(!initialized || !storagePrepared || !powerInitialized || controller.limits.maxFrequencyMHz<=0 ||
+       controller.limits.maxVoltageMv<=0) {pthread_mutex_unlock(&mutex);return false;}
+    const uint64_t now=esp_timer_get_time();
+    out.available=true;out.valid=observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
+        observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=FWT_FRESH_US;
+    out.capturedAtUs=observed.capturedAtUs;
+    out.active=controller.active;out.ownsSettings=controller.owns || restoring || pending;
+    out.restoring=restoring;out.continuous=controller.config.continuous;
+    out.fault=observed.fault || controller.state==FWT_FAULTED;
+    out.updating=firmwareUpdates.load() || permanentFreeze.load();
+    out.storageBlocked=optionsError || baselineLoadError;
+    out.valid=out.valid && !out.fault && !out.updating && !out.storageBlocked;
+    out.state=controller.state;out.priority=controller.config.priority;
+    if(out.valid) {
+        out.current=observed.current;out.hashRateGHs=observed.hashRateGHs;
+        out.errorPercentage=observed.errorPercentage;out.powerW=observed.powerW;
+        out.asicTempC=observed.asicTempC;out.vrmTempC=observed.vrmTempC;
+    }
+    out.maxAsicTempC=controller.config.maxAsicTempC;out.maxVrmTempC=controller.config.maxVrmTempC;
+    out.maxPowerW=controller.config.maxPowerW;
+    out.search=fwt_search_read(&controller,now,presentationObscured());
+    pthread_mutex_unlock(&mutex);
+    return true;
+}
+
 bool report(JsonDocument &document) {
     Guard guard; Board *board = SYSTEM_MODULE.getBoard(); initialize(board);
     document["schemaVersion"] = 1; document["waiverVersion"] = waiverVersion;
@@ -549,6 +597,7 @@ bool report(JsonDocument &document) {
     pointJson(status,"best",controller.bestAvailable?&controller.best:nullptr);
     auto telemetry=status["telemetry"].to<JsonObject>();
     const uint64_t now=esp_timer_get_time();
+    searchJson(status,now);
     const bool valid=observed.valid && observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=15000000;
     telemetry["valid"]=valid; telemetry["miningActive"]=observed.miningActive; telemetry["fault"]=observed.fault; telemetry["fanOk"]=observed.fanOk;
     if (valid) {

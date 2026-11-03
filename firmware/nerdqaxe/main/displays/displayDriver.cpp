@@ -29,6 +29,7 @@
 #include "display_data.h"
 #include "display_graphics.h"
 #include "display_layout.h"
+#include "autotune/runtime.h"
 
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 
@@ -368,6 +369,12 @@ bool DisplayDriver::enterState(UiState s, int64_t now)
         safe_screen_change(m_ui->ui_AsicScreen, LV_SCR_LOAD_ANIM_MOVE_LEFT, 350, 0);
         break;
 
+    case UiState::TuningScreen:
+        enableLvglAnimations(true);
+        updateTuningReadings(now);
+        safe_screen_change(m_ui->ui_TuningScreen,LV_SCR_LOAD_ANIM_MOVE_LEFT,350,0);
+        break;
+
     case UiState::SettingsScreen:
         ESP_LOGI(TAG, "enter state settings screen");
         enableLvglAnimations(true);
@@ -487,9 +494,13 @@ void DisplayDriver::updateState(int64_t now, bool btn1Press, bool btn2Press, boo
                 m_asicPageStart += 4;
                 updateAsicReadings();
             } else {
-                enterState(UiState::SettingsScreen, now);
+                enterState(UiState::TuningScreen, now);
             }
         }
+        break;
+    case UiState::TuningScreen:
+        if(ledControl(btn1Press,btn2Press)) break;
+        if(btn1Press) enterState(UiState::SettingsScreen,now);
         break;
     case UiState::SettingsScreen:
         if (ledControl(btn1Press, btn2Press)) {
@@ -746,14 +757,27 @@ void DisplayDriver::lvglTimerTask(void *param) {
     Button btn1(PIN_BUTTON_1, 5000);
     Button btn2(PIN_BUTTON_2, 5000);
     ui_msg_t msg;
+    int64_t nextTuningUpdateUs=0;
     while (true) {
         handleLvglTick(elapsed_Ani_cycles); // Holds its own lock; sleeps outside.
         const int64_t tnow = now_us();
+        // Copy cached controller values before taking LVGL. A long protected
+        // operation simply produces an unavailable snapshot; it never blocks
+        // this task or introduces an LVGL -> controller lock order.
+        FiveTratumAutotune::DisplaySnapshot tuningSnapshot{};
+        const bool updateTuning=tnow>=nextTuningUpdateUs;
+        if(updateTuning) {
+            FiveTratumAutotune::tryDisplaySnapshot(tuningSnapshot);
+            nextTuningUpdateUs=tnow+1000000;
+        }
         bool shutdownRequested = false;
         {
             // The same mutex as System's telemetry/error updates covers every
             // LVGL object, QR-buffer replacement and display state mutation.
             PThreadGuard lock(m_lvglMutex);
+            if(updateTuning) m_tuningSnapshot=tuningSnapshot;
+            if(updateTuning || (m_tuningSnapshot.valid && !m_tuningSnapshot.fresh(tnow)))
+                updateTuningReadings(tnow);
             // A stopped power or System loop must not leave current-looking
             // temperatures on an otherwise responsive physical display.
             if (m_temperatureValidUntilUs >= 0 && tnow > m_temperatureValidUntilUs)
@@ -1023,6 +1047,14 @@ void DisplayDriver::updateCurrentSettings(int pool) {
             lv_label_set_text(m_ui->ui_lbFanSet, buffer);
             break;
     }
+}
+
+void DisplayDriver::updateTuningReadings(int64_t nowUs) {
+    if(!m_ui || !m_ui->ui_TuningScreen) return;
+    const FiveTratumDisplay::TuningWidgets fields{m_ui->ui_lbTuningState,m_ui->ui_lbTuningGoal,
+        m_ui->ui_lbTuningPoint,m_ui->ui_lbTuningWork,m_ui->ui_lbTuningThermal,
+        m_ui->ui_lbTuningLimits,m_ui->ui_lbTuningProgress};
+    FiveTratumDisplay::updateTuning(fields,m_tuningSnapshot,nowUs);
 }
 
 void DisplayDriver::updateAsicReadings() {

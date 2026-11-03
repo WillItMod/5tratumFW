@@ -12,6 +12,13 @@ static int32_t text_width(const char *text)
     lv_text_get_size(&size,text,&lv_font_portfolio_6x8,0,0,LV_COORD_MAX,LV_TEXT_FLAG_NONE);
     return size.x;
 }
+static const char *tuning_row(FiveTratumOledView *view,unsigned row)
+{
+    static char line[128];const char *text=lv_label_get_text(view->tuning_body);
+    for(unsigned i=0;i<row;++i) {text=strchr(text,'\n');assert(text);++text;}
+    const char *end=strchr(text,'\n');size_t length=end ? (size_t)(end-text) : strlen(text);
+    assert(length<sizeof(line));memcpy(line,text,length);line[length]=0;return line;
+}
 static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *map)
 {
     /* LVGL I1 palettes precede the row-aligned 1-bit pixels. */
@@ -39,6 +46,12 @@ static void save(const char *directory, const char *name, FiveTratumOledView *vi
             const char *text=lv_label_get_text(label);
             assert(text_width(text)<=96);
             assert(lv_obj_get_y(label)+lv_obj_get_height(label)<=32);
+        }
+    } else if (view->page==OLED_TUNING) {
+        assert(text_width(lv_label_get_text(view->title))<=128);
+        for(unsigned i=0;i<3;++i) {
+            assert(text_width(tuning_row(view,i))<=128);
+            assert(lv_obj_get_y(view->tuning_body)+lv_obj_get_height(view->tuning_body)<=32);
         }
     }
     unsigned lit=0;
@@ -141,6 +154,46 @@ int main(int argc,char **argv)
     const char *names[]={"rate","health","shares","route","operating","wifi","job","candidate","fault","overheat","self-test","update","setup","connection","boot","credits"};
     d.hardware_fault=true;
     for (unsigned i=0;i<=OLED_CREDITS;++i) save(argv[1],names[i],&views[i],&d);
+    FiveTratumOledView tuning=oled_create_view(OLED_TUNING);
+    d.tuning=(GammaAutotuneDisplaySnapshot){.available=true,.supported=true,.telemetryFresh=true,
+        .currentAvailable=true,.priority=FWT_EFFICIENCY,.current={625.125,1173},
+        .search={.minimumSamples=8,.roundExperimentLimit=24}};
+    save(argv[1],"tuning-disabled",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,0),"EFFICIENCY DISABLED"));
+    assert(!strcmp(tuning_row(&tuning,1),"Set 625.125MHz 1173mV"));
+    assert(!strcmp(tuning_row(&tuning,2),"Read only - use web"));
+    for(unsigned priority=FWT_EFFICIENCY;priority<=FWT_PERFORMANCE;++priority)
+        for(unsigned state=FWT_DISABLED;state<=FWT_APPLYING;++state) {
+            d.tuning.priority=priority;d.tuning.state=state;
+            oled_render_view(&tuning,&d);
+            assert(text_width(tuning_row(&tuning,0))<=128);
+        }
+    d.tuning.priority=FWT_BALANCED;d.tuning.state=FWT_MEASURING;
+    d.tuning.active=d.tuning.ownsSettings=true;
+    d.tuning.search.timed=true;d.tuning.search.phaseElapsedSeconds=74.9;d.tuning.search.minimumSeconds=75;
+    d.tuning.search.samples=7;d.tuning.search.roundExperiments=3;d.tuning.search.rejectedWindows=2;
+    save(argv[1],"tuning-measuring",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,2),"Min 74/75s S7/8"));
+    d.tuning.priority=FWT_PERFORMANCE;d.tuning.state=FWT_SETTLING;
+    d.tuning.search.phaseElapsedSeconds=12;d.tuning.search.minimumSeconds=30;d.tuning.search.samples=0;
+    save(argv[1],"tuning-settling",&tuning,&d);
+    d.tuning.state=FWT_HOLDING;d.tuning.active=false;d.tuning.search.timed=false;
+    save(argv[1],"tuning-holding",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,2),"Trial 3/24 Rej2"));
+    d.tuning.restoring=true;
+    save(argv[1],"tuning-restoring",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,2),"Read only - use web"));
+    d.tuning.fault=true;
+    oled_render_view(&tuning,&d);
+    assert(strstr(tuning_row(&tuning,0),"BLOCKED")); /* A queued restore cannot hide a protection fault. */
+    d.tuning.restoring=false;d.tuning.fault=true;
+    save(argv[1],"tuning-blocked",&tuning,&d);
+    d.tuning.fault=false;d.tuning.telemetryFresh=false;d.tuning.active=true;
+    save(argv[1],"tuning-stale",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,1),"Set --MHz --mV"));
+    d.tuning.available=false;
+    save(argv[1],"tuning-unavailable",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,0),"Tuning unavailable"));
     assert(strstr(lv_label_get_text(views[OLED_CANDIDATE].rows[0]),"CANDIDATE"));
     assert(!strstr(lv_label_get_text(views[OLED_CANDIDATE].rows[2]),"accepted"));
     for (unsigned i=0;i<OLED_DONUT_VARIANTS;++i) {
@@ -185,7 +238,9 @@ int main(int argc,char **argv)
     assert(!strcmp(lv_label_get_text(views[OLED_RATE].title),"NO DATA"));
     save(argv[1],"stale-positive-efficiency",&views[OLED_HEALTH],&d);
     assert(!strcmp(lv_label_get_text(views[OLED_HEALTH].rows[2]),"Eff -- J/TH"));
-    printf("PASS: 36 actual LVGL9 I1 framebuffer views, six donuts (%u bitmap bytes), candidate bounds/no repeats/bounded motion, separate identify, self-test recovery and expired positive rate\n",(unsigned)(sizeof(oled_donut_variants)/sizeof(oled_donut_variants[0])*oled_donut_variants[0].data_size));
+    printf("PASS: 44 actual LVGL9 I1 framebuffer views including eight read-only tuning states, six donuts (%u bitmap bytes), candidate bounds/no repeats/bounded motion, separate identify, self-test recovery and expired positive rate\n",(unsigned)(sizeof(oled_donut_variants)/sizeof(oled_donut_variants[0])*oled_donut_variants[0].data_size));
+    lv_mem_monitor_t memory;lv_mem_monitor(&memory);
+    printf("LVGL_MEMORY renderer total=%zu peak_used=%zu free=%zu biggest=%zu\n",memory.total_size,memory.max_used,memory.free_size,memory.free_biggest_size);
     lv_deinit();
     return 0;
 }

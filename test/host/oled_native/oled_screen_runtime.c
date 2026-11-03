@@ -11,12 +11,35 @@ FiveTratumMuxSnapshot host_mux;
 float host_rate_gh=1200;
 uint64_t host_rate_sample_us=9000000;
 uint32_t host_random_calls;
+static bool host_tuning_busy;
+static unsigned host_tuning_reads,host_tuning_reads_under_lvgl;
+static GammaAutotuneDisplaySnapshot host_tuning = {
+    .available=true,.supported=true,.telemetryFresh=true,.active=true,.ownsSettings=true,
+    .currentAvailable=true,.state=FWT_MEASURING,.priority=FWT_BALANCED,.current={580,1155},
+    .search={.timed=true,.phaseElapsedSeconds=42,.minimumSeconds=75,.samples=4,.minimumSamples=8,
+             .roundExperiments=3,.roundExperimentLimit=24},
+};
+bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out,uint64_t now)
+{
+    (void)now; ++host_tuning_reads;
+    if(host_lock_depth>0) ++host_tuning_reads_under_lvgl; /* Actual timer context uses production trylock only. */
+    memset(out,0,sizeof(*out));
+    if(host_tuning_busy) return false;
+    *out=host_tuning;return true;
+}
 /* The legacy image declarations link, but compact runtime uses established new mark. */
 const lv_img_dsc_t osmu_logo={0}, identify_text={0};
 const lv_img_dsc_t bitaxe_logo={0}, bitaxe_logo_large={0}, bitaxe_background={0};
 const lv_font_t ui_font_DigitalNumbers16={0}, ui_font_DigitalNumbers28={0};
 const lv_font_t ui_font_OpenSansBold13={0}, ui_font_OpenSansBold14={0}, ui_font_AngelWish40={0};
 #include "../../../main/screen.c"
+static const char *tuning_row(FiveTratumOledView *view,unsigned row)
+{
+    static char line[128];const char *text=lv_label_get_text(view->tuning_body);
+    for(unsigned i=0;i<row;++i) {text=strchr(text,'\n');assert(text);++text;}
+    const char *end=strchr(text,'\n');size_t length=end ? (size_t)(end-text) : strlen(text);
+    assert(length<sizeof(line));memcpy(line,text,length);line[length]=0;return line;
+}
 static uint8_t buffer[128*32/8+8];
 static void flush(lv_display_t *display,const lv_area_t *area,uint8_t *pixels)
 {
@@ -31,8 +54,9 @@ static void update(void)
     lvgl_port_unlock();
     assert(host_lock_depth==0);
 }
-int main(void)
+int main(int argc,char **argv)
 {
+    assert(argc<=2);const char *board=argc==2 ? argv[1] : "601";assert(!strcmp(board,"601")||!strcmp(board,"602"));
     lv_init();
     lv_display_t *display=lv_display_create(128,32);
     lv_display_set_color_format(display,LV_COLOR_FORMAT_I1);
@@ -45,7 +69,7 @@ int main(void)
                         .shares_accepted=4294967296ULL,.shares_rejected=12,.is_connected=true,
                         .is_screen_active=true,.mining_runtime_ready=true},
         .POWER_MANAGEMENT_MODULE={.chip_temp_avg=58.2,.vr_temp=47.1,.power=18.4,.fan_perc=80,.fan_rpm=4200,.core_voltage=1128,.voltage=5200},
-        .DEVICE_CONFIG={.family={.name="Gamma"},.board_version="601"},
+        .DEVICE_CONFIG={.family={.name="Gamma"},.board_version=board},
         .ASIC_initalized=true,.stratum_protocol=STRATUM_PROTOCOL_V1,
     };
     assert(screen_start(&state)==ESP_OK && host_lock_depth==0);
@@ -54,6 +78,22 @@ int main(void)
     screen_button_press(); assert(get_current_screen()==SCR_URLS); /* Never cycles into a false candidate. */
     screen_button_press(); assert(get_current_screen()==SCR_STATS);
     screen_button_press(); assert(get_current_screen()==SCR_WIFI); /* Decode off skips job metadata. */
+    screen_show(SCR_OPERATING);screen_button_press();assert(get_current_screen()==SCR_TUNING);
+    update();assert(!strcmp(lv_label_get_text(compact_views[SCR_TUNING].title),"TUNING - READ ONLY"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"BALANCED MEASURING"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],1),"Set 580.000MHz 1155mV"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],2),"Min 42/75s S4/8"));
+    host_tuning_busy=true;update();
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"Tuning unavailable"));
+    assert(!strstr(tuning_row(&compact_views[SCR_TUNING],1),"580"));
+    host_tuning_busy=false;host_tuning.telemetryFresh=false;update();
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"BALANCED WAITING"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],1),"Set --MHz --mV"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],2),"Readings unavailable"));
+    host_tuning.telemetryFresh=true;
+    assert(host_tuning_reads_under_lvgl>0);
+    const unsigned tuning_reads=host_tuning_reads;
+    screen_button_press();assert(get_current_screen()==SCR_URLS && host_tuning_reads==tuning_reads);
     state.SYSTEM_MODULE.pool_decode_coinbase_tx=true;
     screen_show(SCR_STATS); screen_button_press(); assert(get_current_screen()==SCR_MINING);
     state.SYSTEM_MODULE.identify_mode_time_ms=5000;
@@ -190,7 +230,9 @@ int main(void)
     assert(!lv_obj_has_flag(compact_views[SCR_WIFI].wifi_icon,LV_OBJ_FLAG_HIDDEN));
     assert(strstr(lv_label_get_text(compact_views[SCR_WIFI].rows[1]),"RSSI -58dBm"));
     assert(host_lock_depth==0);
-    puts("PASS: actual screen.c candidate lifecycle/no repeats/bounded animation/identify separation, startup/carousel, safety priority, pause transitions, stale rates, MUX fallback and wired-only network display");
+    puts("PASS: actual screen.c selectable read-only tuning/status-busy/stale page, candidate lifecycle/no repeats/bounded animation/identify separation, startup/carousel, safety priority, pause transitions, stale rates, MUX fallback and wired-only network display");
+    lv_mem_monitor_t memory;lv_mem_monitor(&memory);
+    printf("LVGL_MEMORY board%s total=%zu peak_used=%zu free=%zu biggest=%zu\n",board,memory.total_size,memory.max_used,memory.free_size,memory.free_biggest_size);
     lv_deinit();
     return 0;
 }

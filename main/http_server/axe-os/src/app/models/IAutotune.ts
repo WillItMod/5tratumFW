@@ -23,6 +23,12 @@ export interface AutotuneTelemetry {
   sampleAgeSeconds: number | null; fanOk: boolean;
   miningActive: boolean; fault: boolean; worstErrorPercentage: number | null; voltageReadbackMv: number | null;
 }
+export interface AutotuneMeans { hashRateGHs: number; powerW: number; }
+export interface AutotuneSearch {
+  phaseElapsedSeconds: number | null; minimumSeconds: number | null;
+  samples: number; minimumSamples: number; roundExperiments: number; roundExperimentLimit: number;
+  rejectedWindows: number; reference: AutotuneMeans | null; best: AutotuneMeans | null;
+}
 export interface AutotuneReport {
   schemaVersion: 1; supported: boolean; waiverVersion: 1;
   hardware: { model: string; asicCount: number; asicSensor: string; vrmSensor: string; powerSource: string };
@@ -32,6 +38,8 @@ export interface AutotuneReport {
     state: string; reason: string; active: boolean; ownsSettings: boolean; runId: number; experiments: number;
     baseline: AutotunePoint | null; current: AutotunePoint | null; best: AutotunePoint | null;
     telemetry: AutotuneTelemetry;
+    /** Additive presentation data; never required to authorize Restore. */
+    search?: AutotuneSearch;
   };
   backup: { available: boolean; restored: boolean; frequencyMHz: number | null; coreVoltageMv: number | null };
 }

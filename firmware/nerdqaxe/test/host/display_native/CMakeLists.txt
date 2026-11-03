@@ -5,6 +5,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${FW_ROOT}/main/displays/displayDriver.cpp"
     "${FW_ROOT}/main/stratum/stratum_manager.h"
+    "${FW_ROOT}/main/displays/ui.cpp"
+    "${FW_ROOT}/main/displays/ui.h"
     "${CMAKE_CURRENT_LIST_DIR}/extract_display_driver.py")
 execute_process(COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_LIST_DIR}/extract_display_driver.py" "${FW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}"
@@ -17,11 +19,12 @@ add_subdirectory("${FW_ROOT}/managed_components/lvgl__lvgl" lvgl EXCLUDE_FROM_AL
 # Only allocation is substituted for desktop rendering. Pixel depth, fonts,
 # native layout and LVGL version are the actual firmware configuration.
 target_include_directories(lvgl PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
-add_executable(display-native display_native.cpp
+add_executable(display-native display_native.cpp display_alloc.c
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold13.c"
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold14.c"
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold24.c"
-    "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold45.c")
+    "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold45.c"
+    "${FW_ROOT}/main/displays/images/ui_img_wifi_png.c")
 target_compile_features(display-native PRIVATE cxx_std_17)
 target_compile_options(display-native PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(display-native PRIVATE "${FW_ROOT}/main"

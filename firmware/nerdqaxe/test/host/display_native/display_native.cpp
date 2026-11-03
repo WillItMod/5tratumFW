@@ -3,6 +3,9 @@
 #include "displays/display_layout.h"
 #include "displays/display_data.h"
 #include "tasks/temperature_sample.h"
+#include "displays/display_candidate.h"
+#include "displays/display_candidate_assets.h"
+#include "lvgl_psram.h"
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -17,6 +20,7 @@ static std::array<lv_color_t, 480 * 320> frame{};
 static std::array<lv_color_t, 480 * 320> drawBuffer{};
 static lv_obj_t *parkingScreen = nullptr;
 static unsigned capturedPages = 0;
+static size_t allScreensBytes=0,tuningPageBytes=0,coexistingOverlayBytes=0;
 
 static void flush(lv_disp_drv_t *driver, const lv_area_t *area, lv_color_t *pixels) {
     size_t index = 0;
@@ -121,6 +125,86 @@ static bool hasLabel(lv_obj_t *parent, const char *value) {
     return false;
 }
 
+class ActualUiFixture:public ActualUI {
+public:
+    bool makeQR(){uint8_t synthetic[1]{};return createQRScreen(synthetic,25);}
+    void cleanup(){
+        hideErrorOverlay();lv_scr_load(parkingScreen);
+        for(auto *page:{ui_Splash1,ui_Splash2,ui_PortalScreen,ui_MiningScreen,ui_AsicScreen,
+            ui_TuningScreen,ui_SettingsScreen,ui_BTCScreen,ui_GlobalStats,ui_BrandScreen,
+            ui_LogScreen,ui_PowerOffScreen,ui_qrScreen}) if(page)lv_obj_del(page);
+        if(m_qr_canvas_buf)display_host_free(m_qr_canvas_buf);
+    }
+};
+
+static void coexistingUiAllocationFixture(){
+    const size_t before=display_host_live_bytes();
+    ActualUiFixture actual;DisplayDriver driver;
+    actual.init(&fixtureBoard,&driver);actual.powerOffScreenInit();actual.logScreenInit();assert(actual.makeQR());
+    allScreensBytes=display_host_live_bytes()-before;
+    // Include actual candidate artwork widgets and a higher-priority fault
+    // while every normal screen and the lazily-created QR/power pages remain.
+    auto candidate=FiveTratumDisplay::candidatePresentation(lv_layer_top(),&FiveTratumDisplay::donutCandidateImages[0],0);
+    actual.showErrorOverlay("MINER OVERHEATED",1);
+    lv_obj_update_layout(lv_layer_top());lv_refr_now(nullptr);
+    coexistingOverlayBytes=display_host_live_bytes()-before;
+    auto *extra=FiveTratumDisplay::screen();const size_t beforeFields=display_host_live_bytes();
+    FiveTratumDisplay::tuning(extra);tuningPageBytes=display_host_live_bytes()-beforeFields;
+    assert(tuningPageBytes>0 && tuningPageBytes<8192); // Bounded addition; no allocator/pool change.
+    lv_obj_del(extra);FiveTratumDisplay::dismissCandidate(candidate);actual.cleanup();
+}
+
+static void tuningFixtures(const std::string &directory) {
+    using namespace FiveTratumDisplay;
+    auto *page=screen();auto widgets=tuning(page);
+    DisplayFixtureWidgets ui{};DisplayDriver driver;driver.m_ui=&ui;
+    ui.ui_TuningScreen=page;ui.ui_lbTuningState=widgets.state;ui.ui_lbTuningGoal=widgets.goal;
+    ui.ui_lbTuningPoint=widgets.point;ui.ui_lbTuningWork=widgets.work;ui.ui_lbTuningThermal=widgets.thermal;
+    ui.ui_lbTuningLimits=widgets.limits;ui.ui_lbTuningProgress=widgets.progress;
+    auto &view=driver.m_tuningSnapshot;
+    view.available=view.valid=view.active=view.ownsSettings=true;view.capturedAtUs=fixtureNowUs;
+    view.state=FWT_MEASURING;view.priority=FWT_BALANCED;view.continuous=true;
+    view.current={700,1180};view.hashRateGHs=11540;view.errorPercentage=.21;
+    view.asicTempC=62.5;view.vrmTempC=66.2;view.powerW=182.5;
+    view.maxAsicTempC=65;view.maxVrmTempC=80;view.maxPowerW=220;
+    view.search.timed=true;view.search.phaseElapsedSeconds=42;view.search.minimumSeconds=75;
+    view.search.samples=9;view.search.minimumSamples=8;view.search.roundExperiments=2;view.search.roundExperimentLimit=24;
+    driver.updateTuningReadings(fixtureNowUs);
+    assert(hasLabel(page,"Measuring") && hasLabel(page,"Balanced | continuous on"));
+    assert(hasLabel(page,"Requested 700 MHz / 1180 mV") && hasLabel(page,"11.54 TH/s | errors 0.21%"));
+    assert(hasLabel(page,"42/75 s min | samples 9 (min 8)"));
+    // Updating an inactive read-only page cannot replace QR or its safety layer.
+    auto *qr=screen();header(qr,"AUTHENTICATOR");lv_scr_load(qr);
+    auto *fault=warning(lv_layer_top(),"MINER OVERHEATED","Protection remains authoritative");
+    driver.updateTuningReadings(fixtureNowUs);
+    assert(lv_scr_act()==qr && lv_obj_get_parent(fault)==lv_layer_top());
+    lv_obj_del(fault);lv_scr_load(parkingScreen);lv_obj_del(qr);
+    capture(page,directory+"/display-tuning-measuring-simulated.ppm");
+    page=screen();widgets=tuning(page);
+    view.active=false;view.state=FWT_DISABLED;view.fault=true;
+    updateTuning(widgets,view,fixtureNowUs);
+    assert(hasLabel(page,"Protection active") && hasLabel(page,"-- TH/s | errors --"));
+    capture(page,directory+"/display-tuning-disabled-protection-simulated.ppm");
+    page=screen();widgets=tuning(page);
+    view.fault=false;view.updating=true;updateTuning(widgets,view,fixtureNowUs);
+    assert(hasLabel(page,"Firmware update") && hasLabel(page,"Requested -- MHz / -- mV"));
+    capture(page,directory+"/display-tuning-update-simulated.ppm");
+    page=screen();widgets=tuning(page);
+    view.updating=false;view.storageBlocked=true;updateTuning(widgets,view,fixtureNowUs);
+    assert(hasLabel(page,"Tuning storage blocked") && hasLabel(page,"Live measurements unavailable"));
+    capture(page,directory+"/display-tuning-storage-blocked-simulated.ppm");
+    page=screen();widgets=tuning(page);
+    view.storageBlocked=false;view.state=FWT_HOLDING;view.search.timed=false;
+    updateTuning(widgets,view,fixtureNowUs+15000000);
+    assert(hasLabel(page,"Requested 700 MHz / 1180 mV")); // Exact freshness boundary.
+    updateTuning(widgets,view,fixtureNowUs+15000001);
+    assert(hasLabel(page,"Requested -- MHz / -- mV") && hasLabel(page,"ASIC -- C / VR -- C / -- W"));
+    capture(page,directory+"/display-tuning-expired-simulated.ppm");
+    page=screen();widgets=tuning(page);view={};updateTuning(widgets,view,fixtureNowUs);
+    assert(hasLabel(page,"Status unavailable") && hasLabel(page,"-- TH/s | errors --") && hasLabel(page,"Caps unavailable"));
+    capture(page,directory+"/display-tuning-unavailable-simulated.ppm");
+}
+
 static void octaxeFixtures(const std::string &directory) {
     using namespace FiveTratumDisplay;
     // Eight distinct counter readings detect page offsets and accidental
@@ -170,7 +254,11 @@ static void octaxeFixtures(const std::string &directory) {
         assert(lv_obj_has_flag(details.temperatures[row], LV_OBJ_FLAG_HIDDEN));
     }
     driver.fixtureAsicButton(fixtureNowUs, true, false);
-    assert(driver.m_asicPageStart == 4 && driver.m_state == DisplayDriver::UiState::SettingsScreen);
+    assert(driver.m_asicPageStart == 4 && driver.m_state == DisplayDriver::UiState::TuningScreen);
+    driver.displayOff=true;driver.fixtureAsicButton(fixtureNowUs,true,false);
+    assert(driver.m_state==DisplayDriver::UiState::TuningScreen);
+    driver.displayOff=false;driver.fixtureAsicButton(fixtureNowUs,true,false);
+    assert(driver.m_state==DisplayDriver::UiState::SettingsScreen);
     capture(page, directory + "/display-octaxe-asics-5-8-shared-thermal-simulated.ppm");
 
     page = screen(); details = asics(page);
@@ -619,7 +707,13 @@ int main(int argc, char **argv) {
     lv_obj_del(fault);
     const unsigned baselinePages = capturedPages;
     octaxeFixtures(directory);
+    tuningFixtures(directory);
+    coexistingUiAllocationFixture();
     std::cout << "{\"passed\":true,\"nativeLvgl\":\"8.3.11\",\"resolution\":[" << canvasWidth << ',' << canvasHeight
               << "],\"pages\":" << capturedPages << ",\"octaxePages\":" << capturedPages - baselinePages
-              << ",\"fixtureOnly\":true}\n";
+              << ",\"fixtureOnly\":true,\"customAllocator\":true,\"allScreensRequestedBytes\":" << allScreensBytes
+              << ",\"allScreensAndOverlaysRequestedBytes\":" << coexistingOverlayBytes
+              << ",\"tuningFieldsIncrementalBytes\":" << tuningPageBytes
+              << ",\"hostPeakRequestedBytes\":" << display_host_peak_bytes()
+              << ",\"snapshotBytes\":" << sizeof(FiveTratumAutotune::DisplaySnapshot) << "}\n";
 }

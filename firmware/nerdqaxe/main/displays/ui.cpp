@@ -127,6 +127,15 @@ void UI::settingsScreenInit() {
     lv_obj_add_event_cb(ui_SettingsScreen, on_screen_loaded, LV_EVENT_SCREEN_LOADED, m_display);
 }
 
+void UI::tuningScreenInit() {
+    ui_TuningScreen=FiveTratumDisplay::screen();
+    const auto fields=FiveTratumDisplay::tuning(ui_TuningScreen);
+    ui_lbTuningState=fields.state;ui_lbTuningGoal=fields.goal;ui_lbTuningPoint=fields.point;
+    ui_lbTuningWork=fields.work;ui_lbTuningThermal=fields.thermal;
+    ui_lbTuningLimits=fields.limits;ui_lbTuningProgress=fields.progress;
+    lv_obj_add_event_cb(ui_TuningScreen,on_screen_loaded,LV_EVENT_SCREEN_LOADED,m_display);
+}
+
 void UI::logScreenInit() {
     ui_LogScreen = FiveTratumDisplay::screen();
     FiveTratumDisplay::header(ui_LogScreen, "SYSTEM LOG");
@@ -269,6 +278,7 @@ void UI::init(Board* board, DisplayDriver *display)
     portalScreenInit();
     miningScreenInit();
     asicScreenInit();
+    tuningScreenInit();
     settingsScreenInit();
     bTCScreenInit();
     globalStatsScreenInit();

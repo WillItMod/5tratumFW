@@ -168,4 +168,70 @@ describe('Dynamic tuning controls', () => {
     service.command.and.callFake(()=>{report.status.state='faulted';report.status.telemetry.fault=true;return of({ok:true,restartRequired:false});});
     component.restore();tick(0);expect(component.actionError).toContain('could not be confirmed');expect(report.status.telemetry.fault).toBeTrue();expect(component.message).toBe('');
   }));
+  it('shows actual useful TH/s and J/TH, and never presents invalid live values as zero', () => {
+    expect(component.ths(4000)).toBe('4.00'); expect(component.energy(4000,80)).toBe('20.00');
+    expect(component.energy(0,80)).toBe('—'); expect(component.energy(4000,NaN)).toBe('—');
+    now+=13000; expect(component.ths(4000)).toBe('—');expect(component.energy(4000,80)).toBe('—');
+  });
+  it('keeps a prospective goal separate from the saved goal and computes headroom from saved ceilings', () => {
+    component.edit!.priority='performance'; component.edit!.maxAsicTempC=60;
+    expect(component.runningGoal).toContain('Balanced');expect(component.headroom[0].value).toBe('10.0 °C below ceiling');
+    expect(component.priorities.every(goal=>goal.description.length>50)).toBeTrue();
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('accepts optional completed round means independently of live sensors and shows a minimum rather than an ETA', () => {
+    report.status.search={phaseElapsedSeconds:92,minimumSeconds:75,samples:7,minimumSamples:8,roundExperiments:2,roundExperimentLimit:24,rejectedWindows:1,reference:{hashRateGHs:4000,powerW:80},best:{hashRateGHs:4050,powerW:79}};
+    report.status.telemetry.valid=false;component.load();
+    expect(component.search!.reference!.hashRateGHs).toBe(4000);expect(component.phaseProgress).toBe(100);
+    expect(component.ths(component.search!.reference!.hashRateGHs,false)).toBe('4.00');
+    expect(component.metric(55)).toBe('—');expect(component.canStart).toBeFalse();
+    now+=13000;expect(component.search).toBeNull();
+  });
+  it('hides missing or malformed additive search fields without disabling original-backup Restore', () => {
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    for(const search of [undefined,{},[],{phaseElapsedSeconds:0,minimumSeconds:75,samples:8,minimumSamples:8,roundExperiments:2,roundExperimentLimit:24,rejectedWindows:0,reference:{hashRateGHs:4000,powerW:0},best:null}]) {
+      report.status.search=search as any;component.load();expect(component.search).toBeNull();expect(component.readError).toBe('');expect(component.canRestore).toBeTrue();
+    }
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('bounds tab history, breaks failed/stale/invalid observations and clears it on a new run', () => {
+    for(let i=0;i<160;i++){now+=1000;component.load();}
+    expect(component.history.length).toBe(component.historyLimit);
+    service.get.and.returnValue(throwError(()=>new Error('offline')));component.load();
+    now+=1000;service.get.and.callFake(()=>of(structuredClone(report)));component.load();
+    expect(component.trends[0].path.split('M').length-1).toBe(2);
+    now+=13000;component.load();expect(component.trends[0].path.split('M').length-1).toBe(3);
+    report.status.telemetry.valid=false;component.load();expect(component.history[component.history.length-1].ths).toBeNull();
+    report.status.telemetry.valid=true;report.status.runId++;component.load();
+    expect(component.history.length).toBe(1);expect(component.trends[0].points.length).toBe(1);expect(service.command).not.toHaveBeenCalled();
+  });
+  it('uses each distinct controller state for its live explanation without claiming an improvement', () => {
+    report.status.state='holding';component.load();expect(component.activityText).toContain('does not guarantee an improvement');
+    report.status.state='restoring';component.load();expect(component.activityText).toContain('confirms restoration');
+    report.status.state='disabled';component.load();expect(component.activityText).toContain('explicit consent');
+  });
+
+  it('rejects overflowing derived energy without losing a legitimate zero-hash observation', () => {
+    expect(component.energy(Number.MIN_VALUE,Number.MAX_VALUE,false)).toBe('—');
+    report.status.telemetry.hashRateGHs=0;component.load();
+    expect(component.ths(0)).toBe('0.00');expect(component.history[component.history.length-1].ths).toBe(0);
+    expect(component.history[component.history.length-1].joules).toBeNull();
+    report.status.telemetry.hashRateGHs=1000;report.status.telemetry.powerW=Number.MAX_VALUE;component.load();
+    expect(component.trends.every(trend=>!trend.path.includes('NaN')&&!trend.path.includes('Infinity'))).toBeTrue();
+  });
+  it('does not invite another Start when an inactive controller still owns the held setting', () => {
+    report.status.state='holding';report.status.ownsSettings=true;component.load();
+    expect(component.ownershipText).toContain('Disable and restore');expect(component.canStart).toBeFalse();
+    report.status.telemetry.fault=true;component.load();expect(component.activityText).toContain('active protection fault');
+    report.status.telemetry.fault=false;report.status.reason='temperature-limit-backoff';component.load();expect(component.activityText).toContain('temperature ceiling');
+    report.status.reason='error-recovery-voltage-trial';component.load();expect(component.activityText).toContain('headroom');
+    report.status.reason='Manual or scheduled settings took ownership';component.load();expect(component.activityText).toContain('does not overwrite');
+  });
+  it('hides unpaired or nonpositive phase timing without changing the core report', () => {
+    const search={phaseElapsedSeconds:0,minimumSeconds:75,samples:0,minimumSamples:8,roundExperiments:0,roundExperimentLimit:24,rejectedWindows:0,reference:null,best:null};
+    for(const change of [{phaseElapsedSeconds:null},{minimumSeconds:null},{minimumSeconds:0}]) {
+      report.status.search={...search,...change};component.load();expect(component.search).toBeNull();expect(component.readError).toBe('');
+    }
+  });
+
 });

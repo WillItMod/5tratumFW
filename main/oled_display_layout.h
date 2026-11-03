@@ -10,7 +10,7 @@
 LV_FONT_DECLARE(lv_font_portfolio_6x8);
 
 typedef struct {
-    lv_obj_t *screen, *title, *rows[3], *rate, *unit, *temperature, *power, *thermal_fill, *qr;
+    lv_obj_t *screen, *title, *rows[3], *rate, *unit, *temperature, *power, *thermal_fill, *qr, *tuning_body;
     lv_obj_t *donut, *sprinkles[4];
     lv_obj_t *wifi_icon;
     FiveTratumOledPage page;
@@ -60,6 +60,14 @@ static inline FiveTratumOledView oled_create_view_on(lv_obj_t *parent, FiveTratu
     lv_obj_set_style_bg_color(v.screen, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(v.screen, LV_OPA_COVER, 0);
     lv_obj_remove_flag(v.screen, LV_OBJ_FLAG_SCROLLABLE);
+    if (page == OLED_TUNING) {
+        /* A bounded three-object page fits the existing shared LVGL pool.
+         * It needs no scrolling labels or animation allocations. */
+        v.title = oled_label(v.screen, 0, 0, 128, "TUNING - READ ONLY", false);
+        v.tuning_body = oled_label(v.screen, 0, 8, 128, "", false);
+        lv_obj_set_height(v.tuning_body,24);
+        return v;
+    }
     if (page == OLED_CANDIDATE) {
         v.donut = lv_image_create(v.screen);
         lv_image_set_src(v.donut, &oled_donut_variants[0]);
@@ -194,6 +202,34 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         snprintf(b, sizeof(b), "In %s Core %s", y, x);
         snprintf(c, sizeof(c), "ASIC %s", oled_mining_state(d));
         break;
+    case OLED_TUNING: {
+        title = "TUNING";
+        const GammaAutotuneDisplaySnapshot *s = &d->tuning;
+        if (!s->available) {
+            strcpy(a,"Tuning unavailable"); strcpy(b,"No current status"); strcpy(c,"Read only - use web");
+            break;
+        }
+        snprintf(a,sizeof(a),"%s %s",oled_tuning_priority(s->priority),oled_tuning_state(s));
+        if (s->telemetryFresh && s->currentAvailable && fwt_positive(s->current.frequencyMHz) && fwt_positive(s->current.coreVoltageMv))
+            snprintf(b,sizeof(b),"Set %.3fMHz %.0fmV",s->current.frequencyMHz,s->current.coreVoltageMv);
+        else strcpy(b,"Set --MHz --mV");
+        if (!s->telemetryFresh) strcpy(c,"Readings unavailable");
+        else if (s->fault || s->restoring || (!s->active && !s->ownsSettings)) strcpy(c,"Read only - use web");
+        else if (s->search.timed) {
+            char elapsed[8], samples[8];
+            if (s->search.phaseElapsedSeconds > 999) strcpy(elapsed,"999+");
+            else snprintf(elapsed,sizeof(elapsed),"%u",(unsigned)floor(fmax(0,s->search.phaseElapsedSeconds)));
+            if (s->search.samples > 99) strcpy(samples,"99+");
+            else snprintf(samples,sizeof(samples),"%u",s->search.samples);
+            snprintf(c,sizeof(c),"Min %s/%.0fs S%s/%u",elapsed,s->search.minimumSeconds,samples,s->search.minimumSamples);
+        } else {
+            char rejected[8];
+            if (s->search.rejectedWindows > 99) strcpy(rejected,"99+");
+            else snprintf(rejected,sizeof(rejected),"%u",s->search.rejectedWindows);
+            snprintf(c,sizeof(c),"Trial %u/%u Rej%s",s->search.roundExperiments,s->search.roundExperimentLimit,rejected);
+        }
+        break;
+    }
     case OLED_WIFI:
         title = "NETWORK";
         snprintf(a, sizeof(a), "%s", oled_text(d->ssid));
@@ -278,6 +314,10 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         snprintf(b, sizeof(b), "IP %s", oled_text(d->ip));
         strcpy(c, "Button to exit");
         break;
+    }
+    if (v->page == OLED_TUNING) {
+        lv_label_set_text_fmt(v->tuning_body,"%s\n%s\n%s",a,b,c);
+        return;
     }
     if (v->title) lv_label_set_text(v->title, title);
     if (v->qr) {

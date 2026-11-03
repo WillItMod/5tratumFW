@@ -1,9 +1,9 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { EMPTY, Subject, catchError, exhaustMap, filter, finalize, map, switchMap, take, takeUntil, tap, throwError, timeout, timer } from 'rxjs';
 import { AutotuneService } from '../../services/autotune.service';
-import { AutotuneConfig, AutotunePoint, AutotuneReport, AutotuneTelemetry } from '../../models/IAutotune';
+import { AutotuneConfig, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
 
-@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss'] })
+@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss', './autotune-goals.scss', './autotune-observations.scss', './autotune-readings.scss'] })
 export class AutotuneComponent implements OnInit, OnDestroy {
   report: AutotuneReport | null = null;
   edit: AutotuneConfig | null = null;
@@ -15,15 +15,21 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   waiverAccepted = false;
   readonly wholeMHz = false;
   readonly priorities = [
-    {value:'efficiency', name:'Standard Glazed', level:'Level 1', goal:'Efficiency', description:'Favour useful hashes per watt and lower heat.'},
-    {value:'balanced', name:'Jam Filled', level:'Level 2', goal:'Balanced', description:'Balance useful hashrate, efficiency and thermal headroom.'},
-    {value:'performance', name:'Cream Filled, Cherry on Top', level:'Level 3', goal:'Performance', description:'Favour sustained useful hashrate within the same protection limits.'},
+    {value:'efficiency', name:'Standard Glazed', level:'Level 1', goal:'Efficiency', description:'Seek lower energy per useful hash. A slower clock can win when the reduction in power outweighs the lost hashrate.'},
+    {value:'balanced', name:'Jam Filled', level:'Level 2', goal:'Balanced', description:'Weigh useful hashrate against energy use. Explore nearby clock and voltage points without choosing a fixed power preset.'},
+    {value:'performance', name:'Cream Filled, Cherry on Top', level:'Level 3', goal:'Performance', description:'Seek the highest sustained useful hashrate that passes measurement checks and stays within your limits, including your saved clock ceiling. It cannot search above that ceiling.'},
   ];
   private readonly destroyed = new Subject<void>();
   private requestedAt = -Infinity;
   private readEpoch = 0;
   private baseline = '';
   private startUnconfirmed = false;
+  // These are tab observations, not the controller's unique counter samples.
+  readonly historyLimit = 120;
+  history: {at: number; ths: number | null; joules: number | null}[] = [];
+  private historyRun: number | null = null;
+  private historyGap = false;
+
 
   constructor(private service: AutotuneService) {}
 
@@ -36,7 +42,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         if (epoch === this.readEpoch) this.accept(report, requestedAt);
         return EMPTY;
       }), catchError(() => {
-        if (epoch === this.readEpoch) this.readError = 'Live tuning status is unavailable. Check the connection and refresh before changing tuning.';
+        if (epoch === this.readEpoch) { this.historyGap = true; this.readError = 'Live tuning status is unavailable. Check the connection and refresh before changing tuning.'; }
         return EMPTY;
       }));
     }), takeUntil(this.destroyed)).subscribe();
@@ -50,9 +56,9 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const requestedAt = performance.now();
     this.service.get().pipe(takeUntil(this.destroyed),finalize(() => this.loading = false)).subscribe({
       next: report => { if (epoch === this.readEpoch) this.accept(report, requestedAt); },
-      error: error => this.readError = [404,501].includes(error?.status)
+      error: error => { this.historyGap = true; this.readError = [404,501].includes(error?.status)
         ? 'Auto-tuning requires a matching 5tratumFW application and web interface.'
-        : 'Could not read tuning status. Check the connection and refresh.',
+        : 'Could not read tuning status. Check the connection and refresh.'; },
     });
   }
   private config(value: AutotuneConfig): AutotuneConfig {
@@ -102,11 +108,12 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       && telemetry.errorPercentage! <= 100 && telemetry.worstErrorPercentage! <= 100;
   }
   private accept(report: AutotuneReport, requestedAt: number): boolean {
-    if (!this.validReport(report)) { this.readError = 'This application returned an unrecognised tuning report. Install its matching application and web interface.'; return false; }
+    if (!this.validReport(report)) { this.historyGap = true; this.readError = 'This application returned an unrecognised tuning report. Install its matching application and web interface.'; return false; }
     const dirty = this.hasUnsavedChanges;
     this.report = report;
     this.requestedAt = requestedAt;
     this.readError = '';
+    this.observe();
     if (this.optionsUsable && (!this.edit || !dirty)) {
       this.edit = this.config(report.config);
       this.baseline = JSON.stringify(this.edit);
@@ -154,6 +161,129 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   metric(value: unknown, digits = 1): string { return this.telemetryFresh && this.finite(value) ? value.toFixed(digits) : '—'; }
   pointText(value: AutotunePoint | null | undefined): string {
     return value && this.pointValid(value) ? `${value.frequencyMHz.toFixed(2).replace(/\.?0+$/,'')} MHz · ${value.coreVoltageMv.toFixed(0)} mV` : '—';
+  }
+  get runningGoal(): string {
+    const priority = this.priorities.find(item => item.value === this.report?.config?.priority);
+    return this.isFresh && priority ? `${priority.goal} · ${priority.name}` : 'Unavailable';
+  }
+  get ownershipText(): string {
+    if (!this.isFresh) return 'Status unavailable';
+    if (this.report!.status.state === 'restoring') return 'Restoration in progress';
+    if (this.report!.status.active) return 'Run in progress';
+    if (this.report!.status.ownsSettings) return 'Holding result · Disable and restore to release control';
+    return 'Explicit Start required';
+  }
+  get activityText(): string {
+    if (!this.isFresh) return 'Waiting for a fresh report. Earlier observations are kept below; they do not show the miner’s current condition.';
+    const report = this.report!;
+    if (report.status.telemetry.fault === true) return 'The miner reports an active protection fault. Tuning cannot clear it or force settings through it; check the miner’s reason below.';
+    if (!report.supported) return 'Automatic tuning is unavailable for this hardware or operating state. Restore remains available when the miner has a backup or owns settings.';
+    const reasons: Record<string,string> = {
+      'temperature-limit-backoff':'Backing off because a saved temperature ceiling is close or exceeded. Safety can require a larger step than a normal experiment.',
+      'power-limit-backoff':'Backing off because the reported power ceiling is close or exceeded. This is the miner’s power reading, not wall power.',
+      'new-user-limits':'Adjusting to newly saved search limits. The controller must stay inside those bounds.',
+      'error-recovery-voltage-trial':'Trying a small voltage increase to reduce ASIC timing errors, after checking temperature and power headroom. It must still settle and pass measurement checks.',
+      'error-recovery-clock-backoff':'Reducing clock to recover from excessive ASIC errors. Voltage recovery is not allowed without sufficient headroom.',
+      'restoring-better-measured-point':'Returning to a previously measured better point after a comparison failed its acceptance checks. This is separate from restoring the original backup.',
+      'rollback-lacks-headroom':'Backing off because returning to the measured best point would lack temperature or power headroom.',
+      'held-point-became-unstable':'The held result no longer meets error or stability requirements. Reducing load before taking new measurements.',
+      'waiting-for-valid-telemetry':'Waiting for fresh, valid counters and sensors. No valid comparison window can be completed yet.',
+      'conditions-changed-remeasuring':'Conditions changed, so the controller is measuring a new round reference before further comparisons.',
+      'manual-control':'Manual controls took ownership. Tuning has yielded; it does not overwrite the manual change.',
+      'manual-settings-changed':'Settings changed outside the tuner. Tuning has yielded to the other control.',
+      'Manual or scheduled settings took ownership':'Manual or scheduled settings took ownership. Tuning has yielded and does not overwrite that change.',
+      'External control took ownership':'Another control took ownership. Tuning has yielded and does not overwrite that change.',
+      'Firmware update took ownership':'A firmware update took ownership. Tuning is interrupted; the update does not authorize another tuning run.',
+      'Restart requested':'A restart took ownership. Restarting does not automatically start another tuning run.',
+      'Shutdown requested':'Shutdown took ownership. Tuning cannot force settings through shutdown protection.',
+      'An ASIC reports too little work for reliable tuning':'An ASIC reports too little useful work for a reliable comparison. The controller needs valid work from the required chain before tuning.',
+      'Original settings restored':'The miner confirms the original pre-tuning settings were restored. Saved tuning options do not start another run.',
+      'backup-restored':'The miner confirms the original pre-tuning backup was restored. Saved tuning options do not start another run.',
+    };
+    if (reasons[report.status.reason]) return reasons[report.status.reason];
+    if (report.status.state !== 'restoring' && !this.telemetryFresh) return 'Waiting for fresh, valid counters and sensor readings. Current readings and safe tuning readiness cannot be confirmed.';
+    const messages: Record<string,string> = {
+      disabled:'The controller is off. Saved priorities and Continuous On do not start a run; Start always needs your explicit consent.',
+      baseline:'Measuring a reference for this search round before comparing nearby settings. The original settings backup stays separate.',
+      settling:'Letting the requested clock and voltage settle before collecting a comparison window.',
+      measuring:'Collecting useful hashrate, reported power, ASIC errors and temperatures at the current request. A noisy or unsafe window can be rejected.',
+      applying:'Requesting an adjustment within the saved bounds. A request is not a measurement of the ASIC rail or clock.',
+      holding:'Holding the result of a completed bounded round. This does not guarantee an improvement over its reference.',
+      observing:'Watching for a meaningful change in conditions before another round. Continuous tuning can keep the same setting when conditions stay stable.',
+      suspended:'Adjustments are suspended. Check the miner’s reason and cooling, temperature, mining and sensor status.',
+      faulted:'The miner reports a fault. Tuning cannot clear a protection fault or force a restore through unsafe conditions.',
+      restoring:'Restoring the retained original settings. The request is complete only after the miner confirms restoration and releases control.',
+    };
+    return messages[this.report!.status.state] || 'Reading the controller’s current state.';
+  }
+  get search(): AutotuneSearch | null {
+    const value = this.report?.status.search;
+    if (!this.isFresh || !value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const seconds = (n: unknown) => n === null || this.finite(n) && n >= 0;
+    const count = (n: unknown) => this.finite(n) && Number.isInteger(n) && n >= 0;
+    const means = (n: unknown) => n === null || !!n && typeof n === 'object' && !Array.isArray(n)
+      && this.finite((n as any).hashRateGHs) && (n as any).hashRateGHs > 0 && this.finite((n as any).powerW) && (n as any).powerW > 0 && this.energyValue((n as any).hashRateGHs,(n as any).powerW) !== null;
+    return seconds(value.phaseElapsedSeconds) && seconds(value.minimumSeconds)
+      && ((value.phaseElapsedSeconds === null && value.minimumSeconds === null) || (value.phaseElapsedSeconds !== null && value.minimumSeconds !== null && value.minimumSeconds > 0))
+      && [value.samples,value.minimumSamples,value.roundExperiments,value.roundExperimentLimit,value.rejectedWindows].every(count)
+      && value.minimumSamples > 0 && value.roundExperimentLimit > 0 && value.roundExperiments <= value.roundExperimentLimit
+      && means(value.reference) && means(value.best) ? value : null;
+  }
+  get phaseProgress(): number {
+    const value = this.search;
+    return value?.minimumSeconds && value.phaseElapsedSeconds !== null ? Math.min(100,100*(value.phaseElapsedSeconds/value.minimumSeconds)) : 0;
+  }
+  duration(value: number | null): string { return this.finite(value) ? `${Math.floor(value)} s` : '—'; }
+  ths(value: unknown, live = true): string { return (!live || this.telemetryFresh) && this.finite(value) ? (value/1000).toFixed(2) : '—'; }
+  private energyValue(hashRateGHs: unknown, powerW: unknown): number | null {
+    if (!this.finite(hashRateGHs) || hashRateGHs <= 0 || !this.finite(powerW) || powerW <= 0) return null;
+    const value = powerW / (hashRateGHs / 1000);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  energy(hashRateGHs: unknown, powerW: unknown, live = true): string {
+    const value = this.energyValue(hashRateGHs,powerW);
+    return (!live || this.telemetryFresh) && value !== null ? value.toFixed(2) : '—';
+  }
+  get headroom(): {name: string; value: string; used: number; over: boolean}[] {
+    if (!this.optionsUsable || !this.telemetryFresh) return [];
+    const config = this.report!.config, t = this.report!.status.telemetry;
+    return [{name:'ASIC',current:t.asicTempC!,limit:config.maxAsicTempC,unit:'°C'},
+      {name:'VRM',current:t.vrmTempC!,limit:config.maxVrmTempC,unit:'°C'},
+      {name:'Reported power',current:t.powerW!,limit:config.maxPowerW,unit:'W'}].map(row => ({name:row.name,
+        value:`${Math.abs(row.limit-row.current).toFixed(1)} ${row.unit} ${row.current > row.limit ? 'over ceiling' : 'below ceiling'}`,
+        used:Math.max(0,Math.min(100,100*row.current/row.limit)),over:row.current > row.limit}));
+  }
+  private observe(): void {
+    const at = performance.now(), run = this.report!.status.runId;
+    if (this.historyRun !== run) { this.history = []; this.historyRun = run; this.historyGap = false; }
+    const last = this.history[this.history.length-1];
+    if (last && (this.historyGap || at-last.at > 12000)) this.history.push({at:at-1,ths:null,joules:null});
+    const t = this.report!.status.telemetry;
+    const valid = this.telemetryFresh;
+    this.history.push({at,ths:valid ? t.hashRateGHs!/1000 : null,joules:valid ? this.energyValue(t.hashRateGHs,t.powerW) : null});
+    this.history = this.history.filter(point => at-point.at <= 600000).slice(-this.historyLimit);
+    this.historyGap = !valid;
+  }
+  get trends(): {name: string; unit: string; path: string; points: {x:number;y:number}[]; minimum:string; maximum:string}[] {
+    return ([{name:'Useful hashrate',unit:'TH/s',key:'ths'},{name:'Energy per useful hash',unit:'J/TH',key:'joules'}] as const).map(series => {
+      const values = this.history.map(point => point[series.key]).filter((n): n is number => n !== null);
+      const min = values.length ? Math.min(...values) : 0, max = values.length ? Math.max(...values) : 0;
+      const padding = Math.max((max-min)*.15,max*.01,.01), low=Math.max(0,min-padding), high=Number.isFinite(max+padding) ? max+padding : max;
+      const first = this.history[0]?.at || 0, last = this.history[this.history.length-1]?.at || first;
+      let connected = false; const points: {x:number;y:number}[] = [];
+      const path = this.history.map(point => {
+        const value = point[series.key];
+        if (value === null) { connected=false; return ''; }
+        const x=8+584*(point.at-first)/Math.max(last-first,1000), y=88-72*((value-low)/(high-low));
+        const command=connected ? 'L' : 'M'; connected=true; points.push({x,y}); return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
+      }).join(' ');
+      return {name:series.name,unit:series.unit,path,points,minimum:values.length ? low.toFixed(2) : '—',maximum:values.length ? high.toFixed(2) : '—'};
+    });
+  }
+  get historySpan(): string {
+    if (this.history.length < 2) return 'Waiting for more tab observations';
+    const clock = (at: number) => new Date(performance.timeOrigin+at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `${clock(this.history[0].at)} – ${clock(this.history[this.history.length-1].at)} · run ${this.historyRun}`;
   }
   save(): void {
     if (!this.canSave) return;

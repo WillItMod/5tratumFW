@@ -7,11 +7,13 @@
 #include <stdio.h>
 #include <math.h>
 #include <inttypes.h>
+#include "autotune_runtime.h"
 
 typedef enum {
     OLED_RATE, OLED_HEALTH, OLED_SHARES, OLED_ROUTE, OLED_OPERATING, OLED_WIFI,
     OLED_JOB, OLED_CANDIDATE, OLED_FAULT, OLED_OVERHEAT, OLED_SELF_TEST,
-    OLED_UPDATE, OLED_SETUP, OLED_CONNECTION, OLED_BOOT, OLED_CREDITS, OLED_IDENTIFY
+    OLED_UPDATE, OLED_SETUP, OLED_CONNECTION, OLED_BOOT, OLED_CREDITS, OLED_IDENTIFY,
+    OLED_TUNING
 } FiveTratumOledPage;
 
 typedef struct {
@@ -27,7 +29,30 @@ typedef struct {
     const char *best_session, *best_ever, *host, *ip, *ssid, *ap_ssid;
     const char *network_difficulty, *scriptsig, *message, *result, *finished;
     const char *filename, *update_status, *board_name, *board_version;
+    GammaAutotuneDisplaySnapshot tuning;
 } FiveTratumOledData;
+
+static inline const char *oled_tuning_priority(fwt_priority priority)
+{
+    return priority == FWT_PERFORMANCE ? "PERFORMANCE" : priority == FWT_BALANCED ? "BALANCED" : "EFFICIENCY";
+}
+static inline const char *oled_tuning_state(const GammaAutotuneDisplaySnapshot *s)
+{
+    if (s->fault) return "BLOCKED";
+    if (s->restoring) return "RESTORING";
+    if (!s->telemetryFresh && (s->active || s->ownsSettings)) return "WAITING";
+    switch (s->state) {
+    case FWT_BASELINE: return "BASELINE";
+    case FWT_SETTLING: return "SETTLING";
+    case FWT_MEASURING: return "MEASURING";
+    case FWT_HOLDING: return "HOLDING";
+    case FWT_OBSERVING: return "OBSERVING";
+    case FWT_SUSPENDED: return "SUSPENDED";
+    case FWT_FAULTED: return "FAULTED";
+    case FWT_APPLYING: return "APPLYING";
+    default: return "DISABLED";
+    }
+}
 
 #define OLED_DONUT_VARIANTS 6u
 #define OLED_CANDIDATE_ANIMATION_US UINT64_C(6000000)
