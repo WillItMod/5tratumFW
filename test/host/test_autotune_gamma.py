@@ -52,6 +52,7 @@ class GammaAutotuneTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(),'PASS')
     def test_waiver_required_before_backup_or_ownership(self): self.run_case('waiver')
     def test_get_is_read_only_and_authorization_precedes_body(self): self.run_case('read-only')
+    def test_cached_regulator_diagnostics_preserve_raw_status_age_and_fault_without_io(self): self.run_case('strict-diagnostic')
     def test_backup_is_once_per_device_retained_across_runs_and_reboot(self): self.run_case('backup-once')
     def test_backup_write_or_commit_failure_denies_activation(self): self.run_case('backup-failure')
     def test_backup_binding_corruption_blocks_start_without_erase(self): self.run_case('backup-binding')

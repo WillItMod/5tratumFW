@@ -152,6 +152,37 @@ int main(int argc,char **argv) {
         assert(writes==before&&sensor_reads==reads&&!tuner.core.owns);
         authorized=false;
         httpd_req_t req=tune_request(true,"{\"action\":\"stop\"}");assert(req.code==401&&req.received==0&&writes==before);
+    } else if(!strcmp(name,"strict-diagnostic")) {
+        unsigned before=writes,reads=sensor_reads;
+        tuner.strict.status_word=0x1234;tuner.strict.status_vout=0x10;
+        tuner.strict.status_iout=0x20;tuner.strict.status_input=0x08;
+        tuner.strict.status_temperature=0x40;tuner.strict.status_cml=0x80;
+        tuner.input.fault=true;tuner.override_reason="mining-paused-or-faulted";
+        const uint64_t success_at=tuner.strict_success_at;
+        host_now+=UINT64_C(3000000);
+        cJSON *schema=report();assert(schema);
+        const cJSON *d=cJSON_GetObjectItemCaseSensitive(schema,"diagnostics");
+        const char *keys[]={"statusWord","statusVout","statusIout","statusInput","statusTemperature","statusCml"};
+        const unsigned values[]={0x1234,0x10,0x20,0x08,0x40,0x80};
+        for(unsigned i=0;i<6;++i) assert(cJSON_GetObjectItemCaseSensitive(d,keys[i])->valueint==values[i]);
+        assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(d,"sensorReadSucceeded")));
+        assert(cJSON_GetObjectItemCaseSensitive(d,"vinV")->valuedouble==tuner.strict.vin);
+        assert(cJSON_GetObjectItemCaseSensitive(d,"ioutA")->valuedouble==tuner.strict.iout);
+        assert(cJSON_GetObjectItemCaseSensitive(d,"lastSuccessAgeSeconds")->valuedouble==3);
+        assert(strstr(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(schema,"status"),"reason")->valuestring,"output-voltage warning or fault"));
+        cJSON_Delete(schema);
+        tuner.strict.status_vout=tuner.strict.status_iout=tuner.strict.status_input=tuner.strict.status_temperature=0;
+        schema=report();assert(strstr(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(schema,"status"),"reason")->valuestring,"communication or internal fault"));cJSON_Delete(schema);
+        assert(writes==before&&sensor_reads==reads&&tuner.input.fault&&tuner.strict.status_cml==0x80);
+        sensors_ok=false;observe();assert(!tuner.sensor_ok&&tuner.strict_success_at==success_at);
+        schema=report();d=cJSON_GetObjectItemCaseSensitive(schema,"diagnostics");
+        assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(d,"sensorReadSucceeded")));
+        assert(cJSON_GetObjectItemCaseSensitive(d,"lastSuccessAgeSeconds")->valuedouble==3);
+        assert(cJSON_GetObjectItemCaseSensitive(d,"lastAttemptAgeSeconds")->valuedouble==0);
+        assert(cJSON_GetObjectItemCaseSensitive(d,"statusCml")->valueint==0x80);
+        cJSON_Delete(schema);assert(writes==before&&sensor_reads==reads+1);
+        tuner.strict_success_at=0;schema=report();d=cJSON_GetObjectItemCaseSensitive(schema,"diagnostics");
+        assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(d,"statusWord"))&&cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(d,"vinV"))&&cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(d,"lastSuccessAgeSeconds")));cJSON_Delete(schema);
     } else if(!strcmp(name,"backup-once")) {
         start();Entry *original=find(2,"backup");assert(original&&original->size);
         size_t length=original->size;unsigned char bytes[2048];memcpy(bytes,original->bytes,length);

@@ -35,7 +35,7 @@ typedef struct {
     bool initialized, supported, storage_ok, backup_available, backup_restored;
     bool restore_pending, restore_committed, confirming, commanded, frozen;
     bool rail_wait, rail_commanded;
-    uint64_t observer_until, last_poll, sensor_at, applied_at, generation;
+    uint64_t observer_until, last_poll, sensor_at, strict_success_at, applied_at, generation;
     uint64_t actuation_started, rail_sample_at;
     uint32_t owner_epoch, tx_before;
     unsigned confirmations, backup_matches, rail_confirmations;
@@ -354,6 +354,7 @@ static void poll_input(GlobalState *state, uint64_t now) {
         tuner.sensor_at = began;
         if (tuner.sensor_ok) {
             tuner.strict = strict;
+            tuner.strict_success_at = began;
             tuner.input.asicTempC = temperature;
             tuner.input.vrmTempC = strict.temperature_c;
             tuner.input.voltageReadbackMv = strict.vout * 1000.0;
@@ -597,6 +598,19 @@ static bool add_point(cJSON *object, const char *name, bool available, fwt_point
     return item && cJSON_AddNumberToObject(item,"frequencyMHz",point.frequencyMHz) &&
         cJSON_AddNumberToObject(item,"coreVoltageMv",point.coreVoltageMv);
 }
+static const char *inactive_fault_reason(void) {
+    if (tuner.core.active) return NULL;
+    if (tuner.device && (tuner.device->SYSTEM_MODULE.hardware_fault || tuner.device->SYSTEM_MODULE.overheat_mode))
+        return "Miner hardware protection is active; tuning is disabled";
+    if (!tuner.input.fault || !tuner.sensor_ok) return NULL;
+    if (tuner.strict.status_vout) return "Voltage regulator reports an output-voltage warning or fault; tuning is disabled";
+    if (tuner.strict.status_iout) return "Voltage regulator reports an output-current warning or fault; tuning is disabled";
+    if (tuner.strict.status_input) return "Voltage regulator reports an input-power warning or fault; tuning is disabled";
+    if (tuner.strict.status_temperature) return "Voltage regulator reports a temperature warning or fault; tuning is disabled";
+    if (tuner.strict.status_cml) return "Voltage regulator reports a communication or internal fault; tuning is disabled";
+    if (tuner.strict.iout >= 25.0) return "Voltage regulator output current reaches the 25 A tuning limit";
+    return "Miner protection is active; tuning is disabled";
+}
 static cJSON *report(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) return NULL;
@@ -608,8 +622,9 @@ static cJSON *report(void) {
     cJSON *guidance = cJSON_AddObjectToObject(root,"guidance");
     cJSON *status = cJSON_AddObjectToObject(root,"status");
     cJSON *backup = cJSON_AddObjectToObject(root,"backup");
+    cJSON *diagnostic = cJSON_AddObjectToObject(root,"diagnostics");
     cJSON *config = config_json(&tuner.core.config);
-    if (!hardware || !limits || !guidance || !status || !backup || !config) {cJSON_Delete(config); goto failed;}
+    if (!hardware || !limits || !guidance || !status || !backup || !diagnostic || !config) {cJSON_Delete(config); goto failed;}
     if (!cJSON_AddItemToObject(root,"config",config)) {cJSON_Delete(config); goto failed;}
 #define STR(o,k,v) do {if(!cJSON_AddStringToObject((o),(k),(v))) goto failed;} while(0)
 #define NUM(o,k,v) do {if(!cJSON_AddNumberToObject((o),(k),(v))) goto failed;} while(0)
@@ -634,8 +649,9 @@ static cJSON *report(void) {
     STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Frequency and voltage upper bounds initially match your saved settings; raising them is an explicit experimental choice. PLL frequency is computed from commands, not measured clock readback.");
     BOOL(guidance,"experimental",true);
     STR(status,"state",tuner.restore_pending ? "restoring" : fwt_state_name(tuner.core.state));
+    const char *fault_reason = inactive_fault_reason();
     STR(status,"reason",!tuner.storage_ok ? "storage-unavailable" :
-        tuner.override_reason ? tuner.override_reason : tuner.core.reason);
+        fault_reason ? fault_reason : tuner.override_reason ? tuner.override_reason : tuner.core.reason);
     BOOL(status,"active",tuner.core.active); BOOL(status,"ownsSettings",tuner.core.owns || tuner.restore_pending);
     NUM(status,"runId",tuner.core.runId); NUM(status,"experiments",tuner.core.experiments);
     if (!add_point(status,"baseline",tuner.core.baselineAvailable,tuner.core.baseline) ||
@@ -650,6 +666,20 @@ static cJSON *report(void) {
     const bool fresh = mining_active && tuner.input.valid && now >= tuner.input.capturedAtUs && now-tuner.input.capturedAtUs <= TUNE_FRESH_US;
     BOOL(telemetry,"valid",fresh); BOOL(telemetry,"miningActive",mining_active);
     BOOL(telemetry,"fault",fault); BOOL(telemetry,"fanOk",fresh && tuner.input.fanOk);
+    /* Cached evidence only. A GET neither polls hardware nor rejuvenates an
+     * unsuccessful acquisition's previous successful regulator sample. */
+    BOOL(diagnostic,"sensorReadSucceeded",tuner.sensor_ok);
+    if (tuner.sensor_at && now >= tuner.sensor_at) NUM(diagnostic,"lastAttemptAgeSeconds",(now-tuner.sensor_at)/1000000.0);
+    else if (!cJSON_AddNullToObject(diagnostic,"lastAttemptAgeSeconds")) goto failed;
+    if (tuner.strict_success_at && now >= tuner.strict_success_at) NUM(diagnostic,"lastSuccessAgeSeconds",(now-tuner.strict_success_at)/1000000.0);
+    else if (!cJSON_AddNullToObject(diagnostic,"lastSuccessAgeSeconds")) goto failed;
+#define CACHED(k,v) do {if(tuner.strict_success_at) {NUM(diagnostic,(k),(v));} else if(!cJSON_AddNullToObject(diagnostic,(k))) goto failed;} while(0)
+    CACHED("statusWord",tuner.strict.status_word);
+    CACHED("statusVout",tuner.strict.status_vout); CACHED("statusIout",tuner.strict.status_iout);
+    CACHED("statusInput",tuner.strict.status_input); CACHED("statusTemperature",tuner.strict.status_temperature);
+    CACHED("statusCml",tuner.strict.status_cml);
+    CACHED("vinV",tuner.strict.vin); CACHED("ioutA",tuner.strict.iout);
+#undef CACHED
 #define READING(k,v) do {if(fresh) {NUM(telemetry,(k),(v));} else if(!cJSON_AddNullToObject(telemetry,(k))) goto failed;} while(0)
     READING("hashRateGHs",tuner.input.hashRateGHs); READING("errorPercentage",tuner.input.errorPercentage);
     READING("worstErrorPercentage",tuner.input.worstErrorPercentage); READING("powerW",tuner.input.powerW);
