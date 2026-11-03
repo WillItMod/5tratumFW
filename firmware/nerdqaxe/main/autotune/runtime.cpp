@@ -48,6 +48,7 @@ JsonDocument bootOptions;
 bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
 bool recoveryRequested=false,recoveryAutomatic=false;
 const char *recoveryPhase="idle",*recoveryReason="No recovery requested";
+const char *recoveryStartupGuardFailure=nullptr;
 uint64_t recoveryPolicy=0,recoveryStarted=0,recoveryLastSample=0;
 unsigned recoverySamples=0;
 std::atomic_uint recoveryStartups{0};
@@ -387,17 +388,30 @@ void blockRestore(const char *reason) {
     restoreCommitFailed=true;adapterReason=reason;
     if(recoveryRequested){recoveryRequested=false;recoveryPhase="blocked";recoveryReason=reason;}
 }
-bool recoverySensorsSafe(Board *board,bool requireOff) {
-    if(hardRecoveryFault(board)||!revisionCurrent()||(requireOff&&!board->isRecoveryPowerOff())) return false;
-    TuningSensors sample{};if(!board->readRecoverySensors(sample)) return false;
+bool recoverySensorsSafe(Board *board,bool requireOff,const char **failure=nullptr) {
+    const auto reject=[failure](const char *reason){if(failure)*failure=reason;return false;};
+    if(hardRecoveryFault(board)) return reject("Hardware protection blocked recovery startup");
+    if(!revisionCurrent()) return reject("External control interrupted recovery startup");
+    if(requireOff&&!board->isRecoveryPowerOff()) return reject("ASIC power is not confirmed off");
+    TuningSensors sample{};
+    if(!board->readRecoverySensors(sample)) return reject("Recovery startup strict sensor or regulator-status read failed");
     const uint64_t now=esp_timer_get_time();
-    if(recoveryAutomatic && !(sample.asicTempC+5<controller.config.maxAsicTempC && sample.vrmTempC+5<controller.config.maxVrmTempC)) return false;
+    if(sample.capturedAtUs<=0||static_cast<uint64_t>(sample.capturedAtUs)>now||now-sample.capturedAtUs>5000000)
+        return reject("Recovery startup sensor sample is stale");
+    if(!std::isfinite(sample.vin)||sample.vin<board->getMinVin()||sample.vin>board->getMaxVin())
+        return reject("Recovery startup input voltage is outside limits");
+    // The 5 C cooling margin admits the off-to-on transition. Once normal
+    // startup is powered, keep enforcing the user ceilings rather than
+    // treating harmless warm-up inside that margin as a new hardware fault.
+    const double margin=requireOff?5.0:0.0;
+    if(recoveryAutomatic && !(sample.asicTempC+margin<controller.config.maxAsicTempC && sample.vrmTempC+margin<controller.config.maxVrmTempC))
+        return reject("Recovery startup reached a user thermal ceiling");
     const double asic=std::min(std::min(80.0,controller.limits.maxAsicTempC>0?controller.limits.maxAsicTempC:80.0),backup["settings"][NVS_CONFIG_OVERHEAT_TEMP].as<double>()-5);
     const double vrm=std::min(std::min(95.0,controller.limits.maxVrmTempC>0?controller.limits.maxVrmTempC:95.0),backup["settings"][NVS_CONFIG_FAN1_OVERHEAT].as<double>()-5);
-    return sample.capturedAtUs>0&&static_cast<uint64_t>(sample.capturedAtUs)<=now&&now-sample.capturedAtUs<=5000000&&
-        std::isfinite(sample.vin)&&sample.vin>=board->getMinVin()&&sample.vin<=board->getMaxVin()&&
-        std::isfinite(sample.asicTempC)&&sample.asicTempC>0&&sample.asicTempC+3<asic&&
-        std::isfinite(sample.vrmTempC)&&sample.vrmTempC>0&&sample.vrmTempC+3<vrm;
+    if(!std::isfinite(sample.asicTempC)||sample.asicTempC<=0||sample.asicTempC+3>=asic||
+       !std::isfinite(sample.vrmTempC)||sample.vrmTempC<=0||sample.vrmTempC+3>=vrm)
+        return reject("Recovery startup sensor or original protection temperature is unsafe");
+    return true;
 }
 // NVS writes require an internal-RAM task stack. The ordinary power task uses
 // PSRAM; this bounded worker borrows the same hardware owner mutex, revalidates
@@ -538,7 +552,12 @@ void powerReady() {
 bool transitionAllowed() { return !firmwareUpdates.load() && !permanentFreeze.load() && ((!pending && !restoring) || revisionCurrent()); }
 bool transitionHealthy() {
     if (!transitionAllowed()) return false;
-    if(preserveRecoveryFaults()) return recoveryRequested && FiveTratumMining::policyRevision()==recoveryPolicy && recoverySensorsSafe(SYSTEM_MODULE.getBoard(),false);
+    if(preserveRecoveryFaults()) {
+        if(!recoveryRequested||FiveTratumMining::policyRevision()!=recoveryPolicy) {
+            recoveryStartupGuardFailure="Power policy interrupted recovery startup";return false;
+        }
+        return recoverySensorsSafe(SYSTEM_MODULE.getBoard(),false,&recoveryStartupGuardFailure);
+    }
     if (!pending) {transitionHealthUntilUs=0;return true;}
     const uint64_t now=esp_timer_get_time();
     if (transitionHealthUntilUs && now<transitionHealthUntilUs) return true;
@@ -594,9 +613,10 @@ void tick() {
             uint64_t next=0;
             if(!FiveTratumMining::resumeForRecovery(recoveryPolicy,next)){blockRestore("Power policy changed; retry recovery");return;}
             recoveryPolicy=next;
+            recoveryStartupGuardFailure=nullptr;
             {RecoveryStartupGuard startup;FiveTratumMining::updateControl();}
             if(!revisionCurrent()||FiveTratumMining::policyRevision()!=recoveryPolicy){recoveryRequested=false;restoring=false;recoveryPhase="blocked";recoveryReason="External control interrupted recovery";return;}
-            if(hardRecoveryFault(board)||!board->isInitialized()||!FiveTratumMining::miningWritesAllowed()){blockRestore("Normal mining resume failed; resolve protection and retry");return;}
+            if(hardRecoveryFault(board)||!board->isInitialized()||!FiveTratumMining::miningWritesAllowed()){blockRestore(recoveryStartupGuardFailure?recoveryStartupGuardFailure:"Normal mining resume failed; resolve protection and retry");return;}
             recoveryPhase="verifying";recoveryReason="Checking original voltage, clock, fans and fresh mining work";
             recoveryStarted=esp_timer_get_time();recoveryLastSample=0;recoverySamples=0;return;
         }
@@ -775,6 +795,8 @@ bool report(JsonDocument &document) {
     if (restoreMinFreeBytes==UINT32_MAX) diagnostic["restoreWorkerMinFreeBytes"]=nullptr;
     else diagnostic["restoreWorkerMinFreeBytes"]=restoreMinFreeBytes;
     diagnostic["restoreWorkerStackLow"]=restoreStackLow;
+    if(recoveryStartupGuardFailure) diagnostic["recoveryStartupGuardReason"]=recoveryStartupGuardFailure;
+    else diagnostic["recoveryStartupGuardReason"]=nullptr;
     return !document.overflowed();
 }
 

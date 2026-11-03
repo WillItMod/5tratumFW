@@ -25,7 +25,7 @@ static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
-    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
+    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";recoveryStartupGuardFailure=nullptr;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
     ++hostGeneration;
@@ -58,6 +58,23 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario=="recovery-startup-margin") {
+        using namespace FiveTratumAutotune;
+        start();FiveTratumMining::manualOverride(true);FiveTratumMining::updateControl();
+        assert(response("{\"action\":\"restore-and-resume\"}")["ok"]==true);recoveryAutomatic=true;
+        asicDegrees=50;vrmDegrees=60;assert(recoverySensorsSafe(&hostBoard,true));
+        // Actual off admission is still 5 C below the configured 60/70 caps.
+        asicDegrees=56;vrmDegrees=66;assert(!recoverySensorsSafe(&hostBoard,true));
+        {RecoveryStartupGuard startup;
+            assert(transitionHealthy()); // Powered startup may warm within the user ceilings.
+            asicDegrees=60;assert(!transitionHealthy());assert(strstr(recoveryStartupGuardFailure,"user thermal ceiling"));asicDegrees=56;
+            vrmDegrees=70;assert(!transitionHealthy());vrmDegrees=66;
+            offSensorFail=true;assert(!transitionHealthy());assert(strstr(recoveryStartupGuardFailure,"sensor or regulator-status read failed"));offSensorFail=false;
+            SYSTEM_MODULE.error=Board::TEMP_FAULT;assert(!transitionHealthy());SYSTEM_MODULE.error=Board::NONE;
+            ++hostPolicyRevision;assert(!transitionHealthy());
+        }
+        assert(recoveryResumeCalls==0&&!preserveRecoveryFaults());return 0;
+    }
     if(scenario.rfind("auto-",0)==0) {
         using namespace FiveTratumAutotune;
         if(scenario=="auto-worker-failure") {workerCreateFail=true;assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="storage-unavailable"&&!controller.active);return 0;}

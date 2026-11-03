@@ -72,7 +72,8 @@ public:
     }
     bool start() override {
         m_startError = "ASIC initialization/protection failed; restart required";
-        if (!controlledBoard || !guard(this)) return false;
+        if (!controlledBoard) return false;
+        if (!guard(this)) {m_startError="ASIC protection guard failed before initialization; restart required";return false;}
         Asic *asic = controlledBoard->getAsicDriver();
         if (!asic) return false;
         // The stopped/reset ASIC boots at 115200 with its initial PLL/mask.
@@ -86,7 +87,8 @@ public:
         asic->setRecoveryGuard(guard, this);
         const bool initialized = controlledBoard->initAsics();
         asic->setRecoveryGuard(nullptr, nullptr);
-        if (!initialized || !guard(this)) return false;
+        if (!initialized) {m_startError="ASIC initialization sequence/protection failed; restart required";return false;}
+        if (!guard(this)) {m_startError="ASIC protection guard failed after initialization; restart required";return false;}
         if (expectedAsicCount == 0 || controlledBoard->getDetectedAsicCount() != static_cast<int>(expectedAsicCount)) {
             m_startError = expectedAsicCount == 8 ? "ASIC chain did not report eight chips; restart required" :
                                                   "ASIC chain did not report four chips; restart required";
