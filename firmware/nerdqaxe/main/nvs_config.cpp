@@ -5,6 +5,7 @@
 #include "nvs_config.h"
 #include "strict_config_read.h"
 #include "autotune/write_gate.h"
+#include "autotune/storage_context.h"
 #include "http_server/config_transaction.h"
 #include "macros.h"
 #include "ArduinoJson.h"
@@ -63,6 +64,7 @@ static EventGroupHandle_t s_flush_eg = nullptr;
 // Serialize s_doc and write to NVS. Caller must hold s_mutex.
 static bool write_document_to_nvs(const JsonDocument &document)
 {
+    if (!FiveTratumAutotune::storageContextAllowed()) return false;
     size_t len = measureJson(document) + 1;
     char *buf = (char *) MALLOC(len);
     if (!buf) {
@@ -311,6 +313,7 @@ void flush()
 
 void init()
 {
+    if (!FiveTratumAutotune::storageContextAllowed()) return;
     if (s_initialized) return;
 
     nvs_handle h;
@@ -470,6 +473,7 @@ bool validTuningSettings(JsonObjectConst input) {
     return true;
 }
 bool restoreTuningSettings(JsonObjectConst input) {
+    if (!FiveTratumAutotune::storageContextAllowed()) return false;
     if (!validTuningSettings(input)) return false;
     {
         PThreadGuard guard(s_mutex);

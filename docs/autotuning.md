@@ -153,3 +153,7 @@ See the [design requirements](dynamic-autotuning-design.md) and
 [primary-source research](dynamic-autotuning-research.md). A separate validation
 record will identify the exact source, software checks, image pairs and any
 supervised miner observations before publication.
+
+The [3 November validation and memory-repair record](validation-autotune-memory-20261103.md)
+describes the earlier physical failures, preserved-settings recoveries and the
+qualification still required before these candidates can be published.

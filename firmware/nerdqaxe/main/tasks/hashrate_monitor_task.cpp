@@ -165,6 +165,30 @@ FiveTratumTelemetry::AsicErrorTelemetry HashrateMonitor::getAsicErrorTelemetry(i
     return result;
 }
 
+bool HashrateMonitor::copyTuningErrorTelemetry(FiveTratumTelemetry::TuningErrorTelemetry &output,
+                                              int expectedAsics,int64_t nowUs,bool miningActive) {
+    PThreadGuard lock(m_mutex);
+    output={};
+    if ((expectedAsics!=4 && expectedAsics!=8) || m_asicCount!=expectedAsics || m_asicCount>output.MAX_ASICS ||
+        !m_chipHashrate || !m_prevResponse || !m_chipSampleAvailable ||
+        !m_chipErrorRate || !m_prevErrorResponse || !m_chipErrorSampleAvailable) return false;
+    output.asicCount=m_asicCount;
+    double validTotal=0,errorTotal=0;bool allFresh=miningActive;
+    for (int i=0;i<m_asicCount;++i) {
+        output.chips[i]=FiveTratumTelemetry::chipErrorTelemetry(
+            {m_chipHashrate[i],m_prevResponse[i],m_chipSampleAvailable[i]},
+            {m_chipErrorRate[i],m_prevErrorResponse[i],m_chipErrorSampleAvailable[i]},nowUs,miningActive);
+        allFresh=allFresh && output.chips[i].errorSampleFresh;
+        validTotal+=output.chips[i].hashRate;errorTotal+=output.chips[i].errorHashRate;
+    }
+    const double total=validTotal+errorTotal;
+    if (allFresh && std::isfinite(total) && total>0) {
+        output.errorPercentage=static_cast<float>(100.0*errorTotal/total);
+        output.errorPercentageAvailable=true;
+    }
+    return true;
+}
+
 void HashrateMonitor::taskWrapper(void *pv)
 {
     auto *self = static_cast<HashrateMonitor *>(pv);

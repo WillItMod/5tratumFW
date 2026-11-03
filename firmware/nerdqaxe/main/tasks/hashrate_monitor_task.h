@@ -111,6 +111,9 @@ class HashrateMonitor {
     // Copy under the RX/reader mutex; no UART request or ASIC setting change.
     FiveTratumTelemetry::ChipHashrateSample getChipHashrateSample(int nr);
     FiveTratumTelemetry::AsicErrorTelemetry getAsicErrorTelemetry(int64_t nowUs, bool miningActive = true);
+    // Caller-owned bounded copy; rejects unsupported counts instead of truncating.
+    bool copyTuningErrorTelemetry(FiveTratumTelemetry::TuningErrorTelemetry &output,
+                                  int expectedAsics,int64_t nowUs, bool miningActive = true);
     // Called from RX dispatcher for each 0x4C hardware-error-count reply.
     void onErrorReply(uint8_t asic_idx, uint32_t counterNow);
     float getChipHashrate(int nr);

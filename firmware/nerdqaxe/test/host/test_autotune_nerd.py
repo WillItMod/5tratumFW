@@ -24,6 +24,8 @@ def method(source, signature):
 
 with tempfile.TemporaryDirectory(prefix='5tfw-autotune-runtime-') as directory:
     path = Path(directory)
+    for name in ('esp_cpu.h','esp_memory_utils.h'):
+        (path/name).write_text('#pragma once\n')
     config = (ROOT / 'main/nvs_config.cpp').read_text()
     defines = '\n'.join(re.findall(r'^#define NVS_CONFIG_\w+\s+"[^"\n]+"', (ROOT/'main/nvs_config.h').read_text(), re.M))
     keys = config[config.index('static const char *const tuningKeys[]'):config.index('static bool isTuningKey(')]
@@ -45,10 +47,11 @@ with tempfile.TemporaryDirectory(prefix='5tfw-autotune-runtime-') as directory:
     (path/'test.cpp').write_text(source)
     binary = path/'test'
     subprocess.run([os.environ.get('CXX') or shutil.which('clang++') or shutil.which('g++'), '-std=c++17','-Wall','-Wextra','-Werror','-pthread',
-        '-fsanitize=address,undefined','-fno-omit-frame-pointer','-Wno-vla-cxx-extension','-I',str(path),'-I',str(ROOT/'test/host'),
+        '-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer','-Wno-vla-cxx-extension','-I',str(path),'-I',str(ROOT/'test/host'),
         '-I',str(ROOT/'components/arduinojson'),'-I',str(ROOT/'main'),str(path/'test.cpp'),'-o',str(binary)],check=True)
     for scenario in ('qa','oct','waiver','backup-write-failure','backup-readback-failure','backup-identity','backup-settings',
                      'pending-manual','manual-handoff','ota-handoff','restore','restore-reboot','restore-fault',
                      'restore-storage-failure','restore-down','configure-pending','invalid-config','sensor-failure','voltage-failure',
-                     'pending-headroom','readback-timeout','start-readback','weak-chip-qa','weak-chip-oct','configure-owned-bounds','restore-hot','restored-status-age','wire-revocation','backup-invalid-initial','backup-cached-deleted','backup-cached-changed','uart-revocation','restore-worker-failure','restore-lock-order','ota-freeze','backup-slow','pending-manual-cache','restore-disabled-protection','polarity-revocation','restore-polarity-failure','backup-revocation','fan-read-failure','pll-strict-sensor','pll-strict-fan','pll-strict-headroom','pll-long-healthy','pll-long-failure','json-points'):
+                     'pending-headroom','readback-timeout','start-readback','weak-chip-qa','weak-chip-oct','configure-owned-bounds','restore-hot','restored-status-age','wire-revocation','backup-invalid-initial','backup-cached-deleted','backup-cached-changed','uart-revocation','restore-worker-failure','restore-lock-order','ota-freeze','backup-slow','pending-manual-cache','restore-disabled-protection','polarity-revocation','restore-polarity-failure','backup-revocation','fan-read-failure','pll-strict-sensor','pll-strict-fan','pll-strict-headroom','pll-long-healthy','pll-long-failure','json-points','storage-bootstrap-context','boot-present-records','boot-missing-records','boot-corrupt-options','boot-corrupt-baseline','boot-read-failure','boot-memory-failure','wrong-context-actions','worker-low-before','worker-low-after-commit','worker-wrong-context'):
         subprocess.run([str(binary), scenario], check=True)
+        print(f'Internal-stack/bounded runtime scenario passed: {scenario}',flush=True)

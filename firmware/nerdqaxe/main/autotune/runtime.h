@@ -2,6 +2,11 @@
 #include <ArduinoJson.h>
 #include "esp_http_server.h"
 namespace FiveTratumAutotune {
+// Once on app_main's internal stack, before either PSRAM power-task start.
+// Failure disables tuning storage, never ordinary mining or recovery.
+bool preloadStorage();
+// RAM-only lifecycle notification after the power owner initializes its fans.
+void powerReady();
 // Power owner only, recursive hardware mutex held. HTTP reads never poll hardware.
 void tick();
 bool ownsSettings();

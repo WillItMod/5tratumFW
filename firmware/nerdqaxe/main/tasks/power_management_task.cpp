@@ -358,6 +358,7 @@ void PowerManagementTask::task()
     m_board->setFanPolarity(invert);
 
     m_fanController.init(m_board, POLL_RATE);
+    FiveTratumAutotune::powerReady();
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     startTimer();

@@ -17,16 +17,21 @@ static void start() {
     assert(result["ok"].as<bool>());
 }
 static void step() {
-    hostNow+=2000000;FiveTratumAutotune::tick();
-    if(workerNotifications&&workerFunction){try{workerFunction(nullptr);}catch(const WorkerSleeping &){}}
+    hostNow+=2000000;
+    {HostStackContext power(false);FiveTratumAutotune::tick();}
+    if(workerNotifications&&workerFunction){HostStackContext worker(!hostWorkerExternal);try{workerFunction(nullptr);}catch(const WorkerSleeping &){}}
 }
 static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
+    storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
     controller={};observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
-    ++hostGeneration;step();
+    ++hostGeneration;
+    {HostStackContext main(true);preloadStorage();}
+    {HostStackContext power(false);powerReady();}
+    step();
 }
 static void candidate(double frequency,double voltage) {
     using namespace FiveTratumAutotune;
@@ -38,6 +43,8 @@ static bool wirePermission(){return Config::tuningMutationRevision()==wireEpoch;
 int main(int argc,char **argv) {
     assert(argc==2);const std::string scenario=argv[1];
     if(scenario=="oct"||scenario=="weak-chip-oct")hostBoard.count=8;
+    assert(FiveTratumAutotune::preloadStorage());
+    {HostStackContext power(false);FiveTratumAutotune::powerReady();}
     step();
     assert(snapshot()["supported"].as<bool>());
     assert(!snapshot()["backup"]["available"].as<bool>());
@@ -50,7 +57,20 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
-    if(scenario=="restore-lock-order") {
+    if(scenario=="storage-bootstrap-context") {
+        using namespace FiveTratumAutotune;
+        initialized=false;storagePrepared=false;powerInitialized=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;
+        const unsigned calls=hostNvsCalls;
+        {
+            HostStackContext external(false);
+            assert(!preloadStorage());powerReady();tick();auto waiting=snapshot();
+            assert(!waiting["supported"].as<bool>()&&waiting["status"]["reason"].is<const char *>());
+            assert(!waiting["diagnostics"]["storagePreloaded"].as<bool>()&&hostNvsCalls==calls);
+        }
+        assert(preloadStorage());const unsigned loaded=hostNvsCalls;
+        {HostStackContext external(false);powerReady();tick();assert(snapshot()["supported"].as<bool>());}
+        assert(hostNvsCalls==loaded&&!snapshot()["status"]["active"].as<bool>()&&!paused);
+    } else if(scenario=="restore-lock-order") {
         JsonDocument original;assert(FiveTratumAutotune::captureEffective(&hostBoard,original.to<JsonObject>()));
         std::thread restore;
         {
@@ -151,6 +171,60 @@ int main(int argc,char **argv) {
             auto wire=snapshot();
             assert(wire["status"]["best"]["frequencyMHz"].as<int>()==590&&wire["status"]["best"]["coreVoltageMv"].as<int>()==1145);
             std::cout<<"Actual production report real-ArduinoJson serialized null/current/baseline/best points passed\n";
+            return 0;
+        }
+        if(scenario.rfind("boot-",0)==0) {
+            JsonDocument config;config["action"]="configure";config["config"].set(snapshot()["config"]);config["config"]["priority"]="efficiency";
+            std::string text;serializeJson(config,text);assert(response(text.c_str())["ok"].as<bool>());
+            const std::string originalBackup=nvstore["fwtune/baseline"];
+            if(scenario=="boot-missing-records"){nvstore.erase("fwtune/baseline");nvstore.erase("fwtune/options");}
+            if(scenario=="boot-corrupt-options")nvstore["fwtune/options"]="{bad";
+            if(scenario=="boot-corrupt-baseline")nvstore["fwtune/baseline"]="{bad";
+            if(scenario=="boot-read-failure")hostReadFailure=true;
+            if(scenario=="boot-memory-failure")hostBlobAllocationFail=true;
+            boot();hostReadFailure=false;hostBlobAllocationFail=false;
+            const unsigned loaded=hostNvsCalls;
+            for(int i=0;i<5;++i){step();HostStackContext external(false);auto report=snapshot();assert(report["status"]["reason"].is<const char *>());}
+            assert(hostNvsCalls==loaded&&!paused&&writes.empty());
+            auto report=snapshot();assert(!report["status"]["active"].as<bool>()&&!report["status"]["ownsSettings"].as<bool>());
+            const bool bad=scenario=="boot-corrupt-options"||scenario=="boot-corrupt-baseline"||scenario=="boot-read-failure"||scenario=="boot-memory-failure";
+            if(scenario=="boot-present-records")assert(report["config"]["priority"]=="efficiency"&&report["backup"]["available"].as<bool>()&&nvstore["fwtune/baseline"]==originalBackup);
+            if(scenario=="boot-missing-records")assert(report["diagnostics"]["optionsStorage"]=="missing"&&report["diagnostics"]["baselineStorage"]=="missing"&&!report["backup"]["available"].as<bool>());
+            if(scenario=="boot-corrupt-options")assert(report["diagnostics"]["optionsStorage"]=="invalid"&&report["backup"]["available"].as<bool>());
+            if(scenario=="boot-corrupt-baseline")assert(report["diagnostics"]["baselineStorage"]=="invalid"&&!report["backup"]["available"].as<bool>());
+            if(scenario=="boot-read-failure"||scenario=="boot-memory-failure")assert(report["diagnostics"]["optionsStorage"]=="read-failure"&&report["diagnostics"]["baselineStorage"]=="read-failure");
+            if(bad){assert(!response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["ok"].as<bool>());assert(hostNvsCalls==loaded);}
+            if(scenario=="boot-corrupt-options"){
+                assert(response("{\"action\":\"stop\"}")["ok"].as<bool>());for(int i=0;i<8;++i)step();assert(snapshot()["backup"]["restored"].as<bool>());
+            }
+            return 0;
+        }
+        if(scenario=="wrong-context-actions") {
+            JsonDocument retained;retained["sentinel"]=7;JsonDocument original;assert(FiveTratumAutotune::captureEffective(&hostBoard,original.to<JsonObject>()));
+            const unsigned calls=hostNvsCalls;const auto revision=Config::tuningMutationRevision();
+            {
+                HostStackContext external(false);
+                assert(!response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["ok"].as<bool>());
+                assert(!response("{\"action\":\"stop\"}")["ok"].as<bool>());
+                assert(!response("{\"action\":\"configure\",\"config\":{}}")["ok"].as<bool>());
+                assert(FiveTratumAutotune::readBlobState("baseline",retained)==FiveTratumAutotune::BlobStatus::ReadFailure&&retained["sentinel"]==7);
+                assert(!FiveTratumAutotune::writeVerified("baseline",retained));
+                assert(!Config::restoreTuningSettings(original.as<JsonObjectConst>()));
+                assert(snapshot()["status"]["ownsSettings"].as<bool>());
+            }
+            assert(hostNvsCalls==calls&&Config::tuningMutationRevision()==revision&&writes.empty());return 0;
+        }
+        if(scenario=="worker-low-before"||scenario=="worker-low-after-commit"||scenario=="worker-wrong-context") {
+            Config::cfgSetU16("pid_temp",67);hostBoard.loadSettings();step();
+            if(scenario=="worker-low-before")workerFreeBytes=512;
+            if(scenario=="worker-low-after-commit")lowAfterConfigCommit=true;
+            if(scenario=="worker-wrong-context")hostWorkerExternal=true;
+            assert(response("{\"action\":\"stop\"}")["ok"].as<bool>());assert(workerRequestedBytes==8192);
+            step();step();step();
+            assert(snapshot()["status"]["ownsSettings"].as<bool>()&&snapshot()["status"]["state"]=="restoring"&&!snapshot()["backup"]["restored"].as<bool>()&&writes.empty());
+            assert(Config::s_doc["pid_temp"].as<int>()==(scenario=="worker-low-after-commit"?55:67));
+            if(scenario!="worker-wrong-context")assert(snapshot()["diagnostics"]["restoreWorkerStackLow"].as<bool>()&&snapshot()["diagnostics"]["restoreWorkerMinFreeBytes"]==512);
+            if(scenario=="worker-low-after-commit")assert(FiveTratumAutotune::revisionCurrent());
             return 0;
         }
         const std::string original=nvstore["fwtune/baseline"];

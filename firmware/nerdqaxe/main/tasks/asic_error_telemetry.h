@@ -23,6 +23,17 @@ struct AsicErrorTelemetry {
     bool errorPercentageAvailable = false;
 };
 
+// The qualified tuner owns only4/8-chip chains. Keep its caller frame bounded
+// independently of the general64-chip dashboard/report API above.
+struct TuningErrorTelemetry {
+    static constexpr int MAX_ASICS=8;
+    int asicCount=0;
+    ChipErrorTelemetry chips[MAX_ASICS]{};
+    float errorPercentage=0.0f;
+    bool errorPercentageAvailable=false;
+};
+static_assert(sizeof(TuningErrorTelemetry)<=512,"Tuning snapshot must fit its bounded stack budget");
+
 inline ChipErrorTelemetry chipErrorTelemetry(const ChipHashrateSample &valid,
                                              const ChipHashrateSample &error,
                                              int64_t nowUs, bool miningActive) {

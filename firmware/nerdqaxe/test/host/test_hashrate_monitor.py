@@ -42,7 +42,7 @@ void vTaskSuspend(TaskHandle_t);
     for harness in ('hashrate_monitor_harness.cpp', 'asic_error_dashboard_harness.cpp'):
         binary = path / Path(harness).stem
         subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-pthread',
-                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
+                        '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-fno-omit-frame-pointer',
                         '-I', str(path), '-I', str(root / 'main/tasks'),
                         '-I', str(root / 'test/host'), '-I', str(root / 'components/arduinojson'),
                         str(path / 'monitor.cpp'), str(root / 'test/host' / harness),

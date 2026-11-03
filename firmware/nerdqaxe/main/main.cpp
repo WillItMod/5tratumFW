@@ -33,6 +33,7 @@
 #include "http_server/pool_schedule.h"
 #include "tasks/mining_schedule.h"
 #include "tasks/mining_control.h"
+#include "autotune/runtime.h"
 #include "influx_task.h"
 #include "macros.h"
 #include "main.h"
@@ -328,6 +329,9 @@ extern "C" void app_main(void)
     // hardware is owned solely by the reversible power controller below.
     if (!FiveTratumMining::initializeSchedule()) ESP_LOGE(TAG, "Invalid mining schedule; ASICs remain paused");
     FiveTratumMining::initializeControl(board, canSlave);
+    // Flash payload reads cannot run on the power owner's PSRAM stack.
+    // Raw tuner records are cached here; fan-dependent validation is RAM-only.
+    FiveTratumAutotune::preloadStorage();
 
     uint64_t best_diff = Config::getBestDiff();
     bool should_self_test = Config::isSelfTestEnabled();

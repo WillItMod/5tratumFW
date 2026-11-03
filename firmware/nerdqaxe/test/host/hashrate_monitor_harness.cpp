@@ -62,10 +62,26 @@ static void verifyErrorTelemetryForChain(int count) {
     }
     assert(std::abs(weighted.errorPercentage - unweighted) > 0.1);
     assert(weighted.chips[0].errorPercentage == 0); // Genuine measured zero.
+    FiveTratumTelemetry::TuningErrorTelemetry compact;
+    assert(monitor.copyTuningErrorTelemetry(compact,count,hostNow) && compact.asicCount==count);
+    assert(near(compact.errorPercentage,weighted.errorPercentage) && compact.errorPercentageAvailable);
+    for(int i=0;i<count;++i) {
+        assert(compact.chips[i].hashRate==weighted.chips[i].hashRate);
+        assert(compact.chips[i].sampleCapturedAtUs==weighted.chips[i].sampleCapturedAtUs);
+        assert(compact.chips[i].errorPercentage==weighted.chips[i].errorPercentage);
+    }
+    for(int bad:{0,3,9,64}) {
+        monitor.m_asicCount=bad;
+        assert(!monitor.copyTuningErrorTelemetry(compact,count,hostNow));
+        assert(compact.asicCount==0 && !compact.errorPercentageAvailable && compact.chips[0].hashRate==0);
+    }
+    monitor.m_asicCount=count;
+    assert(!monitor.copyTuningErrorTelemetry(compact,count==4?8:4,hostNow) && compact.asicCount==0);
 
     // Shutdown, applied pause and transitions pass miningActive=false. Raw
     // legacy values are retained, but no percentage/freshness can escape.
     auto inactive = monitor.getAsicErrorTelemetry(hostNow, false);
+    assert(monitor.copyTuningErrorTelemetry(compact,count,hostNow,false) && !compact.errorPercentageAvailable && !compact.chips[0].errorSampleFresh);
     assert(!inactive.errorPercentageAvailable);
     for (int i = 0; i < count; ++i) {
         assert(!inactive.chips[i].errorSampleFresh && !inactive.chips[i].errorPercentageAvailable);
@@ -74,6 +90,7 @@ static void verifyErrorTelemetryForChain(int count) {
     auto exactAge = monitor.getAsicErrorTelemetry(21000000);
     assert(exactAge.errorPercentageAvailable && exactAge.chips[0].sampleAgeSeconds == 15);
     auto stale = monitor.getAsicErrorTelemetry(21000001);
+    assert(monitor.copyTuningErrorTelemetry(compact,count,21000001) && !compact.errorPercentageAvailable && !compact.chips[0].errorSampleFresh);
     assert(!stale.errorPercentageAvailable && !stale.chips[0].errorSampleFresh);
     assert(stale.chips[0].sampleAgeAvailable && stale.chips[0].sampleAgeSeconds > 15);
     assert(!monitor.getAsicErrorTelemetry(5999999).errorPercentageAvailable);
@@ -177,6 +194,11 @@ static void verifyErrorTelemetryForChain(int count) {
             }
             if (snapshot.errorPercentageAvailable)
                 assert(near(snapshot.errorPercentage, 100.0 * error / (valid + error)));
+            FiveTratumTelemetry::TuningErrorTelemetry bounded;
+            assert(monitor.copyTuningErrorTelemetry(bounded,count,hostNow));
+            double boundedValid=0,boundedError=0;
+            for(int i=0;i<count;++i){boundedValid+=bounded.chips[i].hashRate;boundedError+=bounded.chips[i].errorHashRate;}
+            if(bounded.errorPercentageAvailable)assert(near(bounded.errorPercentage,100.0*boundedError/(boundedValid+boundedError)));
         }
     });
     for (int cycle = 1; cycle <= 1000; ++cycle) {

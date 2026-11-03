@@ -33,16 +33,30 @@ static std::map<int,std::string> handles;
 static int nextHandle=1;
 static uint64_t storageDelayUs=0;
 static bool revokeDuringBackup=false,fanReadFail=false;
+static thread_local bool hostInternalStack=true;
+static bool hostReadFailure=false,hostBlobAllocationFail=false,hostWorkerExternal=false;
+static std::atomic<unsigned> hostNvsCalls{0};
+static uintptr_t esp_cpu_get_sp(){return hostInternalStack?0x3fc90000U:0x3d090000U;}
+static bool esp_ptr_in_dram(const void *p){return reinterpret_cast<uintptr_t>(p)>=0x3fc80000U&&reinterpret_cast<uintptr_t>(p)<0x3fd00000U;}
+#include "autotune/storage_context.h"
+struct HostStackContext {bool old;explicit HostStackContext(bool internal):old(hostInternalStack){hostInternalStack=internal;}~HostStackContext(){hostInternalStack=old;}};
+void *operator new[](size_t size,const std::nothrow_t &) noexcept {
+ if(hostBlobAllocationFail)return nullptr;
+ try{return ::operator new[](size);}catch(...){return nullptr;}
+}
+void operator delete[](void *p,const std::nothrow_t &) noexcept {::operator delete[](p);}
 static std::atomic_bool configCommitted{false};
 uint64_t esp_timer_get_time(){return hostNow;}
 int nvs_open(const char *space,int mode,nvs_handle_t *handle){
+    assert(hostInternalStack);++hostNvsCalls;if(hostReadFailure)return ESP_FAIL;
     if(storageFail && mode==NVS_READWRITE)return ESP_FAIL;
     bool exists=false;for(auto &item:nvstore)if(item.first.rfind(std::string(space)+"/",0)==0)exists=true;
     if(mode==NVS_READONLY&&!exists)return ESP_ERR_NVS_NOT_FOUND;
     *handle=nextHandle++;handles[*handle]=space;return ESP_OK;
 }
-void nvs_close(nvs_handle_t handle){handles.erase(handle);}
+void nvs_close(nvs_handle_t handle){assert(hostInternalStack);++hostNvsCalls;handles.erase(handle);}
 int nvs_get_blob(nvs_handle_t handle,const char *key,void *out,size_t *length){
+    assert(hostInternalStack);++hostNvsCalls;
     const auto full=handles[handle]+"/"+key;const auto found=nvstore.find(full);
     if(found==nvstore.end())return ESP_ERR_NVS_NOT_FOUND;
     if(verifyFail && out)return ESP_FAIL;
@@ -50,19 +64,23 @@ int nvs_get_blob(nvs_handle_t handle,const char *key,void *out,size_t *length){
     *length=found->second.size();return ESP_OK;
 }
 int nvs_set_blob(nvs_handle_t handle,const char *key,const void *data,size_t length){
+    assert(hostInternalStack);++hostNvsCalls;
     if(storageFail)return ESP_FAIL;
     staged[handles[handle]+"/"+key]=std::string(static_cast<const char *>(data),length);
     return ESP_OK;
 }
 namespace FiveTratumAutotune {void externalHandoff(const char *);}
-int nvs_commit(nvs_handle_t){if(storageFail)return ESP_FAIL;hostNow+=storageDelayUs;for(auto &entry:staged)nvstore[entry.first]=entry.second;staged.clear();if(revokeDuringBackup)FiveTratumAutotune::externalHandoff("Manual control during backup");return ESP_OK;}
+int nvs_commit(nvs_handle_t){assert(hostInternalStack);++hostNvsCalls;if(storageFail)return ESP_FAIL;hostNow+=storageDelayUs;for(auto &entry:staged)nvstore[entry.first]=entry.second;staged.clear();if(revokeDuringBackup)FiveTratumAutotune::externalHandoff("Manual control during backup");return ESP_OK;}
 using TaskHandle_t=void *;
 static void (*workerFunction)(void *)=nullptr;
 static unsigned workerNotifications=0;
 static bool workerCreateFail=false;
+static unsigned workerRequestedBytes=0,workerFreeBytes=7000;
+static bool lowAfterConfigCommit=false;
+unsigned uxTaskGetStackHighWaterMark(TaskHandle_t){return workerFreeBytes;}
 constexpr int pdTRUE=1,pdPASS=1;constexpr uint32_t portMAX_DELAY=0xffffffff;
 struct WorkerSleeping {};
-int xTaskCreate(void (*function)(void *),const char *,unsigned,void *,unsigned,TaskHandle_t *handle){if(workerCreateFail)return 0;workerFunction=function;*handle=reinterpret_cast<void *>(1);return pdPASS;}
+int xTaskCreate(void (*function)(void *),const char *,unsigned bytes,void *,unsigned,TaskHandle_t *handle){workerRequestedBytes=bytes;if(workerCreateFail)return 0;workerFunction=function;*handle=reinterpret_cast<void *>(1);return pdPASS;}
 void xTaskNotifyGive(TaskHandle_t){++workerNotifications;}
 uint32_t ulTaskNotifyTake(int,uint32_t){if(!workerNotifications)throw WorkerSleeping{};workerNotifications=0;return 1;}
 static std::atomic_bool wireEntered{false},wireRelease{false};
@@ -105,8 +123,9 @@ bool cfgApplyPatchPersisted(JsonObjectConst);
 bool captureTuningSettings(JsonObject);bool validTuningSettings(JsonObjectConst);bool restoreTuningSettings(JsonObjectConst);
 uint64_t tuningMutationRevision();void cfgSetU16(const char *,uint16_t);
 bool write_document_to_nvs(const JsonDocument &doc){
+    assert(hostInternalStack);++hostNvsCalls;
     if(storageFail)return false;
-    std::string out;serializeJson(doc,out);nvstore["main/json_cfg"]=out;configCommitted=true;return true;
+    std::string out;serializeJson(doc,out);nvstore["main/json_cfg"]=out;configCommitted=true;if(lowAfterConfigCommit)workerFreeBytes=512;return true;
 }
 uint16_t cfgGetU16(const char *key,uint16_t fallback=0){return s_doc[key].isNull()?fallback:s_doc[key].as<uint16_t>();}
 bool isCanEnabled(){return false;}
@@ -174,6 +193,12 @@ struct HashMonitor {
   const auto stamp=static_cast<int64_t>(now/5000000*5000000);
   for(int i=0;i<out.asicCount;++i){out.chips[i]=FiveTratumTelemetry::chipErrorTelemetry({weakChip&&i==0?0.859f:1000.0f,stamp,true},{1,stamp,true},now,true);}
   out.errorPercentage=100.0/1001;out.errorPercentageAvailable=true;return out;
+ }
+ bool copyTuningErrorTelemetry(FiveTratumTelemetry::TuningErrorTelemetry &out,int expected,uint64_t now,bool active){
+  out={};if(hostBoard.count!=expected||(expected!=4&&expected!=8))return false;
+  const auto all=getAsicErrorTelemetry(now,active);out.asicCount=all.asicCount;out.errorPercentage=all.errorPercentage;out.errorPercentageAvailable=all.errorPercentageAvailable;
+  for(int i=0;i<all.asicCount;++i)out.chips[i]=all.chips[i];
+  return true;
  }
 };
 static HashMonitor HASHRATE_MONITOR;

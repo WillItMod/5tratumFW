@@ -46,6 +46,10 @@ def method(source, signature):
 main_source = (ROOT / "main/main.cpp").read_text()
 assert main_source.index("FiveTratumMining::initializeSchedule()") < main_source.index("FiveTratumMining::initializeControl(board, canSlave)")
 assert main_source.index("FiveTratumMining::initializeControl(board, canSlave)") < main_source.index('xTaskCreatePSRAM(POWER_MANAGEMENT_MODULE.taskWrapper')
+assert main_source.index("FiveTratumMining::initializeControl(board, canSlave)") < main_source.index('FiveTratumAutotune::preloadStorage()') < main_source.index('xTaskCreatePSRAM(POWER_MANAGEMENT_MODULE.taskWrapper')
+assert 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192' in (ROOT/'sdkconfig.defaults').read_text()
+power_source=(ROOT/'main/tasks/power_management_task.cpp').read_text()
+assert power_source.index('m_fanController.init(m_board, POLL_RATE)') < power_source.index('FiveTratumAutotune::powerReady()') < power_source.index('    startTimer()')
 self_test = method(main_source, "if (should_self_test && !best_diff)")
 qualified_self_test = method(self_test, "if (FiveTratumMining::controlSupported())")
 assert "board->selfTest()" not in qualified_self_test and "board->selfTest()" in self_test

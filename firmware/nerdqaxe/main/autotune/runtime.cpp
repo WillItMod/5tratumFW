@@ -1,6 +1,7 @@
 #include "runtime.h"
 #include "core.h"
 #include "write_gate.h"
+#include "storage_context.h"
 #include "global_state.h"
 #include "tasks/mining_control.h"
 #include "tasks/mining_schedule.h"
@@ -35,13 +36,20 @@ fwt_controller controller{};
 fwt_input observed{};
 TuningSensors sensors{};
 bool initialized = false, optionsError = false, backupAvailable = false, backupRestored = false;
+enum class BlobStatus { Unloaded, Missing, Present, Invalid, ReadFailure };
+bool storagePrepared=false,powerInitialized=false,baselineLoadError=false;
+BlobStatus optionsStatus=BlobStatus::Unloaded,baselineStatus=BlobStatus::Unloaded;
+JsonDocument bootOptions;
 bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
 TaskHandle_t restoreWorker = nullptr;
+constexpr uint32_t restoreStackBytes=8192;
+uint32_t restoreMinFreeBytes=UINT32_MAX;
+bool restoreStackLow=false;
 void restoreWorkerLoop(void *);
 bool ensureRestoreWorker() {
     if (restoreWorker) return true;
     TaskHandle_t created=nullptr;
-    if (xTaskCreate(restoreWorkerLoop,"tune_restore",4096,nullptr,8,&created)!=pdPASS || !created) return false;
+    if (!storageContextAllowed() || xTaskCreate(restoreWorkerLoop,"tune_restore",restoreStackBytes,nullptr,8,&created)!=pdPASS || !created) return false;
     restoreWorker=created;return true;
 }
 bool pending = false;
@@ -106,20 +114,30 @@ bool parseConfig(JsonObjectConst object, fwt_config &config) {
     return std::floor(config.minFrequencyMHz) == config.minFrequencyMHz && std::floor(config.maxFrequencyMHz) == config.maxFrequencyMHz &&
            std::floor(config.minVoltageMv) == config.minVoltageMv && std::floor(config.maxVoltageMv) == config.maxVoltageMv;
 }
-bool readBlob(const char *key, JsonDocument &document, bool &missing) {
-    missing = false; document.clear();
+BlobStatus readBlobState(const char *key, JsonDocument &document) {
+    if (!storageContextAllowed()) return BlobStatus::ReadFailure;
+    document.clear();
     nvs_handle_t handle; esp_err_t err = nvs_open("fwtune", NVS_READONLY, &handle);
-    if (err == ESP_ERR_NVS_NOT_FOUND) { missing = true; return true; }
-    if (err != ESP_OK) return false;
+    if (err == ESP_ERR_NVS_NOT_FOUND) return BlobStatus::Missing;
+    if (err != ESP_OK) return BlobStatus::ReadFailure;
     size_t length = 0; err = nvs_get_blob(handle, key, nullptr, &length);
-    if (err == ESP_ERR_NVS_NOT_FOUND) { nvs_close(handle); missing = true; return true; }
-    if (err != ESP_OK || !length || length > maxBlob) { nvs_close(handle); return false; }
+    if (err == ESP_ERR_NVS_NOT_FOUND) { nvs_close(handle); return BlobStatus::Missing; }
+    if (err != ESP_OK) {nvs_close(handle);return BlobStatus::ReadFailure;}
+    if (!length || length > maxBlob) { nvs_close(handle); return BlobStatus::Invalid; }
     std::unique_ptr<char[]> data(new (std::nothrow) char[length]);
-    if (!data) { nvs_close(handle); return false; }
+    if (!data) { nvs_close(handle); return BlobStatus::ReadFailure; }
     err = nvs_get_blob(handle,key,data.get(),&length); nvs_close(handle);
-    return err == ESP_OK && !deserializeJson(document,data.get(),length,DeserializationOption::NestingLimit(4));
+    if (err!=ESP_OK) return BlobStatus::ReadFailure;
+    const auto parsed=deserializeJson(document,static_cast<const char *>(data.get()),length,DeserializationOption::NestingLimit(4));
+    if (parsed==DeserializationError::NoMemory) return BlobStatus::ReadFailure;
+    return parsed ? BlobStatus::Invalid : BlobStatus::Present;
+}
+bool readBlob(const char *key,JsonDocument &document,bool &missing) {
+    const auto status=readBlobState(key,document);missing=status==BlobStatus::Missing;
+    return missing || status==BlobStatus::Present;
 }
 bool writeVerified(const char *key, JsonDocument &document) {
+    if (!storageContextAllowed()) return false;
     const size_t length = measureJson(document);
     if (document.overflowed() || !length || length > maxBlob) return false;
     std::unique_ptr<char[]> data(new (std::nothrow) char[length + 1]);
@@ -190,7 +208,7 @@ bool backupMatches(Board *board, JsonDocument &document) {
         document["coreVoltageMv"].as<uint16_t>() == document["settings"][NVS_CONFIG_ASIC_VOLTAGE].as<uint16_t>();
 }
 void initialize(Board *board) {
-    if (initialized || !exactFamily(board)) return;
+    if (initialized || !storagePrepared || !powerInitialized || !exactFamily(board)) return;
     const fwt_limits limits = hardwareLimits(board);
     fwt_config config{};
     config.priority = FWT_BALANCED; config.continuous = false;
@@ -202,14 +220,18 @@ void initialize(Board *board) {
     config.maxAsicTempC = std::min(limits.maxAsicTempC, 65.0);
     config.maxVrmTempC = std::min(limits.maxVrmTempC, 80.0);
     config.maxPowerW = limits.maxPowerW;
-    JsonDocument stored; bool missing = false;
-    if (!readBlob("options",stored,missing)) optionsError = true;
-    else if (!missing && (!parseConfig(stored.as<JsonObjectConst>(),config) || !fwt_config_valid(&config,&limits))) optionsError = true;
+    optionsError=optionsStatus==BlobStatus::Invalid || optionsStatus==BlobStatus::ReadFailure;
+    if (optionsStatus==BlobStatus::Present) {
+        fwt_config proposed{};
+        if (!parseConfig(bootOptions.as<JsonObjectConst>(),proposed) || !fwt_config_valid(&proposed,&limits)) optionsError=true;
+        else config=proposed;
+    }
     fwt_init(&controller,&limits,&config);
-    if (!readBlob("baseline",backup,missing)) { adapterReason = "Original tuning backup is unreadable"; }
-    else if (!missing) {
+    baselineLoadError=baselineStatus==BlobStatus::Invalid || baselineStatus==BlobStatus::ReadFailure;
+    if (baselineLoadError) {adapterReason="Original tuning backup is unreadable";}
+    else if (baselineStatus==BlobStatus::Present) {
         backupAvailable = backupMatches(board,backup);
-        if (!backupAvailable) adapterReason = "Original tuning backup belongs to different hardware or is invalid";
+        if (!backupAvailable) {baselineLoadError=true;adapterReason = "Original tuning backup belongs to different hardware or is invalid";}
     }
     mutationRevision = Config::tuningMutationRevision();
     initialized = true;
@@ -222,12 +244,14 @@ bool ensureBackup(Board *board) {
         if (missing || !backupMatches(board,existing)) return false;
         std::string cached,stored;serializeJson(backup,cached);serializeJson(existing,stored);
         if (cached!=stored) return false;
-        return writeVerified("baseline",existing);
+        const bool verified=writeVerified("baseline",existing);
+        if (verified) baselineStatus=BlobStatus::Present;
+        return verified;
     }
     if (!missing) {
         if (!backupMatches(board,existing) || !writeVerified("baseline",existing)) return false;
         if (!backup.set(existing)) return false;
-        backupAvailable=true;backupRestored=false;return true;
+        backupAvailable=true;backupRestored=false;baselineStatus=BlobStatus::Present;return true;
     }
     char identity[39]; if (!readFiveTratumPhysicalDeviceId(identity)) return false;
     JsonDocument document;
@@ -237,7 +261,7 @@ bool ensureBackup(Board *board) {
     if (!captureEffective(board,document["settings"].to<JsonObject>()) || !backupMatches(board,document) || !writeVerified("baseline",document)) return false;
     bool absent = false;
     if (!readBlob("baseline",backup,absent) || absent || !backupMatches(board,backup)) return false;
-    backupAvailable = true; backupRestored = false; return true;
+    backupAvailable = true; backupRestored = false; baselineStatus=BlobStatus::Present; return true;
 }
 void acquire(Board *board) {
     observed = {}; sensors = {}; observationReason = nullptr;
@@ -258,7 +282,8 @@ void acquire(Board *board) {
     observed.asicTempC = sensors.asicTempC; observed.vrmTempC = sensors.vrmTempC;
     observed.powerW = sensors.powerW; observed.voltageReadbackMv = sensors.coreVoltageMv;
     const uint64_t now = esp_timer_get_time();
-    const auto counters = HASHRATE_MONITOR.getAsicErrorTelemetry(now,true);
+    FiveTratumTelemetry::TuningErrorTelemetry counters;
+    if (!HASHRATE_MONITOR.copyTuningErrorTelemetry(counters,board->getAsicCount(),now,true)) return;
     if (counters.asicCount != board->getAsicCount() || !counters.errorPercentageAvailable) return;
     uint64_t counterAt = now;
     auto *asics = board->getAsics();
@@ -348,13 +373,26 @@ void advanceTransition(uint64_t now) {
 // NVS writes require an internal-RAM task stack. The ordinary power task uses
 // PSRAM; this bounded worker borrows the same hardware owner mutex, revalidates
 // current strict inputs, commits once, then returns actuation to the power task.
+bool recordWorkerBudget() {
+    // ESP-IDF reports this value in bytes, unlike upstream FreeRTOS ports.
+    const uint32_t freeBytes=uxTaskGetStackHighWaterMark(nullptr);
+    restoreMinFreeBytes=std::min(restoreMinFreeBytes,freeBytes);
+    if (freeBytes<1024) {
+        restoreStackLow=true;restoreCommitFailed=true;
+        adapterReason="Original settings restore needs a larger verified stack budget";return false;
+    }
+    return true;
+}
 void restoreWorkerLoop(void *) {
     for (;;) {
         ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
         LockGuard<PowerManagementTask> owner(POWER_MANAGEMENT_MODULE);
         Guard guard;
         if (!restoring || restoreSaved || restoreCommitFailed || !revisionCurrent()) continue;
+        if (!storageContextAllowed()) {restoreCommitFailed=true;adapterReason="Restore storage requires an internal task stack";continue;}
+        if (!recordWorkerBudget()) continue;
         Board *board=SYSTEM_MODULE.getBoard();acquire(board);
+        if (!recordWorkerBudget()) continue;
         if (!safeToRestore()) {adapterReason="Original settings restore waits for a healthy, cool miner";continue;}
         const uint64_t before=Config::tuningMutationRevision();
         if (!Config::restoreTuningSettings(backup["settings"].as<JsonObjectConst>())) {
@@ -364,12 +402,14 @@ void restoreWorkerLoop(void *) {
         if (!revisionCurrent()) {
             restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;
         }
+        if (!recordWorkerBudget()) continue;
         board->loadSettings();
         if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
         if (!board->restoreTuningFanPolarity(board->isInvertFanPolarityEnabled(),revisionCurrent)) {
             restoreCommitFailed=true;adapterReason="Original fan polarity restore interrupted; retry Disable";continue;
         }
         POWER_MANAGEMENT_MODULE.getFanController().loadSettings();
+        if (!recordWorkerBudget()) continue;
         if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
         controller.limits=hardwareLimits(board);
         restoreSaved=true;adapterReason="Original settings saved; waiting for protected live restore";
@@ -384,6 +424,22 @@ void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
 }
 }
 
+bool preloadStorage() {
+    if (!storageContextAllowed()) return false;
+    Guard guard;
+    if (!storagePrepared) {
+        // Only raw records here. Fan/profile limits are validated later from
+        // RAM after the power owner signals FanController initialization.
+        optionsStatus=readBlobState("options",bootOptions);
+        baselineStatus=readBlobState("baseline",backup);
+        storagePrepared=true;
+    }
+    return (optionsStatus==BlobStatus::Missing || optionsStatus==BlobStatus::Present) &&
+           (baselineStatus==BlobStatus::Missing || baselineStatus==BlobStatus::Present);
+}
+void powerReady() {
+    Guard guard;powerInitialized=true;initialize(SYSTEM_MODULE.getBoard());
+}
 bool transitionAllowed() { return !firmwareUpdates.load() && !permanentFreeze.load() && ((!pending && !restoring) || revisionCurrent()); }
 bool transitionHealthy() {
     if (!transitionAllowed()) return false;
@@ -483,7 +539,9 @@ bool report(JsonDocument &document) {
     guidance["power"]="Power is the regulator measurement or output-derived estimate named above; it is not wall power or a PSU rating. Default voltage and clock ceilings retain your saved operating point.";
     auto status = document["status"].to<JsonObject>();
     status["state"] = restoring ? "restoring" : fwt_state_name(controller.state);
-    status["reason"] = adapterReason ? adapterReason : optionsError ? "Stored tuning options are invalid or unreadable" : observationReason ? observationReason : controller.reason;
+    status["reason"] = adapterReason ? adapterReason : !storagePrepared ? "Tuning storage has not been preloaded on an internal boot stack" :
+        !powerInitialized ? "Waiting for power and fan initialization" : optionsError ? "Stored tuning options are invalid or unreadable" :
+        observationReason ? observationReason : controller.reason ? controller.reason : "Tuning disabled";
     status["active"]=controller.active; status["ownsSettings"]=controller.owns || restoring || pending;
     status["runId"]=controller.runId; status["experiments"]=controller.experiments;
     pointJson(status,"baseline",controller.baselineAvailable?&controller.baseline:nullptr);
@@ -504,11 +562,21 @@ bool report(JsonDocument &document) {
         !controller.owns && !restoring && !pending && revisionCurrent();
     if (backupAvailable) { saved["frequencyMHz"]=backup["frequencyMHz"]; saved["coreVoltageMv"]=backup["coreVoltageMv"]; }
     else {saved["frequencyMHz"]=nullptr;saved["coreVoltageMv"]=nullptr;}
+    auto diagnostic=document["diagnostics"].to<JsonObject>();
+    diagnostic["storagePreloaded"]=storagePrepared;
+    const char *names[]={"unloaded","missing","present","invalid","read-failure"};
+    diagnostic["optionsStorage"]=names[static_cast<unsigned>(optionsStatus)];
+    diagnostic["baselineStorage"]=names[static_cast<unsigned>(baselineStatus)];
+    diagnostic["restoreWorkerStackBytes"]=restoreStackBytes;
+    if (restoreMinFreeBytes==UINT32_MAX) diagnostic["restoreWorkerMinFreeBytes"]=nullptr;
+    else diagnostic["restoreWorkerMinFreeBytes"]=restoreMinFreeBytes;
+    diagnostic["restoreWorkerStackLow"]=restoreStackLow;
     return !document.overflowed();
 }
 
 // The HTTP caller owns the power mutex before entering this bounded transaction.
 const char *command(JsonObjectConst input) {
+    if (!storageContextAllowed()) return "storage-context-unavailable";
     Guard guard; Board *board=SYSTEM_MODULE.getBoard(); initialize(board);
     if (!initialized || !exactFamily(board)) return "unsupported-hardware";
     if (!input["action"].is<const char *>()) return "invalid-request";
@@ -524,12 +592,14 @@ const char *command(JsonObjectConst input) {
         JsonDocument saved;writeConfig(saved.to<JsonObject>(),next);
         if (!writeVerified("options",saved)) return "storage-unavailable";
         controller=proposed;
-        optionsError=false;adapterReason=nullptr;return nullptr;
+        optionsError=false;optionsStatus=BlobStatus::Present;
+        if (!baselineLoadError) adapterReason=nullptr;
+        return nullptr;
     }
     if (!strcmp(action,"start")) {
         if (input.size()!=3 || !input["waiverAccepted"].is<bool>() || !input["waiverAccepted"].as<bool>() ||
             !input["waiverVersion"].is<int>() || input["waiverVersion"].as<int>()!=waiverVersion) return "waiver-required";
-        if (optionsError || restoring || pending || controller.owns || firmwareUpdates.load() || permanentFreeze.load()) return "tuner-not-ready";
+        if (optionsError || baselineLoadError || restoring || pending || controller.owns || firmwareUpdates.load() || permanentFreeze.load()) return "tuner-not-ready";
         controller.limits = hardwareLimits(board);
         if (!fwt_config_valid(&controller.config,&controller.limits)) return "limits-changed-reconfigure";
         const uint64_t before=Config::tuningMutationRevision();
