@@ -104,4 +104,5 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_unpowered_diode_signed_off_current_and_fresh_powered_work_gate(self): self.run_case('recovery-unpowered-diode')
     def test_new_control_during_powered_gate_keeps_jobs_blocked_until_off(self): self.run_case('recovery-prework-cancel')
     def test_powered_gate_timeout_pauses_once_without_dispatch_or_retry(self): self.run_case('recovery-prework-timeout')
+    def test_completed_error_exhaustion_rejects_point_and_restores_once_without_hardware_fault(self): self.run_case('automatic-errors-exhausted')
 if __name__=='__main__': unittest.main()

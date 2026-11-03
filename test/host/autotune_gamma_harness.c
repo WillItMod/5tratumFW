@@ -322,6 +322,22 @@ int main(int argc,char **argv) {
         cJSON *last=cJSON_GetArrayItem(events,cJSON_GetArraySize(events)-1);
         assert(cJSON_IsObject(cJSON_GetObjectItem(last,"conditions")) && cJSON_IsNull(cJSON_GetObjectItem(last,"measurement")));
         cJSON_Delete(json);
+    } else if(!strcmp(name,"automatic-errors-exhausted")) {
+        start();host_error_percentage=2;
+        for(unsigned n=0;n<1000 && !tuner.recovery_requested;++n) step(true);
+        assert(tuner.recovery_requested && tuner.recovery_automatic && tuner.core.recoveryAttempts==7);
+        assert(!strcmp(tuner.core.reason,"error-recovery-exhausted") && !fault_stops && !gs.SYSTEM_MODULE.hardware_fault);
+        const fwt_event rejected=*fwt_history_latest(&tuner.history);
+        assert(rejected.kind==FWT_EVENT_REJECTED && rejected.outcome==FWT_OUTCOME_FAILED);
+        assert(!strcmp(rejected.reason,"error-recovery-exhausted") && rejected.hasMeasurement && !rejected.hasScore);
+        assert(rejected.errorPercentage==2 && rejected.worstErrorPercentage==2 && rejected.hashRateGHs>0 && rejected.powerW>0);
+        autotune_gamma_interrupt("mining-paused-or-faulted");
+        assert(tuner.core.state==FWT_FAULTED && !strcmp(tuner.core.reason,"error-recovery-exhausted"));
+        confirmed_off();host_error_percentage=0;host_asic_temp=50;host_vrm_temp=50;
+        autotune_gamma_recovery_tick(&gs);recovery_finish();
+        assert(host_resume_requests==1 && !fault_stops && tuner.automatic_recovery_attempted);
+        assert(fwt_history_latest(&tuner.history)->id==rejected.id);
+        autotune_gamma_recovery_tick(&gs);assert(host_resume_requests==1 && !tuner.recovery_requested);
     } else if(!strcmp(name,"automatic-floor-cancel")) {
         tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
         start();host_asic_temp=59.5f;step(false);confirmed_off();

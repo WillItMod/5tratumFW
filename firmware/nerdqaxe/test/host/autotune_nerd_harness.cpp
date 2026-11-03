@@ -42,7 +42,7 @@ static uint64_t wireEpoch=0;
 static bool wirePermission(){return Config::tuningMutationRevision()==wireEpoch;}
 int main(int argc,char **argv) {
     assert(argc==2);const std::string scenario=argv[1];
-    if(scenario=="oct"||scenario=="weak-chip-oct")hostBoard.count=8;
+    if(scenario=="oct"||scenario=="weak-chip-oct"||scenario=="auto-errors-exhausted-oct")hostBoard.count=8;
     assert(FiveTratumAutotune::preloadStorage());
     {HostStackContext power(false);FiveTratumAutotune::powerReady();}
     step();
@@ -58,6 +58,29 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario=="auto-errors-exhausted"||scenario=="auto-errors-exhausted-oct") {
+        using namespace FiveTratumAutotune;
+        start();const auto original=nvstore["fwtune/baseline"];chipErrorWork=25;
+        for(unsigned count=0;count<1500&&!recoveryRequested;++count)step();
+        assert(recoveryRequested&&recoveryAutomatic&&paused&&!controller.active&&controller.recoveryAttempts==7);
+        assert(SYSTEM_MODULE.error==Board::NONE&&!observed.fault);
+        const auto *latest=fwt_history_latest(&history);assert(latest);const fwt_event failed=*latest;
+        assert(failed.kind==FWT_EVENT_REJECTED&&failed.outcome==FWT_OUTCOME_FAILED);
+        assert(!strcmp(failed.reason,"error-recovery-exhausted")&&failed.hasMeasurement&&!failed.hasScore);
+        assert(failed.hashRateGHs==1000*hostBoard.count&&failed.powerW==100&&failed.errorPercentage>2&&failed.worstErrorPercentage>2);
+        auto before=snapshot();bool measured=false;
+        for(auto event:before["status"]["events"].as<JsonArrayConst>())if(event["id"]==failed.id) {
+            measured=event["kind"]=="rejected"&&event["outcome"]=="failed"&&event["reason"]=="error-recovery-exhausted"&&
+                event["measurement"]["errorPercentage"].as<double>()>2&&event["score"].isNull();
+        }
+        assert(measured);chipErrorWork=0;asicDegrees=50;vrmDegrees=60;
+        for(unsigned count=0;count<40;++count)step();
+        assert(recoveryResumeCalls==1&&!recoveryRequested&&!paused&&!controller.active&&!controller.owns&&snapshot()["backup"]["restored"]==true);
+        assert(fwt_history_latest(&history)->id==failed.id&&nvstore["fwtune/baseline"]==original&&SYSTEM_MODULE.error==Board::NONE);
+        for(unsigned count=0;count<40;++count){step();}
+        assert(recoveryResumeCalls==1);
+        return 0;
+    }
     if(scenario=="recovery-startup-margin") {
         using namespace FiveTratumAutotune;
         start();FiveTratumMining::manualOverride(true);FiveTratumMining::updateControl();

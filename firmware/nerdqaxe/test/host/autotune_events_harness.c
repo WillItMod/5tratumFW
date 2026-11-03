@@ -91,6 +91,24 @@ int main(void) {
   assert(!strcmp(oct.lastDecision.reason,"temperature-limit-backoff"));
   assert(oct.lastDecision.hasConditions && oct.lastDecision.asicTempC==62.05);
  }
+ /* Seven genuine completed error windows exhaust correction. Retain the
+  * failed point's measured means, never invent a score or thermal condition. */
+ {
+  fwt_controller unstable;fwt_history unstableHistory;memset(&unstableHistory,0,sizeof(unstableHistory));
+  point=(fwt_point){500,1150};now+=FWT_SECOND;input=sample(now,point,++generation);
+  fwt_init(&unstable,&limits,&config);assert(fwt_start(&unstable,&input,now));
+  for(unsigned n=0;n<1000 && unstable.owns;++n) {
+   now+=5*FWT_SECOND;input=sample(now,point,generation);
+   input.errorPercentage=input.worstErrorPercentage=2;
+   request=fwt_tick(&unstable,&input,now);fwt_history_capture(&unstableHistory,&unstable);
+   if(request.kind==FWT_REQUEST_APPLY) {point=request.point;++generation;fwt_applied(&unstable,true,now);}
+  }
+  assert(!unstable.owns && unstable.recoveryAttempts==7 && !strcmp(unstable.reason,"error-recovery-exhausted"));
+  const fwt_event *failed=fwt_history_latest(&unstableHistory);
+  assert(failed && failed->kind==FWT_EVENT_REJECTED && failed->outcome==FWT_OUTCOME_FAILED);
+  assert(failed->hasMeasurement && !failed->hasScore && !failed->hasConditions && fwt_point_equal(failed->point,point));
+  assert(failed->hashRateGHs==1000 && failed->powerW==20 && failed->errorPercentage==2 && failed->worstErrorPercentage==2);
+ }
  printf("PASS: measured decisions, requested/applied/failed identity, bounded history, read-only capture, new-run reset; event=%zu history=%zu controller=%zu bytes\n",sizeof(fwt_event),sizeof(fwt_history),sizeof(fwt_controller));
  return 0;
 }

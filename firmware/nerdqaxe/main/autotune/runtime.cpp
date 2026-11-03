@@ -661,7 +661,8 @@ void tick() {
         // A soft exhausted search has no admissible learned rollback. The
         // already-authorized run may recover once to its immutable original;
         // hardware, sensor and actuation faults never enter this path.
-        const bool automatic=controller.reason && !strcmp(controller.reason,"cannot-reduce-load-within-limits") &&
+        const bool automatic=controller.reason && (!strcmp(controller.reason,"cannot-reduce-load-within-limits") ||
+            !strcmp(controller.reason,"error-recovery-exhausted")) &&
             observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
             backupAvailable && restoreWorker && !hardRecoveryFault(board) && revisionCurrent();
         FiveTratumMining::manualOverride(true);

@@ -762,7 +762,8 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
         fwt_history_capture(&tuner.history,&tuner.core);
         if (request.kind == FWT_REQUEST_PAUSE) {
             tuner.override_reason = tuner.core.reason;
-            const bool constraint_floor=!strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") &&
+            const bool constraint_floor=(!strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") ||
+                !strcmp(tuner.core.reason,"error-recovery-exhausted")) &&
                 !tuner.input.fault && !state->SYSTEM_MODULE.hardware_fault && !state->SYSTEM_MODULE.overheat_mode;
             if (constraint_floor) queue_automatic_recovery();
             pthread_mutex_unlock(&tuner_mutex);
@@ -875,7 +876,8 @@ void autotune_gamma_interrupt(const char *reason) {
     if (tuner.recovery_requested) recovery_block(reason);
     const bool constraint_pause=!strcmp(reason,"mining-paused-or-faulted") &&
         tuner.core.state==FWT_FAULTED && tuner.core.reason &&
-        !strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") &&
+        (!strcmp(tuner.core.reason,"cannot-reduce-load-within-limits") ||
+         !strcmp(tuner.core.reason,"error-recovery-exhausted")) &&
         tuner.device && !tuner.device->SYSTEM_MODULE.hardware_fault && !tuner.device->SYSTEM_MODULE.overheat_mode;
     if (!constraint_pause) fwt_cancel(&tuner.core,reason);
     if (!strcmp(reason,"firmware-update") || !strcmp(reason,"restart")) tuner.frozen=true;

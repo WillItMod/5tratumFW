@@ -389,7 +389,11 @@ static inline fwt_request fwt_tick(fwt_controller *c,const fwt_input *i,uint64_t
  const bool errors=c->worstError>FWT_CHIP_ERROR_LIMIT||c->sumError/c->samples>FWT_BOARD_ERROR_LIMIT;
  if(errors) {
   fwt_event_measure(c,FWT_EVENT_ERRORS,"error-window-limit",now,hash,power,false,0,0);
-  if(++c->recoveryAttempts>6) return fwt_pause(c,"error-recovery-exhausted");
+  if(++c->recoveryAttempts>6) {
+   fwt_event_measure(c,FWT_EVENT_REJECTED,"error-recovery-exhausted",now,hash,power,false,0,0);
+   c->lastDecision.outcome=FWT_OUTCOME_FAILED;++c->rejected;
+   return fwt_pause(c,"error-recovery-exhausted");
+  }
   ++c->rejected;c->trial=false;
   /* Correct errors with voltage only while both thermal/electrical margins
    * are demonstrably present; otherwise remove clock load first. */
