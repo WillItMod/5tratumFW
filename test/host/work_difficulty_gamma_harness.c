@@ -39,7 +39,7 @@ esp_err_t httpd_resp_sendstr(httpd_req_t *req,const char *text){free(req->body);
 esp_err_t httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *value){(void)server;route=*value;return ESP_OK;}
 uint32_t SERIAL_tx_failure_count(void){return tx_failures;}
 void ASIC_send_work(GlobalState *g,bm_job *job){(void)g;sent_job=*job;sends++;if(during_send)during_send();if(tx_fail&&tx_failures<UINT32_MAX)tx_failures++;free(job->jobid);free(job->extranonce2);free(job);}
-void extranonce_2_generate(uint64_t value,uint32_t size,char *out){(void)value;memset(out,'0',size*2);out[size*2]=0;}
+void extranonce_2_generate(uint64_t value,uint32_t size,char out[static size*2+1]){(void)value;memset(out,'0',size*2);out[size*2]=0;}
 void calculate_coinbase_tx_hash(const char*a,const char*b,const char*c,const char*d,uint8_t out[32]){(void)a;(void)b;(void)c;(void)d;memset(out,0,32);}
 void calculate_coinbase_tx_hash_bin(const uint8_t*a,size_t b,const uint8_t*c,size_t d,const uint8_t*e,size_t f,const uint8_t*g,size_t h,uint8_t out[32]){(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;memset(out,0,32);}
 void calculate_merkle_root_hash(const uint8_t a[32],const uint8_t b[][32],const int n,uint8_t out[32]){(void)a;(void)b;(void)n;memset(out,0,32);}
