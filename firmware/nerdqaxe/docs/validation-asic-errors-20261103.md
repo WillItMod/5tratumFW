@@ -1,8 +1,6 @@
 # Nerd ASIC error display validation — 3 November 2026
 
-Status: **unreleased development source**, with reserved versions NerdQAxe++
-Beta9 and NerdOctAxe Gamma Beta7. The public Beta8 and Beta6 releases and their
-files have not been replaced. Bitaxe Gamma's existing display is unchanged.
+Status: **historical development checkpoint** for the ASIC-error display later included in NerdQAxe++ Beta10 and NerdOctAxe Gamma Beta8. The following test counts and scope apply only to that checkpoint. The [final release validation](../../../docs/validation-autotune-release-20261103.md) separately identifies the final source, later controller/UI tests and physical limits. Earlier public Beta8/Beta6 assets were not replaced.
 
 ## Result
 
@@ -61,6 +59,4 @@ all operating conditions, changed clock/voltage points and sustained thermal
 behaviour have not been newly qualified by this display work.
 
 The ASIC-error checkpoint recorded here did not implement a runtime auto-tuner.
-The later unreleased candidates also implement the controller and Tuning tab;
-see their [current guide](../../../docs/autotuning.md). These ASIC-error test
-results alone do not qualify that controller or establish a public release.
+The later experimental Beta10/Beta8 releases also implement the controller and Tuning tab; see the [current guide](../../../docs/autotuning.md). These ASIC-error checkpoint results alone do not qualify that controller or the later source.

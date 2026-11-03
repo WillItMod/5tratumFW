@@ -1,10 +1,7 @@
 # Dynamic auto-tuning proposal
 
 Status: **original design and qualification requirements, 3 November 2026**.
-The subsequent unreleased Gamma Beta12, QAxe Beta9 and OctAxe Beta7 candidates
-implement a controller and Tuning page. See the [current candidate guide](autotuning.md)
-for implemented behaviour. This design is not a physical validation record;
-existing published images do not gain auto-tuning from documentation alone.
+The subsequent experimental Gamma Beta13, QAxe Beta10 and OctAxe Beta8 releases implement a controller and Tuning page. See the [current guide](autotuning.md) and [exact-source validation](validation-autotune-release-20261103.md). This original design remains a requirements document, not a physical validation record or a claim about earlier published images.
 
 See the [primary-source research and confidence record](dynamic-autotuning-research.md)
 for the evidence behind the control strategy and the remaining measurement and

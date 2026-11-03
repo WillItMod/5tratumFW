@@ -1,8 +1,8 @@
 # OctAxe BETA installation and recovery — owned PCB 2.2 scope
 
-**NerdOctAxe Gamma Beta 6 is a public EXPERIMENTAL release with a saved 480×320 RGB/BGR selector and Standard 320×170 default. Its standard screen and both fans were confirmed normal after a verified paired update using production updater modules in a local QA driver on the owned PCB 2.2 unit. The larger panel remains physically unqualified. QAxe files are not OctAxe firmware.**
+**NerdOctAxe Gamma Beta8 is an experimental adaptive-tuning BETA.** Read [Tuning](../../../docs/autotuning.md) and [final-pair qualification](../../../docs/validation-autotune-release-20261103.md). Tuning is off until an explicit per-run waiver and Start. Standard 320×170 remains the default; the 480×320 RGB/BGR paths remain physically unqualified. QAxe files are not OctAxe firmware.
 
-This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. The current experimental Beta6 pair was compiled from clean source `5567a2d6c1f59808f197062e565fa6525a93f97b`; read [its original software validation](validation-oct-beta6.md). On **28 October 2026**, the production 5tratumOS updater modules, invoked by a local QA driver, completed **Beta 5 → Beta 6** on the owned PCB 2.2 unit, verifying both application/web versions and saved settings. The installed 5tratumOS system was not upgraded for this test; browser interactions were checked separately with fictional miners. The owner confirmed the standard screen and both fans looked normal. This later check does not qualify the larger panel or other assemblies.
+This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. The Beta8 pair is built from `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89`. [Current qualification](../../../docs/validation-autotune-release-20261103.md) keeps final-source checks separate from source `35719b8e`'s limited PCB 2.2 tuner bench. The earlier [Beta6 paired-update record](validation-oct-beta6.md) retains its own standard-screen evidence; it does not qualify later images, another board or a larger panel.
 
 The previous standard-screen [Beta5 pair](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.5) remains available. Beta5 passed separate supervised settings/mining, pause/resume and same-point profile-schedule checks; [that dated evidence](../../../docs/validation-aligned-20261028.md) remains scoped to Beta5. Bench evidence is limited to one owned PCB 2.2 unit after a verified private recovery backup and actual layout inspection. Regulator strap/stock profile were reviewed against pinned hardware source; the package marking was not physically read. No other assembly or revision is qualified by this guide.
 
@@ -22,7 +22,7 @@ A PCB 3.1 unit using the same **NERDOCTAXEGAMMA / NerdOCTAXE-γ / BM1370 ×8** d
 
 ## Matched pair and routine OTA
 
-Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from the same [OctAxe Beta6 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6). Both descriptor/web versions must be `5tratumFW-oct-0.1.0-beta.6`. Read the manifest, experimental limits and checksums. The installed-pair check above covers the owned standard-screen unit only. The intended release family is `octaxe-v…`; a QAxe/Gamma pair or generic GitHub “latest” download is not an OctAxe selection.
+Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from the same [OctAxe Beta8 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.8). Both application/web versions must be `5tratumFW-oct-0.1.0-beta.8`. Verify the manifest, checksums and source receipt. The intended tag family is `octaxe-v…`; a QAxe/Gamma pair or generic latest download is not an OctAxe selection.
 
 Once the exact unit/layout and recovery path are established:
 
@@ -38,24 +38,25 @@ If the page cannot identify an older application, inspect only the model/version
 
 ## Update from 5tratumOS
 
-For an existing compatible **NerdOctAxe Gamma** running 5tratumFW:
+In **5tratumOS → Settings → Updates**, install **0.8.50 on MAIN**, or **0.8.50-dev if already on DEV**, then reload the portal. Keep your existing OS channel; a firmware beta does not require changing it.
 
-1. Update 5tratumOS to **0.8.48** through **Settings → Updates**, then reload the portal.
-2. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
-3. On the correct miner, select **Firmware update**, choose **BETA**, then **Check for updates**.
-4. Confirm that **Firmware version** names **NerdOctAxe Gamma Beta 6**. This is the newest compatible default; Standard 320×170 remains the firmware's default screen.
-5. Select **Install firmware → Confirm install** and wait for **Firmware installation verified**. The OS installs the application and its matching WWW, handles restarts and checks the versions and retained settings. Keep the miner powered throughout.
-6. Use **Open miner** to inspect the result or select a screen using the steps below.
+If this miner is already running a tuning candidate, first open its Tuning page, select **Disable and restore backup**, and wait until the original settings are confirmed restored and tuning is inactive. If already paused and ordinary restoration is waiting, use the separate **Restore original settings and resume mining** action and wait for completed verification. Do this before installing another firmware pair; an accepted Stop request alone is not completed restoration.
 
-The same model-labelled updater offers **Bitaxe Gamma 601/602 Beta 10** and **NerdQAxe++ Beta 8** as their latest defaults. **NerdQAxe++ Beta 6** is also selectable when upgrading an older NerdQAxe++ installation; it is not a downgrade option for a miner already running Beta 6 or newer. Future compatible releases are discovered without another OS update for each firmware version. The BETA channel also includes compatible stable releases.
+1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
+2. On the correct miner, select **Firmware update → BETA → Check for updates**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10**, or **NerdOctAxe Gamma Beta8**.
+4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
+5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
-On older **5tratumOS 0.8.47**, select **Open miner** from Devices and use the miner's manual **Updates** page instead: install the matched `esp-miner-NerdOCTAXE-Gamma.bin` first, wait for restart, then install the same release's `www.bin` and refresh. Confirm both report `5tratumFW-oct-0.1.0-beta.6`. Keep the unit/layout requirements above. Neither route converts stock Nerd firmware; follow the separate initial-installation instructions below for a stock unit.
+The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
+
+Choose **NerdOctAxe Gamma Beta8** for this guide. The one-click route does not replace the separate stock-conversion instructions. Read [Tuning](../../../docs/autotuning.md) before starting a run.
 
 ## Select the experimental larger screen
 
 The reported larger panel is treated as **480×320 (153,600 pixels)** by accepted working assumption. Its controller, wiring and any vendor-specific flash layout remain unidentified. The application defaults to **Standard 320×170** and does not detect a larger panel automatically.
 
-1. Complete the one-click update above and wait for **Firmware installation verified**, or finish the manual Beta6 application/WWW installation in that order. Reload the miner's browser page.
+1. Complete the one-click update above and wait for **Firmware installation verified**, or finish the manual Beta8 application/WWW installation in that order. Reload the miner's browser page.
 2. Open **Miner controls → Display → Screen**.
 3. Select **3.5-inch 480×320 RGB** or **3.5-inch 480×320 BGR** for the larger panel. Keep **Standard 320×170** for the standard screen.
 4. Select **Save this section**, wait for the saved/next-boot notice, then select **Restart device**. Selecting a choice alone does not change the active screen.
@@ -67,7 +68,7 @@ To return to the previous physically checked standard-screen **Beta5**, first se
 
 ## Central management and initial installation
 
-From **5tratumOS 0.8.48**, the paired firmware updater uses fresh hardware/identity evidence and the published package contract independently of the older Dual pool control list. A new compatible firmware version does not need another OS update merely to become discoverable and installable. Model, partition layout, image integrity and API checks remain required; new hardware or a breaking contract can require an adapter.
+With **5tratumOS 0.8.50 MAIN /0.8.50-dev on the existing channel**, the paired firmware updater uses fresh hardware/identity evidence and the published package contract independently of the older Dual pool control list. A new compatible firmware version does not need another OS update merely to become discoverable and installable. Model, partition layout, image integrity and API checks remain required; new hardware or a breaking contract can require an adapter.
 
 The separate central **Dual pool** and **Power** controls retain their own release/source qualification. Enabling one-click firmware installation does not extend those control permissions. Native A/B sessions and the miner's own controls remain available under their security policy. A similar model name, count or prefix is insufficient.
 

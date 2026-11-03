@@ -2,21 +2,21 @@
 
 **[Download firmware — choose your miner](../../DOWNLOADS.md)**
 
-| Miner | Current BETA release | Installation guide |
-| --- | --- | --- |
-| **Gamma 601 / 602** | [Beta 11 — EXPERIMENTAL](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.11) | [Gamma](../installation.md) |
-| **NerdQAxe++** | [Beta 8](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.8) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
-| **NerdOctAxe Gamma** | [Beta 6 — EXPERIMENTAL](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
+| Miner | Current experimental BETA | Release notes | Installation |
+| --- | --- | --- | --- |
+| **Bitaxe Gamma 601 /602** | [Beta13](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.13) | [Gamma Beta13](v0.1.0-beta.13.md) | [Gamma](../installation.md) |
+| **NerdQAxe++** | [Beta10](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.10) | [QAxe Beta10](../../firmware/nerdqaxe/docs/releases/qaxe-v0.1.0-beta.10.md) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
+| **NerdOctAxe Gamma** | [Beta8](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.8) | [OctAxe Beta8](../../firmware/nerdqaxe/docs/releases/octaxe-v0.1.0-beta.8.md) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 
-Gamma Beta11 uses ESP-Miner v2.15.4; QAxe Beta8 and OctAxe Beta6 use shufps v1.1.1-rc1. All retain saved tuning-profile schedules. **Gamma Beta11 is software/build qualified only and has not been installed on a miner. Its original W5500 Ethernet driver is off by default; physical LAN and Ethernet-only OTA remain unqualified.** The previous Gamma Beta10, QAxe Beta8 and the previous OctAxe Beta5 completed short owned-device checks with normal screens and fans. OctAxe Beta6 adds an **experimental** saved larger-screen selector. A later production-updater-module check verified the Beta5 → Beta6 application/web pair and retained settings on the owned PCB 2.2 unit, with owner-confirmed normal standard screen and both fans. The larger panel remains unqualified. See [Beta6 validation](../../firmware/nerdqaxe/docs/validation-oct-beta6.md), [aligned changes](../aligned-tuning-update.md), [upstream migration](../upstream-migration-20261028.md) and [earlier owned-device validation](../validation-aligned-20261028.md).
+The earlier Beta12/QAxe Beta9/OctAxe Beta7 builds were unpublished internal candidates; these new public version numbers let the updater offer the completed release to those internal testers. All three add opt-in measured whole-miner tuning, a per-run waiver, verified original-settings backup/restore, persistent activity status, live decisions and telemetry graphs. Nerd also adds board/per-chip ASIC errors. None enables tuning automatically. Use the [Tuning guide](../autotuning.md) and [5tratumOS 0.8.50 update instructions](../../DOWNLOADS.md#update-through-5tratumos).
 
-Use both BIN files from one model's release. [Firmware selection](../firmware-selection.md) records the exact model and PCB coverage.
+Exact build sources: Gamma `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89`; NerdQAxe++ and NerdOctAxe Gamma `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89`. [Final-build validation and physical limits](../validation-autotune-release-20261103.md) distinguish software/target checks from earlier source `35719b8e` QAxe/OctAxe tests. Gamma 602, larger panels and W5500 hardware remain outside completed tuner qualification. Original manifests and historical evidence are never relabelled.
 
 <details>
-<summary>Validation and build provenance</summary>
+<summary>Earlier-release validation and build provenance (Beta11 / QA8 / Oct6)</summary>
 
 
-| Family | Version and tag | Current evidence |
+| Family | Version and tag | Evidence for that earlier release |
 | --- | --- | --- |
 | Gamma PCB 601/602 / BM1370×1 | `5tratumFW-0.1.0-beta.11` · `v0.1.0-beta.11` | **EXPERIMENTAL** original W5500 driver, off by default. Software/build checks only; no Beta11 miner installation or physical LAN/Ethernet-only OTA qualification. [Notes](v0.1.0-beta.11.md) · [Validation](../validation-gamma-ethernet.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | `5tratumFW-qa-0.1.0-beta.8` · `qaxe-v0.1.0-beta.8` | Standard 320×170 screen checked; test PCB revision unknown. Larger-screen selector remains experimental. [Notes](../../firmware/nerdqaxe/docs/releases/qaxe-v0.1.0-beta.8.md) · [Validation](../validation-aligned-20261028.md) |

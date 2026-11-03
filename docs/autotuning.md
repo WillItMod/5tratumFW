@@ -1,9 +1,6 @@
-# Adaptive tuning — development candidates
+# Adaptive tuning — experimental BETA
 
-The first candidates are **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10**
-and **NerdOctAxe Gamma Beta8**. They are unreleased while validation is in
-progress. Use each family's own matched application and web image; no factory
-erase or NVS image is part of an update.
+The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10** and **NerdOctAxe Gamma Beta8**. Use each family's matched application and web image; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [exact-source qualification](validation-autotune-release-20261103.md). Publication does not expand the physical test scope.
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -157,10 +154,9 @@ startup. Recovery is not complete until live settings, fans and mining state
 are verified. It never clears a hardware fault or bypasses normal startup
 protection. A manual power action or an update cancels a pending recovery.
 
-The original operating and cooling settings may differ from the current tuning
-targets. Recovery does not promise that an original point will satisfy stricter
-limits selected later. It requires explicit confirmation; an over-temperature
-stop cannot silently authorize a higher-load rollback.
+When an ordinary measured trial is rejected, the controller returns to its better measured point when headroom permits. If protective backoff exhausts the permitted clock range, or repeated error-correction windows are exhausted, the failed point is retained in the decision history. A clock-floor rejection records the initiating readings; error exhaustion records the actual completed window means, without inventing an improvement score. These two soft tuning failures can make one guarded automatic recovery attempt: pause and cool, validate protection and sensors, restore and independently verify the immutable pre-tune settings, then resume and verify normal mining with tuning off. Cooling admission requires the applicable temperature headroom; Gamma holds mining work until fresh powered ASIC/regulator/fan readings pass. Nerd applies the extra 5°C margin before startup and continues to enforce user ceilings during powered startup. A real hardware fault, invalid backup, missing telemetry, failed verification or newer manual/scheduled control blocks or cancels recovery. There is no automatic fault clearing, MCU reboot or repeated retry. The original point can differ from tighter tuning targets selected later; improve cooling or review the permitted range before another Start.
+
+On Gamma 601/602, the ASIC temperature diode is unavailable while ASIC power is off. Recovery may power and initialize the ASIC with mining work held back until fresh powered sensor checks pass, then verify normal mining counters.
 
 A completed restore is reported only after saved-settings checks and successful
 live readback. The browser never automatically repeats the state-changing
@@ -272,11 +268,6 @@ disable tuning, restore and verify the original settings, and review the exact
 journal compatibility rather than assuming an older image can read every later
 manual cooling change. Keep a unit-specific recovery backup.
 
-See the [design requirements](dynamic-autotuning-design.md) and
-[primary-source research](dynamic-autotuning-research.md). A separate validation
-record will identify the exact source, software checks, image pairs and any
-supervised miner observations before publication.
+See the [design requirements](dynamic-autotuning-design.md), [primary-source research](dynamic-autotuning-research.md) and [final release validation](validation-autotune-release-20261103.md) for exact source, software checks, image pairs and separately scoped miner observations.
 
-The [3 November validation and memory-repair record](validation-autotune-memory-20261103.md)
-describes the earlier physical failures, preserved-settings recoveries and the
-qualification still required before these candidates can be published.
+The [3 November memory-repair history](validation-autotune-memory-20261103.md) records earlier failures, preserved-settings recovery and limited source `35719b8e` tests. The [final release validation](validation-autotune-release-20261103.md) records the later source and its separate software/physical evidence; Gamma 602, larger Nerd panels and W5500 hardware remain unqualified.

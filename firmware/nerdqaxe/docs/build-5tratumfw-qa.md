@@ -2,7 +2,7 @@
 
 This build path produces **paired application and WWW OTA files for NerdQAxe++**, selected as `NERDQAXEPLUS2`, with four BM1370 ASICs and an ESP32-S3 controller. The physical PCB revision of the tested development unit is unidentified. A build does not establish compatibility with every revision. It does not support Gamma, NerdQAxe+, NerdOctAxe or the other inherited board definitions.
 
-The current published QAxe version is `5tratumFW-qa-0.1.0-beta.8`, compiled from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d` on shufps v1.1.1-rc1. It adds saved tuning-profile scheduling and retains the Beta7 screen selector. Its own target, browser/host, native display and package checks passed, followed by a short supervised standard-screen update and settings/mining/control bench on the owned unit. See [the dated validation](../../../docs/validation-aligned-20261028.md) for exact limits. [Beta7](validation-qa-beta7.md), [Beta6](validation-qa-beta6.md) and [Beta5](validation-qa-beta5.md) retain their own historical evidence; none qualifies the larger panel.
+The current experimental QAxe version is `5tratumFW-qa-0.1.0-beta.10`, built from `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89` on shufps v1.1.1-rc1. It adds opt-in adaptive tuning, ASIC errors, live activity/decisions/graphs and current-work difficulty. [Final validation](../../../docs/validation-autotune-release-20261103.md) distinguishes final software checks from the earlier source `35719b8e` hardware bench. [Earlier Beta8 evidence](../../../docs/validation-aligned-20261028.md) and the earlier release records retain their own scope; none qualifies a larger panel.
 
 Both `version.txt` and `main/http_server/axe-os/src/app/firmware-web-version.ts` must contain the same value. The package verifier checks the ESP application descriptor and the actual compressed web JavaScript; changing a filename does not change either firmware version. The default remains the original 320×170 screen. The QAxe image includes a [saved screen selector](display-settings.md) for two experimental 480×320 profiles. A fixed experimental compile-time default remains excluded from this release/package path.
 
@@ -63,7 +63,7 @@ These files contain no NVS partition and are not merged factory flash images. Us
 Check package hashes before installation:
 
 ```sh
-cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.8'
+cd 'release/NerdQAxe++/5tratumFW-qa-0.1.0-beta.10'
 shasum -a 256 -c SHA256SUMS
 ```
 

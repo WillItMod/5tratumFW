@@ -1,6 +1,6 @@
 # QAxe paired OTA installation and recovery
 
-**QAxe Beta8 defaults to the standard 320×170 screen and includes experimental 480×320 RGB/BGR choices under Miner controls → Display → Screen. Save this section, restart the device, then refresh to confirm the active choice. The larger panel has not been physically qualified; see [screen selection](display-settings.md).**
+**QAxe Beta10 is an experimental adaptive-tuning BETA.** Read [Tuning](../../../docs/autotuning.md) and [final-pair qualification](../../../docs/validation-autotune-release-20261103.md). Tuning is off until an explicit per-run waiver and Start. Standard 320×170 remains the default; saved 480×320 RGB/BGR choices remain physically unqualified.
 
 ## Identify before choosing
 
@@ -8,7 +8,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download one **QAxe-specific matched pair** from the [model-labelled prereleases](https://github.com/WillItMod/5tratumFW/releases), with its `manifest.json`, `SHA256SUMS` and corresponding source. The current Beta8 pair passed its own short supervised check on the standard-screen owned unit; read [the dated validation](../../../docs/validation-aligned-20261028.md) before selecting it. The [Beta6 record](validation-qa-beta6.md) remains evidence for that earlier pair. On macOS/Linux, verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`, comparing both entries against the published checksums. Keep the original firmware, current settings and a private full-flash backup for recovery.
+Download the **QAxe Beta10 matched pair** from [its release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.10), with `manifest.json`, `SHA256SUMS` and corresponding source `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89`. Verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`. Keep the existing settings and a private unit-specific recovery backup. [Earlier Beta8](../../../docs/validation-aligned-20261028.md) and [Beta6](validation-qa-beta6.md) remain evidence for those images, not later qualification.
 
 ## Installation FAQ
 
@@ -42,9 +42,19 @@ Open **Updates → Check updates**. The browser checks the public WillItMod/5tra
 
 ## Update through 5tratumOS
 
-For an existing compatible **NerdQAxe++** running 5tratumFW, update 5tratumOS to **0.8.48** through **Settings → Updates** and reload the portal. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. On the NerdQAxe++, select **Firmware update → BETA → Check for updates**. Leave **NerdQAxe++ Beta 8** as the newest default, or select **NerdQAxe++ Beta 6** when upgrading an older installation. Beta 6 is not offered as a downgrade from Beta 6 or newer. Select **Install firmware → Confirm install** and keep the miner powered until **Firmware installation verified** appears. The OS installs the matched application/web pair, handles restarts and verifies retained settings. See the [complete one-click instructions](../../../DOWNLOADS.md#update-through-5tratumos).
+In **5tratumOS → Settings → Updates**, install **0.8.50 on MAIN**, or **0.8.50-dev if already on DEV**, then reload the portal. Keep your existing OS channel; a firmware beta does not require changing it.
 
-The paired updater discovers future compatible releases without another OS update for each firmware version; BETA also includes compatible stable releases. Its hardware, identity, package and API checks are independent of the separate central Dual pool and Power control qualifications. New hardware or a breaking contract can require an adapter. Initial conversion from stock firmware still uses the manual steps above.
+If this miner is already running a tuning candidate, first open its Tuning page, select **Disable and restore backup**, and wait until the original settings are confirmed restored and tuning is inactive. If already paused and ordinary restoration is waiting, use the separate **Restore original settings and resume mining** action and wait for completed verification. Do this before installing another firmware pair; an accepted Stop request alone is not completed restoration.
+
+1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
+2. On the correct miner, select **Firmware update → BETA → Check for updates**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10**, or **NerdOctAxe Gamma Beta8**.
+4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
+5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
+
+The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
+
+Choose **NerdQAxe++ Beta10** for this guide. Read [Tuning](../../../docs/autotuning.md) before starting a run; the update does not start it.
 
 ## Routine OTA upgrade
 

@@ -4,7 +4,7 @@ These application and web images are for **Bitaxe Gamma PCB revisions 601 and 60
 
 GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this Gamma image's supported hardware. NerdQAxe++ has a separate firmware family in this repository; use its [model-specific guide](nerdqaxe.md) and image pair. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
 
-**Current public Gamma release: [Beta11 — EXPERIMENTAL BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.11).** It has software/build evidence only and has not been installed on a miner. The original W5500 Ethernet option is off by default; physical LAN and Ethernet-only OTA remain unqualified. See [Ethernet setup and qualification](gamma-ethernet.md). The previous physically checked [Beta10 pair](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.10) remains available.
+**Current public Gamma release: [Beta13 — experimental BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.13).** Read [Tuning](autotuning.md) before enabling the optional controller and [exact-source qualification](validation-autotune-release-20261103.md) for its limits. Gamma 602 tuner admission/restore remains unqualified. W5500 stays off by default; physical LAN/Ethernet-only OTA remain unqualified. Previous releases retain their own evidence.
 
 ## Choose the correct files
 
@@ -30,11 +30,19 @@ Both images are needed to install a complete release when its application and we
 
 ## Update through 5tratumOS
 
-For an existing compatible **Bitaxe Gamma 601 or 602** running 5tratumFW, update 5tratumOS to **0.8.48 or later** through **Settings → Updates** and reload the portal. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic. On the correct Gamma, select **Firmware update → BETA → Check for updates** and confirm the model-labelled **Bitaxe Gamma 601/602 Beta11 — experimental** release. Select **Install firmware → Confirm install** and keep the miner powered until **Firmware installation verified** appears. The OS installs both matching images, handles restarts and verifies versions and retained settings. See the [complete one-click instructions](../DOWNLOADS.md#update-through-5tratumos).
+In **5tratumOS → Settings → Updates**, install **0.8.50 on MAIN**, or **0.8.50-dev if already on DEV**, then reload the portal. Keep your existing OS channel; a firmware beta does not require changing it.
 
-For Beta11, install and verify both images over Wi-Fi with the adapter disconnected. The update does not enable Ethernet by default. Open **Network → Enable wired Ethernet (W5500)** only when ready to follow [the powered-off wiring and save/restart procedure](gamma-ethernet.md#enable-ethernet). Ethernet-only update qualification remains pending.
+If this miner is already running a tuning candidate, first open its Tuning page, select **Disable and restore backup**, and wait until the original settings are confirmed restored and tuning is inactive. If already paused and ordinary restoration is waiting, use the separate **Restore original settings and resume mining** action and wait for completed verification. Do this before installing another firmware pair; an accepted Stop request alone is not completed restoration.
 
-Future compatible releases are discovered without another OS update for each firmware version; BETA also includes compatible stable releases. Firmware-update eligibility is independent of separate central miner-control qualification, including Power. Hardware, identity, package and API checks still apply; new hardware or a breaking contract can require an adapter. The one-click updater does not perform the initial conversion from stock firmware.
+1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
+2. On the correct miner, select **Firmware update → BETA → Check for updates**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10**, or **NerdOctAxe Gamma Beta8**.
+4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
+5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
+
+The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
+
+Complete the Gamma paired update over Wi-Fi. Ethernet is not enabled by the update; use the [adapter instructions](gamma-ethernet.md) separately. Read [Tuning](autotuning.md) for opt-in setup, waiver and restore controls.
 
 ## Upload the paired release
 
