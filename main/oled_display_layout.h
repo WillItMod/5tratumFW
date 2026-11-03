@@ -225,7 +225,7 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         } else {
             char rejected[8];
             if (s->search.rejectedWindows > 99) strcpy(rejected,"99+");
-            else snprintf(rejected,sizeof(rejected),"%u",s->search.rejectedWindows);
+            else snprintf(rejected,sizeof(rejected),"%" PRIu32,s->search.rejectedWindows);
             snprintf(c,sizeof(c),"Trial %u/%u Rej%s",s->search.roundExperiments,s->search.roundExperimentLimit,rejected);
         }
         break;
