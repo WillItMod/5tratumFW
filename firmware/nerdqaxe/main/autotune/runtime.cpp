@@ -375,8 +375,11 @@ void restoreWorkerLoop(void *) {
         restoreSaved=true;adapterReason="Original settings saved; waiting for protected live restore";
     }
 }
-void pointJson(JsonVariant out,const fwt_point *point) {
-    if (!point) { out.set(nullptr); return; }
+void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
+    // Converting an absent member proxy to JsonVariant produces an unbound
+    // variant. Insert through its parent so the wire schema always has keys.
+    if (!point) { parent[key]=nullptr; return; }
+    auto out=parent[key].to<JsonObject>();
     out["frequencyMHz"] = point->frequencyMHz; out["coreVoltageMv"] = point->coreVoltageMv;
 }
 }
@@ -483,9 +486,9 @@ bool report(JsonDocument &document) {
     status["reason"] = adapterReason ? adapterReason : optionsError ? "Stored tuning options are invalid or unreadable" : observationReason ? observationReason : controller.reason;
     status["active"]=controller.active; status["ownsSettings"]=controller.owns || restoring || pending;
     status["runId"]=controller.runId; status["experiments"]=controller.experiments;
-    pointJson(status["baseline"],controller.baselineAvailable?&controller.baseline:nullptr);
-    pointJson(status["current"],observed.current.frequencyMHz>0?&observed.current:nullptr);
-    pointJson(status["best"],controller.bestAvailable?&controller.best:nullptr);
+    pointJson(status,"baseline",controller.baselineAvailable?&controller.baseline:nullptr);
+    pointJson(status,"current",observed.current.frequencyMHz>0?&observed.current:nullptr);
+    pointJson(status,"best",controller.bestAvailable?&controller.best:nullptr);
     auto telemetry=status["telemetry"].to<JsonObject>();
     const uint64_t now=esp_timer_get_time();
     const bool valid=observed.valid && observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=15000000;

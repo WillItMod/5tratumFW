@@ -223,6 +223,27 @@ int main(int argc,char **argv) {
         start();const uint32_t before=atomic_load(&manual_epoch);
         nvs_config_set_u64(NVS_CONFIG_BEST_DIFF,nvs_config_get_u64(NVS_CONFIG_BEST_DIFF)+1);
         drain_auth_write();assert(atomic_load(&manual_epoch)==before&&step(false)&&tuner.core.owns);
+    } else if(!strcmp(name,"same-saved-intent")) {
+        for(unsigned kind=0;kind<4;++kind) {
+            start();assert(step(false));
+            gs.POWER_MANAGEMENT_MODULE.frequency_value=618.875f;gs.POWER_MANAGEMENT_MODULE.actual_frequency=618.875f;
+            host_now+=TUNE_POLL_US;
+            unsigned before=writes;const uint32_t epoch=atomic_load(&manual_epoch);
+            if(kind==0) nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY,nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY));
+            if(kind==1) nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE,nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE));
+            if(kind==2) nvs_config_set_bool(NVS_CONFIG_AUTO_FAN_SPEED,nvs_config_get_bool(NVS_CONFIG_AUTO_FAN_SPEED));
+            if(kind==3) {char *value=nvs_config_get_string(NVS_CONFIG_STRATUM_URL);nvs_config_set_string(NVS_CONFIG_STRATUM_URL,value);free(value);}
+            assert(atomic_load(&manual_epoch)!=epoch&&!queue_pending&&writes==before);
+            uint16_t voltage=1100;float frequency=618.875f;
+            assert(!autotune_gamma_select_target(&gs,&voltage,&frequency)&&!tuner.core.owns);
+            assert(voltage==1173&&frequency==625.125f&&tuner.backup_available&&writes==before);
+            gs.POWER_MANAGEMENT_MODULE.frequency_value=gs.POWER_MANAGEMENT_MODULE.actual_frequency=625.125f;
+            host_now+=TUNE_POLL_US;observe();
+        }
+        start();const uint32_t epoch=atomic_load(&manual_epoch);unsigned before=writes;
+        nvs_config_set_u16(NVS_CONFIG_ASIC_FREQUENCY,580); /* Invalid key type. */
+        nvs_config_set_u64(NVS_CONFIG_BEST_DIFF,nvs_config_get_u64(NVS_CONFIG_BEST_DIFF));
+        assert(atomic_load(&manual_epoch)==epoch&&!queue_pending&&writes==before&&tuner.core.owns);
     } else if(!strcmp(name,"start-snapshot-interleave")) {
         start();autotune_gamma_interrupt("manual-control");step(false);
         revoke_after_snapshot=true;

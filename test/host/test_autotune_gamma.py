@@ -62,6 +62,7 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_physical_transition_requires_fresh_voltage_matching_the_applied_point(self): self.run_case('wire-vout-drift')
     def test_manual_commit_after_owner_snapshot_hands_off_the_latest_atomic_pair(self): self.run_case('manual-pair-interleave')
     def test_calibration_and_regulator_changes_revoke_at_queue_and_commit_but_statistics_do_not(self): self.run_case('hardware-policy-handoff')
+    def test_same_saved_manual_point_or_policy_revokes_ram_owner_without_nvs_write(self): self.run_case('same-saved-intent')
     def test_start_cannot_consume_manual_revocation_racing_the_saved_snapshot(self): self.run_case('start-snapshot-interleave')
     def test_restore_storage_failure_freezes_live_point_then_restores_all_fields(self): self.run_case('restore-storage')
     def test_restore_never_clears_fault_or_lowers_cooling_during_fault(self): self.run_case('restore-fault')

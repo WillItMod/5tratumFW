@@ -826,11 +826,12 @@ char *nvs_config_get_string_indexed(NvsConfigKey key, int index)
 void nvs_config_set_string(NvsConfigKey key, const char *value)
 {
     Settings *setting = nvs_config_get_settings(key);
-    if (!setting || setting->type != TYPE_STR || (setting->value[0].str && strcmp(setting->value[0].str, value) == 0)) return;
+    if (!setting || setting->type != TYPE_STR || !value) return;
+    if (autotune_control_key(key)) notify_autotune_override();
+    if (setting->value[0].str && strcmp(setting->value[0].str, value) == 0) return;
 
     ConfigUpdate update = { .key = key, .type = TYPE_STR, .value.str = strdup(value) };
     if (!update.value.str) return;
-    if (autotune_control_key(key)) notify_autotune_override();
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
 }
 
@@ -911,8 +912,9 @@ uint16_t nvs_config_get_u16(NvsConfigKey key)
 void nvs_config_set_u16(NvsConfigKey key, uint16_t value)
 {
     Settings *setting = nvs_config_get_settings(key);
-    if (!setting || setting->type != TYPE_U16 || setting->value[0].u16 == value) return;
+    if (!setting || setting->type != TYPE_U16) return;
     if (autotune_control_key(key)) notify_autotune_override();
+    if (setting->value[0].u16 == value) return;
 
     ConfigUpdate update = { .key = key, .type = TYPE_U16, .value.u16 = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -938,8 +940,9 @@ int32_t nvs_config_get_i32(NvsConfigKey key)
 void nvs_config_set_i32(NvsConfigKey key, int32_t value)
 {
     Settings *setting = nvs_config_get_settings(key);
-    if (!setting || setting->type != TYPE_I32 || setting->value[0].i32 == value) return;
+    if (!setting || setting->type != TYPE_I32) return;
     if (autotune_control_key(key)) notify_autotune_override();
+    if (setting->value[0].i32 == value) return;
 
     ConfigUpdate update = { .key = key, .type = TYPE_I32, .value.i32 = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -1001,8 +1004,9 @@ bool nvs_config_get_tuning_pair(uint16_t *voltage_mv, float *frequency_mhz)
 void nvs_config_set_float(NvsConfigKey key, float value)
 {
     Settings *setting = nvs_config_get_settings(key);
-    if (!setting || setting->type != TYPE_FLOAT || fabsf(setting->value[0].f - value) < 0.001f) return;
+    if (!setting || setting->type != TYPE_FLOAT || !isfinite(value)) return;
     if (autotune_control_key(key)) notify_autotune_override();
+    if (fabsf(setting->value[0].f - value) < 0.001f) return;
 
     ConfigUpdate update = { .key = key, .type = TYPE_FLOAT, .value.f = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);
@@ -1028,8 +1032,9 @@ bool nvs_config_get_bool(NvsConfigKey key)
 void nvs_config_set_bool(NvsConfigKey key, bool value)
 {
     Settings *setting = nvs_config_get_settings(key);
-    if (!setting || setting->type != TYPE_BOOL || setting->value[0].b == value) return;
+    if (!setting || setting->type != TYPE_BOOL) return;
     if (autotune_control_key(key)) notify_autotune_override();
+    if (setting->value[0].b == value) return;
 
     ConfigUpdate update = { .key = key, .type = TYPE_BOOL, .value.b = value };
     xQueueSend(nvs_save_queue, &update, portMAX_DELAY);

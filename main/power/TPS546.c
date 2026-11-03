@@ -400,82 +400,83 @@ static uint16_t float_2_slinear11(float value)
  * The mantissa occupies the full 16-bits of the value
  * @param value The ULINEAR16 value to convert
  */
+/* TI TPS546D24A SLUSDN0A, section 7.6.18 / Table 7-31: bit 7 is
+ * REL (limits/margins), bits 6:5 alone select the format, bits 4:0 are a
+ * signed exponent supported from -12 through -4. VOUT_COMMAND/READ_VOUT
+ * remain absolute regardless of REL (sections 7.6.19 and 7.6.64). */
+static bool decode_vout_mode(uint8_t mode, int *exponent)
+{
+    if (!exponent || (mode & 0x60)) return false;
+    int value = mode & 0x1F;
+    if (value & 0x10) value -= 32;
+    if (value < -12 || value > -4) return false;
+    *exponent = value;
+    return true;
+}
+
 static float ulinear16_2_float(uint16_t value)
 {
-    uint8_t voutmode = 0;
-    int exponent;
-    float result;
-
-    if (smb_read_byte(PMBUS_VOUT_MODE, &voutmode) != ESP_OK || (voutmode & 0xE0)) return NAN;
-
-    if (voutmode & 0x10) {
-        // exponent is negative
-        exponent = -1 * ((~voutmode & 0x1F) + 1);
-    } else {
-        exponent = (voutmode & 0x1F);
-    }
-    result = (value * powf(2.0, exponent));
-    return result;
-}
-
-/**
- * @brief Convert a float value into a ULINEAR16
- * the exponent comes from the VOUT_MODE bits[4..0]
- * stored in twos-complement
- * The mantissa occupies the full 16-bits of the result
- * @param value The float value to convert
-*/
-static uint16_t float_2_ulinear16(float value)
-{
-    uint8_t voutmode = 0;
-    float exponent;
-    uint16_t result;
-
-    if (smb_read_byte(PMBUS_VOUT_MODE, &voutmode) != ESP_OK || (voutmode & 0xE0)) return 0;
-    if (voutmode & 0x10) {
-        // exponent is negative
-        exponent = -1 * ((~voutmode & 0x1F) + 1);
-    } else {
-        exponent = (voutmode & 0x1F);
-    }
-
-    result = (value / powf(2.0, exponent));
-
-    return result;
-}
-
-static esp_err_t encode_voltage_checked(float volts, uint16_t *encoded)
-{
     uint8_t mode = 0;
-    if (!encoded || !isfinite(volts) || volts <= 0 ||
-        smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK || (mode & 0xE0)) return ESP_FAIL;
-    int exponent = mode & 0x1F;
-    if (exponent & 0x10) exponent -= 32;
-    double raw = ldexp((double)volts, -exponent);
+    int exponent;
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK ||
+        !decode_vout_mode(mode, &exponent)) return NAN;
+    return ldexpf((float)value, exponent);
+}
+
+static esp_err_t encode_voltage_in_mode(float value, uint8_t mode, uint16_t *encoded)
+{
+    int exponent;
+    if (!encoded || !isfinite(value) || value <= 0 ||
+        !decode_vout_mode(mode, &exponent)) return ESP_FAIL;
+    double raw = ldexp((double)value, -exponent);
     if (!isfinite(raw) || raw < 1 || raw > UINT16_MAX) return ESP_FAIL;
     *encoded = (uint16_t)raw;
     return ESP_OK;
 }
 
+static esp_err_t encode_voltage_checked(float volts, uint16_t *encoded)
+{
+    uint8_t mode = 0;
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK) return ESP_FAIL;
+    return encode_voltage_in_mode(volts, mode, encoded);
+}
+
 static esp_err_t TPS546_write_vout_limit_ratios(float vout_command)
 {
-    /* Preserve the existing ratio-register values, while rejecting an
-     * unreadable exponent rather than emitting a guessed PMBus command. */
+    /* REL=1 encodes dimensionless ratios; REL=0 encodes absolute volts.
+     * Never change VOUT_MODE itself or assume its POR-selected REL bit. */
     const uint8_t registers[] = {PMBUS_VOUT_OV_FAULT_LIMIT, PMBUS_VOUT_OV_WARN_LIMIT,
         PMBUS_VOUT_MARGIN_HIGH, PMBUS_VOUT_MARGIN_LOW, PMBUS_VOUT_UV_WARN_LIMIT,
         PMBUS_VOUT_UV_FAULT_LIMIT};
     const float ratios[] = {TPS546_INIT_VOUT_OV_FAULT_LIMIT, TPS546_INIT_VOUT_OV_WARN_LIMIT,
         TPS546_INIT_VOUT_MARGIN_HIGH, TPS546_INIT_VOUT_MARGIN_LOW, TPS546_INIT_VOUT_UV_WARN_LIMIT,
         TPS546_INIT_VOUT_UV_FAULT_LIMIT};
+    uint8_t mode = 0;
     uint16_t encoded[6];
+    if (!isfinite(vout_command) || vout_command <= 0 ||
+        smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK) return ESP_FAIL;
     for (unsigned i = 0; i < 6; ++i) {
-        if (encode_voltage_checked(ratios[i], &encoded[i]) != ESP_OK) return ESP_FAIL;
+        const float value = (mode & 0x80) ? ratios[i] : ratios[i] * vout_command;
+        if (encode_voltage_in_mode(value, mode, &encoded[i]) != ESP_OK) return ESP_FAIL;
     }
     for (unsigned i = 0; i < 6; ++i) {
         if (smb_write_word(registers[i], encoded[i]) != ESP_OK) return ESP_FAIL;
     }
-    (void)vout_command;
     return ESP_OK;
+}
+
+static esp_err_t TPS546_write_initial_vout_settings(void)
+{
+    uint8_t mode = 0;
+    uint16_t command, maximum, minimum;
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK ||
+        encode_voltage_in_mode(tps546_config.TPS546_INIT_VOUT_COMMAND, mode, &command) != ESP_OK ||
+        encode_voltage_in_mode(tps546_config.TPS546_INIT_VOUT_MAX, mode, &maximum) != ESP_OK ||
+        encode_voltage_in_mode(tps546_config.TPS546_INIT_VOUT_MIN, mode, &minimum) != ESP_OK) return ESP_FAIL;
+    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_COMMAND, command), TAG, "Initial VOUT_COMMAND failed");
+    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_MAX, maximum), TAG, "Initial VOUT_MAX failed");
+    ESP_RETURN_ON_ERROR(smb_write_word(PMBUS_VOUT_MIN, minimum), TAG, "Initial VOUT_MIN failed");
+    return TPS546_write_vout_limit_ratios(tps546_config.TPS546_INIT_VOUT_COMMAND);
 }
 
 /*--- Public TPS546 functions ---*/
@@ -764,17 +765,9 @@ void TPS546_write_entire_config(void)
     ESP_LOGI(TAG, "Setting VOUT SCALE: %.2f", tps546_config.TPS546_INIT_SCALE_LOOP);
     smb_write_word(PMBUS_VOUT_SCALE_LOOP, float_2_slinear11(tps546_config.TPS546_INIT_SCALE_LOOP));
 
-    ESP_LOGI(TAG, "Setting VOUT_COMMAND: %.2fV", tps546_config.TPS546_INIT_VOUT_COMMAND);
-    smb_write_word(PMBUS_VOUT_COMMAND, float_2_ulinear16(tps546_config.TPS546_INIT_VOUT_COMMAND));
-
-    ESP_LOGI(TAG, "Setting VOUT_MAX: %.2fV", tps546_config.TPS546_INIT_VOUT_MAX);
-    smb_write_word(PMBUS_VOUT_MAX, float_2_ulinear16(tps546_config.TPS546_INIT_VOUT_MAX));
-
-    ESP_LOGI(TAG, "Setting VOUT_MIN: %.2fV", tps546_config.TPS546_INIT_VOUT_MIN);
-    smb_write_word(PMBUS_VOUT_MIN, float_2_ulinear16(tps546_config.TPS546_INIT_VOUT_MIN));
-
-    if (TPS546_write_vout_limit_ratios(tps546_config.TPS546_INIT_VOUT_COMMAND) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write VOUT limit ratios");
+    if (TPS546_write_initial_vout_settings() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to encode/write initial VOUT settings");
+        return;
     }
 
     /* iout current */
@@ -1293,7 +1286,8 @@ esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
     TPS546_StrictTelemetry result = {0};
     uint8_t mode = 0;
     uint16_t vin = 0, vout = 0, iout = 0, temperature = 0;
-    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK || (mode & 0xE0) ||
+    int exponent;
+    if (smb_read_byte(PMBUS_VOUT_MODE, &mode) != ESP_OK || !decode_vout_mode(mode, &exponent) ||
         smb_read_word(PMBUS_READ_VIN, &vin) != ESP_OK ||
         smb_read_word(PMBUS_READ_VOUT, &vout) != ESP_OK ||
         smb_read_word(PMBUS_READ_IOUT, &iout) != ESP_OK ||
@@ -1304,8 +1298,6 @@ esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample)
         smb_read_byte(PMBUS_STATUS_INPUT, &result.status_input) != ESP_OK ||
         smb_read_byte(PMBUS_STATUS_TEMPERATURE, &result.status_temperature) != ESP_OK ||
         smb_read_byte(PMBUS_STATUS_CML, &result.status_cml) != ESP_OK) return ESP_FAIL;
-    int exponent = mode & 0x1F;
-    if (exponent & 0x10) exponent -= 32;
     /* Automatic steps are 5 mV. A coarser converter format cannot implement
      * that envelope, even if a particular cached value looks plausible. */
     if (ldexpf(1.0f,exponent) > 0.005f) return ESP_FAIL;

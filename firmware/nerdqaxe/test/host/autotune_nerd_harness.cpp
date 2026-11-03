@@ -7,7 +7,9 @@ static JsonDocument response(const char *body) {
     return result;
 }
 static JsonDocument snapshot() {
-    JsonDocument result;assert(FiveTratumAutotune::report(result));return result;
+    JsonDocument report;assert(FiveTratumAutotune::report(report));
+    std::string wire;serializeJson(report,wire);
+    JsonDocument result;assert(deserializeJson(result,wire)==DeserializationError::Ok);return result;
 }
 static void start() {
     auto result=response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}");
@@ -40,6 +42,14 @@ int main(int argc,char **argv) {
     assert(snapshot()["supported"].as<bool>());
     assert(!snapshot()["backup"]["available"].as<bool>());
     assert(!snapshot()["status"]["active"].as<bool>());
+    auto initial=snapshot();
+    for(const char *key:{"baseline","current","best"}) {
+        bool present=false;
+        for(JsonPairConst pair:initial["status"].as<JsonObjectConst>())if(!strcmp(pair.key().c_str(),key))present=true;
+        assert(present);
+    }
+    assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
+    assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
     if(scenario=="restore-lock-order") {
         JsonDocument original;assert(FiveTratumAutotune::captureEffective(&hostBoard,original.to<JsonObject>()));
         std::thread restore;
@@ -135,6 +145,14 @@ int main(int argc,char **argv) {
     } else {
         start();
         assert(snapshot()["backup"]["available"].as<bool>());
+        assert(snapshot()["status"]["baseline"]["frequencyMHz"].as<int>()==600&&snapshot()["status"]["baseline"]["coreVoltageMv"].as<int>()==1150);
+        if(scenario=="json-points") {
+            FiveTratumAutotune::controller.best={590,1145};FiveTratumAutotune::controller.bestAvailable=true;
+            auto wire=snapshot();
+            assert(wire["status"]["best"]["frequencyMHz"].as<int>()==590&&wire["status"]["best"]["coreVoltageMv"].as<int>()==1145);
+            std::cout<<"Actual production report real-ArduinoJson serialized null/current/baseline/best points passed\n";
+            return 0;
+        }
         const std::string original=nvstore["fwtune/baseline"];
         JsonDocument saved;assert(deserializeJson(saved,original)==DeserializationError::Ok);
         assert(saved["settings"].size()==20&&saved["frequencyMHz"].as<int>()==600&&saved["coreVoltageMv"].as<int>()==1150);
