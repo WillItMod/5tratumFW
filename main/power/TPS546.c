@@ -1298,6 +1298,7 @@ static esp_err_t read_strict(TPS546_StrictTelemetry *sample, bool allow_off)
         smb_read_byte(PMBUS_STATUS_INPUT, &result.status_input) != ESP_OK ||
         smb_read_byte(PMBUS_STATUS_TEMPERATURE, &result.status_temperature) != ESP_OK ||
         smb_read_byte(PMBUS_STATUS_CML, &result.status_cml) != ESP_OK) return ESP_FAIL;
+    if (allow_off && smb_read_byte(PMBUS_OPERATION,&result.operation)!=ESP_OK) return ESP_FAIL;
     /* Automatic steps are 5 mV. A coarser converter format cannot implement
      * that envelope, even if a particular cached value looks plausible. */
     if (ldexpf(1.0f,exponent) > 0.005f) return ESP_FAIL;
@@ -1307,7 +1308,7 @@ static esp_err_t read_strict(TPS546_StrictTelemetry *sample, bool allow_off)
     result.temperature_c = slinear11_2_float(temperature);
     if (!isfinite(result.vin) || result.vin <= 0 || !isfinite(result.vout) ||
         (allow_off ? result.vout < 0 : result.vout <= 0) ||
-        !isfinite(result.iout) || result.iout < 0 || !isfinite(result.temperature_c) ||
+        !isfinite(result.iout) || (!allow_off && result.iout < 0) || !isfinite(result.temperature_c) ||
         result.temperature_c < -40 || result.temperature_c >= 150) return ESP_FAIL;
     *sample = result;
     return ESP_OK;

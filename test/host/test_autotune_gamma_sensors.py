@@ -114,11 +114,13 @@ int main(void) {
     mode=0x17;raw_iout=0x7ff;assert(TPS546_read_strict(&sample)!=ESP_OK);
     raw_iout=0;raw_vout=0;assert(TPS546_read_strict(&sample)!=ESP_OK);
     reads=0;assert(TPS546_read_strict_off(&sample)==ESP_OK&&sample.vout==0&&sample.iout==0);
-    for(unsigned bad=1;bad<=total_reads;++bad) {
+    for(unsigned bad=1;bad<=12;++bad) {
         reads=0;fail_at=bad;memset(&sample,0xA5,sizeof(sample));TPS546_StrictTelemetry before=sample;
         assert(TPS546_read_strict_off(&sample)!=ESP_OK&&!memcmp(&sample,&before,sizeof(sample)));
     }
     fail_at=0;raw_iout=10;raw_vout=600;
+    raw_iout=0x7ff;assert(TPS546_read_strict_off(&sample)==ESP_OK && sample.iout<0);
+    assert(TPS546_read_strict(&sample)!=ESP_OK);raw_iout=10;
     raw_temp=151;assert(TPS546_read_strict(&sample)!=ESP_OK);raw_temp=55;
     reads=writes=0;fail_at=1;assert(TPS546_set_vout(1.15f)!=ESP_OK&&writes==0);
     reads=writes=0;fail_at=0;mode=0x37;assert(TPS546_set_vout(1.15f)!=ESP_OK&&writes==0);
@@ -153,6 +155,7 @@ static esp_err_t i2c_bitaxe_register_read(int device,uint8_t reg,uint8_t *out,un
 }
 '''
         harness+=method(actual,'esp_err_t EMC2101_read_strict(')
+        harness+=method(actual,'esp_err_t EMC2101_read_fan_strict(')
         harness+=r'''
 int main(void) {
     float temperature=99;uint16_t rpm=999;
@@ -167,6 +170,8 @@ int main(void) {
     raw_temp=50*8;reads=0;torn=true;assert(EMC2101_read_strict(&temperature,&rpm)!=ESP_OK);torn=false;
     reads=0;raw_tach=0;assert(EMC2101_read_strict(&temperature,&rpm)==ESP_OK&&rpm==0);
     reads=0;raw_tach=UINT16_MAX;assert(EMC2101_read_strict(&temperature,&rpm)==ESP_OK&&rpm==0);
+    status=4;raw_tach=1800;reads=0;assert(EMC2101_read_fan_strict(&rpm)==ESP_OK&&rpm==3000);
+    for(unsigned bad=1;bad<=2;++bad) {reads=0;fail_at=bad;rpm=999;assert(EMC2101_read_fan_strict(&rpm)!=ESP_OK&&rpm==999);}
     assert(EMC2101_read_strict(NULL,&rpm)!=ESP_OK);
     (void)writes;(void)TAG;
     puts("PASS: exact EMC2101 strict body rejects failed/torn/open/short acquisition and distinguishes stoppedfan");

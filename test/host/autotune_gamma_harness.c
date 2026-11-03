@@ -25,6 +25,7 @@ static bool interleaved_snapshot(const NvsConfigKey *keys,NvsConfigMutation *val
 }
 
 static uint64_t host_now=UINT64_C(1000000);
+static bool off_diode_unavailable;
 static bool sensors_ok=true, counters_ok=true, host_fan_ok=true, host_current_ok=true;
 static unsigned sensor_reads, counter_resets, fault_stops, point_changes;
 static atomic_uint_least32_t tx_failures;
@@ -95,11 +96,18 @@ esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *out) {
 esp_err_t TPS546_read_strict_off(TPS546_StrictTelemetry *out) {
     ++sensor_reads;if (!sensors_ok) return ESP_FAIL;
     *out=(TPS546_StrictTelemetry){.vin=5.1,.vout=off_vout,.iout=off_iout,.temperature_c=host_vrm_temp,
-        .status_word=off_status_word,.status_vout=off_status_vout};return ESP_OK;
+        .status_word=gs.ASIC_initalized?0:off_status_word,.status_vout=off_status_vout,
+        .operation=gs.ASIC_initalized?OPERATION_ON:OPERATION_OFF};
+    if(gs.ASIC_initalized) out->vout=gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv/1000.0+sensor_vout_delta;
+    return ESP_OK;
 }
 esp_err_t EMC2101_read_strict(float *temp,uint16_t *rpm) {
-    if(!sensors_ok) return ESP_FAIL;
+    if(!sensors_ok || (off_diode_unavailable && !gs.ASIC_initalized)) return ESP_FAIL;
     *temp=host_asic_temp;*rpm=host_fan_ok?3000:0;return ESP_OK;
+}
+esp_err_t EMC2101_read_fan_strict(uint16_t *rpm) {
+    if(!sensors_ok) return ESP_FAIL;
+    *rpm=host_fan_ok?3000:0;return ESP_OK;
 }
 GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state,uint64_t now) {
     (void)state;
@@ -223,7 +231,9 @@ int main(int argc,char **argv) {
         autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests && writes==before);
         off_status_vout=0;off_vout=.2;
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
-        autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests && writes==before);
+        autotune_gamma_recovery_tick(&gs);assert(tuner.recovery_requested && !host_resume_requests && writes==before);
+        host_now+=FWT_APPLY_TIMEOUT_US;autotune_gamma_recovery_tick(&gs);
+        assert(!tuner.recovery_requested && tuner.recovery_phase==RECOVERY_BLOCKED && !host_resume_requests);
         off_vout=0;host_internal_stack=false;
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
         autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests && writes==before);
@@ -236,6 +246,49 @@ int main(int argc,char **argv) {
         fail_recovery_journal_read=false;
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
         autotune_gamma_recovery_tick(&gs);recovery_finish();
+    } else if(!strcmp(name,"recovery-off-settling")) {
+        start();confirmed_off();off_vout=.15;off_iout=.3;host_fan_ok=false;unsigned before=writes;
+        assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);assert(tuner.recovery_requested && !host_resume_requests && writes==before);
+        cJSON *json=report(),*d=cJSON_GetObjectItem(json,"diagnostics");
+        assert(cJSON_GetObjectItem(d,"recoveryOffVoutV")->valuedouble>.1 && cJSON_GetObjectItem(d,"recoveryOffFanRpm")->valuedouble==0);cJSON_Delete(json);
+        off_vout=0;off_iout=-.01;host_fan_ok=true;host_now+=TUNE_POLL_US;
+        autotune_gamma_recovery_tick(&gs);recovery_finish();
+    } else if(!strcmp(name,"recovery-unpowered-diode")) {
+        tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
+        start();host_asic_temp=61;step(false);confirmed_off();off_diode_unavailable=true;off_vout=.021;off_iout=-.32373;
+        unsigned before=writes;autotune_gamma_recovery_tick(&gs);
+        httpd_req_t activity={.code=200};assert(get_activity(&activity)==ESP_OK && strstr(activity.reply,"\"fault\":false"));
+        assert(tuner.recovery_requested && !host_resume_requests && writes==before);
+        assert(gs.SYSTEM_MODULE.tuning_recovery_work_blocked && !mining_state_work_allowed(&gs));
+        cJSON *json=report(),*d=cJSON_GetObjectItem(json,"diagnostics");
+        assert(cJSON_IsNull(cJSON_GetObjectItem(d,"recoveryOffAsicTempC")));
+        assert(cJSON_GetObjectItem(d,"recoveryOffIoutA")->valuedouble<-.3);cJSON_Delete(json);
+        host_now+=UINT64_C(30000000);autotune_gamma_recovery_tick(&gs);
+        assert(host_resume_requests==1);normal_resume_completed();
+        assert(!mining_state_work_allowed(&gs) && autotune_gamma_transition_allowed(&gs));
+        host_asic_temp=59;host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);
+        assert(!mining_state_work_allowed(&gs) && tuner.recovery_requested);
+        host_asic_temp=54;host_vrm_temp=50;host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);
+        assert(mining_state_work_allowed(&gs));
+        for(unsigned i=0;i<4 && tuner.recovery_requested;++i) {host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);}
+        assert(tuner.recovery_phase==RECOVERY_COMPLETE && tuner.backup_restored && !tuner.core.active);
+    } else if(!strcmp(name,"recovery-prework-cancel")) {
+        start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);normal_resume_completed();
+        assert(!mining_state_work_allowed(&gs));
+        mining_schedule_manual_override(false);autotune_gamma_recovery_tick(&gs);
+        assert(!tuner.recovery_requested && gs.SYSTEM_MODULE.tuning_recovery_work_blocked && !mining_state_work_allowed(&gs));
+        autotune_gamma_recovery_tick(&gs);assert(gs.SYSTEM_MODULE.mining_paused && !mining_state_work_allowed(&gs));
+        confirmed_off();autotune_gamma_recovery_tick(&gs);assert(!gs.SYSTEM_MODULE.tuning_recovery_work_blocked && host_resume_requests==1);
+    } else if(!strcmp(name,"recovery-prework-timeout")) {
+        start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);normal_resume_completed();host_asic_temp=75;
+        host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);assert(!mining_state_work_allowed(&gs));
+        host_now+=FWT_APPLY_TIMEOUT_US;autotune_gamma_recovery_tick(&gs);
+        assert(!tuner.recovery_requested && tuner.recovery_phase==RECOVERY_BLOCKED && gs.SYSTEM_MODULE.mining_paused);
+        assert(gs.SYSTEM_MODULE.tuning_recovery_work_blocked && !mining_state_work_allowed(&gs));
+        confirmed_off();autotune_gamma_recovery_tick(&gs);assert(!gs.SYSTEM_MODULE.tuning_recovery_work_blocked && host_resume_requests==1);
     } else if(!strcmp(name,"recovery-commit-race")) {
         start();confirmed_off();unsigned before=writes;revoke_on_backup_read=true;
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);

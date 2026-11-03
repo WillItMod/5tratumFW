@@ -30,7 +30,7 @@ typedef struct {
     int64_t start_time_us;
     int identify_mode_time_ms;
     int block_found;
-    bool is_connected, ap_enabled, mining_paused, mining_runtime_ready, hardware_fault, overheat_mode;
+    bool is_connected, ap_enabled, mining_paused, mining_runtime_ready, hardware_fault, overheat_mode, tuning_recovery_work_blocked;
     bool pools_unavailable, is_screen_active, is_firmware_update, is_using_fallback, show_new_block;
     bool pool_decode_coinbase_tx, fallback_pool_decode_coinbase_tx;
     unsigned pool_tls, fallback_pool_tls;

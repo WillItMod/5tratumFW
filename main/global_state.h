@@ -125,6 +125,7 @@ typedef struct SystemModule
     bool overheat_mode;
     bool mining_paused;
     bool mining_runtime_ready;
+    bool tuning_recovery_work_blocked;
     bool pools_unavailable;
     uint16_t power_fault;
     uint32_t lastClockSync;

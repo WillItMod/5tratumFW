@@ -674,7 +674,7 @@ bool tryDisplaySnapshot(DisplaySnapshot &out) {
     const bool revoked=handoff.load()!=nullptr || !revisionCurrent();
     out.active=controller.active && !revoked;out.ownsSettings=(controller.owns || restoring || pending) && !revoked;
     out.restoring=restoring;out.continuous=controller.config.continuous;
-    out.fault=observed.fault || controller.state==FWT_FAULTED;
+    out.fault=observed.fault;
     out.updating=firmwareUpdates.load() || permanentFreeze.load();
     out.storageBlocked=optionsError || baselineLoadError;
     out.valid=out.valid && !out.fault && !out.updating && !out.storageBlocked && !revoked;
@@ -707,7 +707,7 @@ bool activity(JsonDocument &document) {
     document["active"]=controller.active && !revoked && !restoring;
     document["ownsSettings"]=(controller.owns || restoring || pending) && !revoked;
     document["state"]=restoring ? "restoring" : fwt_state_name(controller.state);
-    document["fault"]=observed.fault || controller.state==FWT_FAULTED;
+    document["fault"]=observed.fault;
     document["reason"]=external ? external : revoked ? "External control took ownership" : cachedReason();
     document["priority"]=fwt_priority_name(controller.config.priority);
     document["continuous"]=controller.config.continuous;

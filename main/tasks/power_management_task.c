@@ -37,7 +37,9 @@ static void initialize_requested_frequency(GlobalState *state, float frequency);
 static bool current_stop_request(GlobalState *state)
 {
     if (!state->SELF_TEST_MODULE.is_active) mining_schedule_update();
-    return mining_state_should_stop(state);
+    return mining_state_should_stop(state) ||
+        (__atomic_load_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE) &&
+         autotune_gamma_transition_cancelled());
 }
 
 static esp_err_t mining_stop(GlobalState * GLOBAL_STATE)

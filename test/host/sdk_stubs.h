@@ -70,7 +70,7 @@ typedef void *httpd_handle_t;
 #define GLOBAL_STATE_H_
 #include "device_config.h"
 typedef struct SystemModule {
-    bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable, overheat_mode;
+    bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable, overheat_mode, tuning_recovery_work_blocked;
     char hardware_fault_msg[64];
 } SystemModule;
 typedef struct GlobalState { DeviceConfig DEVICE_CONFIG; SystemModule SYSTEM_MODULE; bool ASIC_initalized; struct { bool is_active; } SELF_TEST_MODULE; } GlobalState;

@@ -9,7 +9,7 @@
 #undef SystemModule
 #include "tasks/power_management_task.h"
 typedef struct SystemModule {
-    bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable;
+    bool mining_paused, mining_runtime_ready, is_connected, hardware_fault, pools_unavailable, tuning_recovery_work_blocked;
     bool overheat_mode, is_firmware_update;
     char hardware_fault_msg[64];
 } SystemModule;

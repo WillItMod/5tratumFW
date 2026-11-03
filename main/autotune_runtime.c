@@ -44,6 +44,13 @@ typedef struct {
     const char *recovery_reason;
     uint32_t recovery_schedule_revision;
     uint64_t recovery_started, recovery_sample_at, recovery_poll_at;
+    uint64_t recovery_off_at, recovery_off_invalid_since, recovery_off_since;
+    uint64_t recovery_asic_proof_at;
+    float recovery_asic_proof;
+    TPS546_StrictTelemetry recovery_off_sample;
+    bool recovery_off_read_ok, recovery_off_fan_read_ok, recovery_off_asic_read_ok;
+    float recovery_off_asic_temp;
+    uint16_t recovery_off_fan_rpm;
     unsigned recovery_confirmations;
     uint64_t observer_until, last_poll, sensor_at, strict_success_at, applied_at, generation;
     uint64_t actuation_started, rail_sample_at;
@@ -80,6 +87,8 @@ static void recovery_block(const char *reason) {
     tuner.recovery_requested=false;tuner.recovery_phase=RECOVERY_BLOCKED;
     tuner.recovery_reason=reason;tuner.override_reason=reason;
     tuner.backup_restored=false;
+    if (tuner.device && __atomic_load_n(&tuner.device->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE) &&
+        !tuner.device->SYSTEM_MODULE.mining_paused) mining_schedule_manual_override(true);
 }
 
 void autotune_gamma_manual_override(void) {
@@ -108,6 +117,8 @@ bool autotune_gamma_transition_cancelled(void) {
 bool autotune_gamma_transition_allowed(void *opaque) {
     if (!atomic_load(&transition_live)) return true;
     GlobalState *state = opaque;
+    if (state && __atomic_load_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE))
+        return !autotune_gamma_transition_cancelled() && !mining_state_should_stop(state) && !state->SYSTEM_MODULE.overheat_mode;
     if (autotune_gamma_transition_cancelled() || !state || !mining_state_work_allowed(state) ||
         state->SYSTEM_MODULE.overheat_mode) return false;
     TPS546_StrictTelemetry sample = {0}; float temperature = 0; uint16_t rpm = 0;
@@ -404,6 +415,10 @@ static void poll_input(GlobalState *state, uint64_t now) {
         now-input->capturedAtUs <= TUNE_FRESH_US && tuner.strict.vin >= 4.5 && tuner.strict.vin <= 6.5 &&
         tuner.strict.iout > 0 &&
         isfinite(input->asicTempC) && input->asicTempC > 0 && input->asicTempC < 125;
+    if (tuner.sensor_ok && input->miningActive && !input->fault && input->fanOk &&
+        tuner.strict.status_word==0 && input->asicTempC>0 && input->asicTempC<70) {
+        tuner.recovery_asic_proof_at=tuner.sensor_at;tuner.recovery_asic_proof=input->asicTempC;
+    }
 }
 
 static bool original_backup_verified(void) {
@@ -449,7 +464,8 @@ static void queue_automatic_recovery(void) {
     }
     tuner.automatic_recovery_attempted=true;tuner.backup_restored=false;tuner.backup_matches=0;
     tuner.recovery_requested=true;tuner.recovery_phase=RECOVERY_VALIDATING_OFF;
-    tuner.recovery_schedule_revision=revision;tuner.recovery_poll_at=0;
+    tuner.recovery_schedule_revision=revision;tuner.recovery_poll_at=0;tuner.recovery_off_invalid_since=0;tuner.recovery_off_since=0;
+    __atomic_store_n(&tuner.device->SYSTEM_MODULE.tuning_recovery_work_blocked,true,__ATOMIC_RELEASE);
     tuner.recovery_reason="automatic-soft-limit-recovery";
 }
 void autotune_gamma_recovery_tick(GlobalState *state) {
@@ -461,7 +477,13 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         (atomic_load(&transition_epoch)!=atomic_load(&manual_epoch) ||
          (!tuner.recovery_requested && !tuner.core.owns && !tuner.restore_pending)))
         autotune_gamma_owner_idle();
-    if (!tuner.recovery_requested) {pthread_mutex_unlock(&tuner_mutex);return;}
+    if (!tuner.recovery_requested) {
+        if (__atomic_load_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE)) {
+            if (recovery_off_state(state)) __atomic_store_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,false,__ATOMIC_RELEASE);
+            else if (!state->SYSTEM_MODULE.mining_paused) mining_schedule_manual_override(true);
+        }
+        pthread_mutex_unlock(&tuner_mutex);return;
+    }
     const uint64_t now=esp_timer_get_time();tuner.last_owner_tick=now;
     if (!recovery_current(NULL)) {
         recovery_block("recovery-cancelled-by-new-control");
@@ -489,23 +511,44 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         if (tuner.recovery_poll_at && now>=tuner.recovery_poll_at && now-tuner.recovery_poll_at<TUNE_POLL_US) {
             pthread_mutex_unlock(&tuner_mutex);return;
         }
+        if (!tuner.recovery_off_since) tuner.recovery_off_since=now;
         tuner.recovery_poll_at=now;
         TPS546_StrictTelemetry sample={0};float temperature=0;uint16_t rpm=0;
-        if (TPS546_read_strict_off(&sample)!=ESP_OK || EMC2101_read_strict(&temperature,&rpm)!=ESP_OK ||
-            !isfinite(temperature) || temperature<=0 || !isfinite(sample.vin) || sample.vin<4.5 || sample.vin>6.5 ||
-            !isfinite(sample.vout) || sample.vout<0 || sample.vout>0.1 ||
-            !isfinite(sample.iout) || sample.iout<0 || sample.iout>0.25 ||
-            !isfinite(sample.temperature_c) || sample.temperature_c<=0 || rpm<=100) {
-            recovery_block("recovery-off-sensors-or-cooling-unavailable");
-            pthread_mutex_unlock(&tuner_mutex);return;
-        }
-        if ((sample.status_word & ~(TPS546_STATUS_OFF|TPS546_STATUS_PGOOD)) || sample.status_vout ||
-            sample.status_iout || sample.status_input || sample.status_temperature || sample.status_cml) {
+        const bool regulator_ok=TPS546_read_strict_off(&sample)==ESP_OK;
+        const bool asic_sensor_ok=EMC2101_read_strict(&temperature,&rpm)==ESP_OK && isfinite(temperature) && temperature>0;
+        const bool fan_sensor_ok=EMC2101_read_fan_strict(&rpm)==ESP_OK;
+        tuner.recovery_off_at=now;tuner.recovery_off_read_ok=regulator_ok;tuner.recovery_off_fan_read_ok=fan_sensor_ok;
+        if (regulator_ok) tuner.recovery_off_sample=sample;
+        tuner.recovery_off_asic_read_ok=asic_sensor_ok;
+        if (asic_sensor_ok) tuner.recovery_off_asic_temp=temperature;
+        if (fan_sensor_ok) tuner.recovery_off_fan_rpm=rpm;
+        if (regulator_ok && ((sample.status_word & ~(TPS546_STATUS_OFF|TPS546_STATUS_PGOOD)) || sample.status_vout ||
+            sample.status_iout || sample.status_input || sample.status_temperature || sample.status_cml)) {
             recovery_block("recovery-regulator-fault");pthread_mutex_unlock(&tuner_mutex);return;
         }
+        if (!regulator_ok || !fan_sensor_ok ||
+            !isfinite(sample.vin) || sample.vin<4.5 || sample.vin>6.5 ||
+            !isfinite(sample.vout) || sample.vout<0 || sample.vout>0.1 ||
+            !isfinite(sample.iout) || sample.operation!=OPERATION_OFF || !(sample.status_word&TPS546_STATUS_OFF) ||
+            !isfinite(sample.temperature_c) || sample.temperature_c<=0 || rpm<=100) {
+            if (!tuner.recovery_off_invalid_since) tuner.recovery_off_invalid_since=now;
+            if (now<tuner.recovery_off_invalid_since || now-tuner.recovery_off_invalid_since>=FWT_APPLY_TIMEOUT_US)
+                recovery_block("recovery-off-validation-timed-out");
+            else tuner.recovery_reason=regulator_ok&&fan_sensor_ok?"recovery-waiting-for-off-rail-and-fan-settling":"recovery-waiting-for-fresh-off-sensors";
+            pthread_mutex_unlock(&tuner_mutex);return;
+        }
+        tuner.recovery_off_invalid_since=0;
         const double asic_limit=tuner.recovery_automatic?fmin(70,tuner.core.config.maxAsicTempC-5):70;
         const double vrm_limit=tuner.recovery_automatic?fmin(95,tuner.core.config.maxVrmTempC-5):95;
-        if (temperature>=asic_limit || sample.temperature_c>=vrm_limit) {
+        /* The 600-series external diode loses power with the ASIC rail. A
+         * recent real running sample is only startup permission, never a fake
+         * off temperature or permission to dispatch work. */
+        if (!asic_sensor_ok && (!tuner.recovery_asic_proof_at || now<tuner.recovery_asic_proof_at ||
+            now-tuner.recovery_asic_proof_at>UINT64_C(300000000) || tuner.recovery_asic_proof>=70)) {
+            recovery_block("recovery-prestop-asic-proof-unavailable");pthread_mutex_unlock(&tuner_mutex);return;
+        }
+        if ((!asic_sensor_ok && now-tuner.recovery_off_since<UINT64_C(30000000)) ||
+            (asic_sensor_ok && temperature>=asic_limit) || sample.temperature_c>=vrm_limit) {
             tuner.recovery_phase=RECOVERY_VALIDATING_OFF;tuner.recovery_reason=tuner.recovery_automatic?"automatic-waiting-for-cooling":"recovery-waiting-for-cooling";
             pthread_mutex_unlock(&tuner_mutex);return;
         }
@@ -533,9 +576,9 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         tuner.recovery_started=now;tuner.recovery_confirmations=0;tuner.recovery_sample_at=0;
         pthread_mutex_unlock(&tuner_mutex);return;
     }
-    /* Ordinary mining_start performs the power-up, settling, chip detection and
-     * its existing fault handling. Recovery only verifies that result. */
-    poll_input(state,now);
+    /* Normal initialization is allowed, but every job producer remains fenced
+     * until actual powered sensors independently pass; counters are not ready
+     * until jobs are released and cannot authorize this first gate. */
     if (now<tuner.recovery_started || now-tuner.recovery_started>FWT_APPLY_TIMEOUT_US) {
         recovery_block("recovery-live-verification-timeout");
         mining_schedule_manual_override(true);
@@ -545,8 +588,41 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         tuner.recovery_reason="recovery-waiting-for-normal-start";
         pthread_mutex_unlock(&tuner_mutex);return;
     }
+    if (__atomic_load_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE)) {
+        TPS546_StrictTelemetry sample={0};float temperature=0;uint16_t rpm=0;
+        const bool regulator_ok=TPS546_read_strict_off(&sample)==ESP_OK;
+        const bool sensor_ok=EMC2101_read_strict(&temperature,&rpm)==ESP_OK;
+        if (regulator_ok && ((sample.status_word & ~TPS546_STATUS_PGOOD) || sample.status_vout ||
+            sample.status_iout || sample.status_input || sample.status_temperature || sample.status_cml)) {
+            recovery_block("recovery-powered-regulator-fault");mining_schedule_manual_override(true);
+            pthread_mutex_unlock(&tuner_mutex);return;
+        }
+        const double asic_limit=fmin(70,tuner.recovery_automatic?tuner.core.config.maxAsicTempC-5:70);
+        const double vrm_limit=fmin(95,tuner.recovery_automatic?tuner.core.config.maxVrmTempC-5:95);
+        const bool fresh=regulator_ok && sensor_ok && sample.operation==OPERATION_ON && sample.status_word==0 &&
+            isfinite(sample.iout) && fabs(sample.iout)<25 &&
+            isfinite(sample.vin) && sample.vin>=4.5 && sample.vin<=6.5 &&
+            isfinite(sample.vout) && fabs(sample.vout*1000-tuner.backup[1].value.u16)<=30 &&
+            isfinite(sample.temperature_c) && sample.temperature_c>0 && sample.temperature_c<vrm_limit &&
+            isfinite(temperature) && temperature>0 && temperature<asic_limit && rpm>100;
+        if (!fresh) {
+            tuner.recovery_reason="recovery-waiting-for-powered-sensors-before-work";
+            pthread_mutex_unlock(&tuner_mutex);return;
+        }
+        hashrate_monitor_reset_measurements(state);tuner.last_poll=0;
+        pthread_mutex_lock(&wire_gate);
+        const bool release_work=recovery_restore_allowed(NULL);
+        if (release_work) __atomic_store_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,false,__ATOMIC_RELEASE);
+        pthread_mutex_unlock(&wire_gate);
+        if (!release_work) {
+            recovery_block("recovery-cancelled-before-work");
+            pthread_mutex_unlock(&tuner_mutex);return;
+        }
+        tuner.recovery_started=now; /* A separate bounded counter warm-up. */
+    }
+    poll_input(state,now);
     tuner.recovery_phase=RECOVERY_VERIFYING;tuner.recovery_reason=tuner.recovery_automatic?"automatic-verifying-live-original-point":"recovery-verifying-live-original-point";
-    if (tuner.input.fault || !tuner.input.fanOk) {
+    if (tuner.input.fault || (tuner.sensor_ok && !tuner.input.fanOk)) {
         recovery_block("recovery-live-protection-or-cooling-fault");mining_schedule_manual_override(true);
         pthread_mutex_unlock(&tuner_mutex);return;
     }
@@ -1015,6 +1091,23 @@ static cJSON *report(void) {
     CACHED("statusCml",tuner.strict.status_cml);
     CACHED("vinV",tuner.strict.vin); CACHED("ioutA",tuner.strict.iout);
 #undef CACHED
+    BOOL(diagnostic,"recoveryOffRegulatorReadSucceeded",tuner.recovery_off_read_ok);
+    BOOL(diagnostic,"recoveryOffFanReadSucceeded",tuner.recovery_off_fan_read_ok);
+    if (tuner.recovery_off_at && now>=tuner.recovery_off_at) NUM(diagnostic,"recoveryOffAgeSeconds",(now-tuner.recovery_off_at)/1000000.0);
+    else if (!cJSON_AddNullToObject(diagnostic,"recoveryOffAgeSeconds")) goto failed;
+#define OFFREG(k,v) do {if(tuner.recovery_off_read_ok) {NUM(diagnostic,(k),(v));} else if(!cJSON_AddNullToObject(diagnostic,(k))) goto failed;} while(0)
+    BOOL(diagnostic,"recoveryWorkBlocked",tuner.device && __atomic_load_n(&tuner.device->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE));
+    OFFREG("recoveryOffOperation",tuner.recovery_off_sample.operation);
+    OFFREG("recoveryOffVinV",tuner.recovery_off_sample.vin);OFFREG("recoveryOffVoutV",tuner.recovery_off_sample.vout);
+    OFFREG("recoveryOffIoutA",tuner.recovery_off_sample.iout);OFFREG("recoveryOffVrmTempC",tuner.recovery_off_sample.temperature_c);
+    OFFREG("recoveryOffStatusWord",tuner.recovery_off_sample.status_word);OFFREG("recoveryOffStatusVout",tuner.recovery_off_sample.status_vout);
+    OFFREG("recoveryOffStatusIout",tuner.recovery_off_sample.status_iout);OFFREG("recoveryOffStatusInput",tuner.recovery_off_sample.status_input);
+    OFFREG("recoveryOffStatusTemperature",tuner.recovery_off_sample.status_temperature);OFFREG("recoveryOffStatusCml",tuner.recovery_off_sample.status_cml);
+#undef OFFREG
+    if (tuner.recovery_off_asic_read_ok) {NUM(diagnostic,"recoveryOffAsicTempC",tuner.recovery_off_asic_temp);}
+    else if (!cJSON_AddNullToObject(diagnostic,"recoveryOffAsicTempC")) goto failed;
+    if (tuner.recovery_off_fan_read_ok) {NUM(diagnostic,"recoveryOffFanRpm",tuner.recovery_off_fan_rpm);}
+    else if (!cJSON_AddNullToObject(diagnostic,"recoveryOffFanRpm")) goto failed;
 #define READING(k,v) do {if(fresh) {NUM(telemetry,(k),(v));} else if(!cJSON_AddNullToObject(telemetry,(k))) goto failed;} while(0)
     READING("hashRateGHs",tuner.input.hashRateGHs); READING("errorPercentage",tuner.input.errorPercentage);
     READING("worstErrorPercentage",tuner.input.worstErrorPercentage); READING("powerW",tuner.input.powerW);
@@ -1118,7 +1211,8 @@ static const char *handle_action(const cJSON *json) {
         tuner.recovery_schedule_revision=mining_schedule_control_revision();
         tuner.recovery_requested=true;tuner.recovery_phase=RECOVERY_VALIDATING_OFF;
         tuner.recovery_automatic=false;
-        tuner.recovery_reason="recovery-validating-powered-off-miner";tuner.recovery_poll_at=0;
+        tuner.recovery_reason="recovery-validating-powered-off-miner";tuner.recovery_poll_at=0;tuner.recovery_off_invalid_since=0;tuner.recovery_off_since=0;
+        __atomic_store_n(&tuner.device->SYSTEM_MODULE.tuning_recovery_work_blocked,true,__ATOMIC_RELEASE);
         tuner.override_reason=tuner.recovery_reason;
     } else if (!strcmp(action->valuestring,"stop")) {
         const char *const names[] = {"action"};
@@ -1171,7 +1265,7 @@ static esp_err_t get_activity(httpd_req_t *req) {
         ok=ok && cJSON_AddBoolToObject(json,"supported",tuner.supported) &&
             cJSON_AddBoolToObject(json,"active",!revoked&&tuner.core.active) &&
             cJSON_AddBoolToObject(json,"ownsSettings",!revoked&&(tuner.core.owns||tuner.restore_pending||tuner.recovery_requested)) &&
-            cJSON_AddBoolToObject(json,"fault",current_fault()||(tuner.core.state==FWT_FAULTED&&!tuner.recovery_requested)) &&
+            cJSON_AddBoolToObject(json,"fault",current_fault()) &&
             cJSON_AddStringToObject(json,"state",tuner.restore_pending||tuner.recovery_requested?"restoring":fwt_state_name(tuner.core.state)) &&
             cJSON_AddStringToObject(json,"reason",presentation_reason(now)) &&
             cJSON_AddStringToObject(json,"priority",fwt_priority_name(tuner.core.config.priority)) &&

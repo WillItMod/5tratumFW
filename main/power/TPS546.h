@@ -227,7 +227,7 @@ esp_err_t TPS546_snapshot_status(TPS546_StatusSnapshot *s);
 typedef struct {
     float vin, vout, iout, temperature_c;
     uint16_t status_word;
-    uint8_t status_vout, status_iout, status_input, status_temperature, status_cml;
+    uint8_t status_vout, status_iout, status_input, status_temperature, status_cml, operation;
 } TPS546_StrictTelemetry;
 esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *sample);
 /* Same fresh transactions, allowing a zero Vout solely for explicit off-state

@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
     global.POWER_MANAGEMENT_MODULE.expected_hashrate = 1275;
     const char *scenario = argv[1];
     if (!strncmp(scenario,"recovery-wire-",14)) {
-        global.ASIC_initalized=false;applied=true;
+        global.ASIC_initalized=false;applied=true;global.SYSTEM_MODULE.tuning_recovery_work_blocked=true;
         atomic_store(&transition_epoch,atomic_load(&manual_epoch));atomic_store(&transition_live,true);
         if (!strcmp(scenario,"recovery-wire-pre-revoked")) autotune_gamma_manual_override();
         if (!strcmp(scenario,"recovery-wire-revoked")) revoke_at_delay=1;
@@ -114,9 +114,10 @@ int main(int argc, char **argv) {
         assert(setting_writes==0);
         if (!strcmp(scenario,"recovery-wire-resume")) {
             assert(chips==1 && asic_wire_frames==1 && voltage_calls==1 && !applied);
+            assert(!mining_state_work_allowed(&global) && global.SYSTEM_MODULE.tuning_recovery_work_blocked);
             assert(global.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==saved_voltage);
         } else {
-            assert(chips==0 && asic_wire_frames==0 && applied && last_voltage==0 && global.SYSTEM_MODULE.hardware_fault);
+            assert(chips==0 && asic_wire_frames==0 && applied && last_voltage==0 && !global.SYSTEM_MODULE.hardware_fault);
             assert(voltage_calls==(!strcmp(scenario,"recovery-wire-revoked")?2u:1u));
         }
     } else if (strcmp(scenario,"revoked-pll-noop-reporting")==0) {

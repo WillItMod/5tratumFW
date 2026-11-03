@@ -11,6 +11,7 @@ static inline bool mining_state_should_stop(const GlobalState *state)
 
 static inline bool mining_state_work_allowed(const GlobalState *state)
 {
-    return state->ASIC_initalized && !mining_state_should_stop(state);
+    return state->ASIC_initalized && !mining_state_should_stop(state) &&
+        !__atomic_load_n(&state->SYSTEM_MODULE.tuning_recovery_work_blocked,__ATOMIC_ACQUIRE);
 }
 #endif

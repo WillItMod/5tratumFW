@@ -187,6 +187,16 @@ int main(int argc,char **argv) {
         assert(hostNvsCalls==nvs&&hostSensorReads==sensors&&controller.samples==samples&&controller.eventSequence==sequence);
         boot();auto rebooted=snapshot();assert(rebooted["status"]["events"].size()==0&&!rebooted["status"]["active"].as<bool>()); // RAM-only history, no automatic resume.
         return 0;
+    } else if(scenario=="fault-projection") {
+        using namespace FiveTratumAutotune;
+        controller.state=FWT_FAULTED;controller.active=controller.owns=false;controller.reason="cannot-reduce-load-within-limits";
+        JsonDocument passive;DisplaySnapshot display;
+        assert(activity(passive)&&tryDisplaySnapshot(display));
+        assert(passive["state"]=="faulted"&&passive["fault"]==false&&!display.fault&&snapshot()["status"]["telemetry"]["fault"]==false);
+        SYSTEM_MODULE.error=Board::TEMP_FAULT;step();
+        assert(activity(passive)&&tryDisplaySnapshot(display));
+        assert(passive["fault"]==true&&display.fault&&!display.valid&&snapshot()["status"]["telemetry"]["fault"]==true);
+        return 0;
     } else if(scenario=="passive-activity") {
         using namespace FiveTratumAutotune;
         const unsigned nvs=hostNvsCalls,sensors=hostSensorReads;
@@ -201,7 +211,7 @@ int main(int argc,char **argv) {
         auto reused=read();pthread_mutex_lock(&mutex);auto busy=read();assert(activity(reused));pthread_mutex_unlock(&mutex);
         assert(busy["schemaVersion"]==1&&busy["available"]==false&&busy.size()==2&&reused.size()==2&&reused["available"]==false);
         observed.fault=true;auto faulted=read();assert(faulted["fault"]==true&&faulted["state"]=="measuring");observed.fault=false;
-        controller.state=FWT_FAULTED;assert(read()["fault"]==true);controller.state=FWT_MEASURING;
+        controller.state=FWT_FAULTED;assert(read()["fault"]==false);controller.state=FWT_MEASURING;
         initialized=false;auto cold=read();assert(cold["supported"]==false&&!initialized);initialized=true;
         lastOwnerTickUs=hostNow+1;assert(read()["controllerAgeSeconds"].isNull());lastOwnerTickUs=heartbeat;
         controller.active=false;controller.owns=false;restoring=true;auto restore=read();assert(restore["active"]==false&&restore["ownsSettings"]==true&&restore["state"]=="restoring");restoring=false;

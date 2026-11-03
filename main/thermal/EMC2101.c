@@ -190,3 +190,14 @@ esp_err_t EMC2101_read_strict(float *external_c, uint16_t *fan_rpm)
     *fan_rpm = rpm == 82 ? 0 : (uint16_t)rpm;
     return ESP_OK;
 }
+esp_err_t EMC2101_read_fan_strict(uint16_t *fan_rpm)
+{
+    if (!fan_rpm) return ESP_ERR_INVALID_ARG;
+    uint8_t lo=0,hi=0;
+    if (i2c_bitaxe_register_read(emc2101_dev_handle,EMC2101_TACH_LSB,&lo,1)!=ESP_OK ||
+        i2c_bitaxe_register_read(emc2101_dev_handle,EMC2101_TACH_MSB,&hi,1)!=ESP_OK) return ESP_FAIL;
+    const uint16_t tach=(uint16_t)lo|((uint16_t)hi<<8);
+    const uint32_t rpm=tach && tach!=UINT16_MAX?5400000u/tach:0;
+    if (rpm>UINT16_MAX) return ESP_FAIL;
+    *fan_rpm=rpm==82?0:(uint16_t)rpm;return ESP_OK;
+}
