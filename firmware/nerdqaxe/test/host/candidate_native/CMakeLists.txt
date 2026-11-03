@@ -16,6 +16,7 @@ set(LV_CONF_PATH "${FW_ROOT}/main/displays/lv_conf.h" CACHE STRING "" FORCE)
 add_subdirectory("${FW_ROOT}/managed_components/lvgl__lvgl" lvgl EXCLUDE_FROM_ALL)
 target_include_directories(lvgl PUBLIC "${FW_ROOT}/test/host/display_native")
 add_executable(candidate-native candidate_native.cpp
+    "${FW_ROOT}/test/host/display_native/display_alloc.c"
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold13.c"
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold14.c"
     "${FW_ROOT}/main/displays/images/ui_font_OpenSansBold24.c"
