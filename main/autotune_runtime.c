@@ -515,7 +515,7 @@ void autotune_gamma_recovery_tick(GlobalState *state) {
         tuner.recovery_poll_at=now;
         TPS546_StrictTelemetry sample={0};float temperature=0;uint16_t rpm=0;
         const bool regulator_ok=TPS546_read_strict_off(&sample)==ESP_OK;
-        const bool asic_sensor_ok=EMC2101_read_strict(&temperature,&rpm)==ESP_OK && isfinite(temperature) && temperature>0;
+        const bool asic_sensor_ok=EMC2101_read_strict(&temperature,&rpm)==ESP_OK && isfinite(temperature) && temperature>0 && temperature<70;
         const bool fan_sensor_ok=EMC2101_read_fan_strict(&rpm)==ESP_OK;
         tuner.recovery_off_at=now;tuner.recovery_off_read_ok=regulator_ok;tuner.recovery_off_fan_read_ok=fan_sensor_ok;
         if (regulator_ok) tuner.recovery_off_sample=sample;

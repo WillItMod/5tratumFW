@@ -256,7 +256,7 @@ int main(int argc,char **argv) {
         autotune_gamma_recovery_tick(&gs);recovery_finish();
     } else if(!strcmp(name,"recovery-unpowered-diode")) {
         tuner.core.config.minFrequencyMHz=tuner.core.config.maxFrequencyMHz;
-        start();host_asic_temp=61;step(false);confirmed_off();off_diode_unavailable=true;off_vout=.021;off_iout=-.32373;
+        start();host_asic_temp=61;step(false);confirmed_off();host_asic_temp=127.75f;off_vout=.0234;off_iout=-.32373;
         unsigned before=writes;autotune_gamma_recovery_tick(&gs);
         httpd_req_t activity={.code=200};assert(get_activity(&activity)==ESP_OK && strstr(activity.reply,"\"fault\":false"));
         assert(tuner.recovery_requested && !host_resume_requests && writes==before);

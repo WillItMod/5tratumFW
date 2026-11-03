@@ -5,6 +5,7 @@ No miner/network I/O. Cryptographic math and UART are controlled test boundaries
 from pathlib import Path
 import os,shlex,subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[2]
+IMAGE='espressif/idf:v5.5.3@sha256:8ccd4d2ce413889c6c2bba57e986c670302094efb91c913c6091152e317a7805'
 
 def method(source,signature):
     start=source.index(signature);brace=source.index('{',start);end=brace+1;depth=1
@@ -35,8 +36,13 @@ class WorkDifficultyGammaTests(unittest.TestCase):
         body=method(v1,'case MINING_NOTIFY:');body=body[body.index('{'):].replace('add_active_job_id','v1_add_active_job_id').replace('clear_active_job_ids','v1_clear_active_job_ids')
         methods+='static void accept_real_v1(GlobalState *GLOBAL_STATE,mining_notify *notify,unsigned work_pool,uint64_t work_session,uint64_t receive_time_us){static char *active_job_ids[16];static int active_job_ids_count;StratumApiV1Message stratum_api_v1_message={.mining_notification=notify};'+body+'}\n'
         (p/'real_work_functions.inc').write_text(methods)
-        cjson=ROOT/'managed_components/espressif__cjson/cJSON'
-        if not (cjson/'cJSON.c').is_file():raise RuntimeError('Run the pinned SDK dependency preparation before this host test; real cJSON is required')
+        # Match the other host API tests: always compile the real implementation
+        # from the same pinned SDK, including on a clean checkout before IDF setup.
+        cjson=p/'cJSON';cjson.mkdir()
+        for name in ('cJSON.h','cJSON.c'):
+            (cjson/name).write_bytes(subprocess.run(['docker','run','--rm','--network','none',
+                '--entrypoint','cat',IMAGE,'/opt/esp/idf/components/json/cJSON/'+name],
+                check=True,capture_output=True).stdout)
         cls.binary=p/'work-difficulty-gamma'
         command=shlex.split(os.environ.get('CC','cc'))+['-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-Wno-unused-const-variable','-Wno-misleading-indentation','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(p),'-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'main'),'-I',str(ROOT/'components/stratum/include'),'-I',str(ROOT/'components/stratum_v2/include'),'-I',str(cjson),str(ROOT/'main/work_difficulty.c'),str(ROOT/'main/http_server/work_difficulty_api.c'),str(ROOT/'test/host/work_difficulty_gamma_harness.c'),str(cjson/'cJSON.c'),'-pthread','-lm','-o',str(cls.binary)]
         result=subprocess.run(command,capture_output=True,text=True)
