@@ -16,7 +16,7 @@ static inline void vTaskDelay(unsigned ticks) { (void)ticks; }
 
 typedef struct {
     float current_hashrate, error_percentage, hashrate_1m, hashrate_10m, hashrate_1h;
-    bool mining_paused, hardware_fault, pools_unavailable, mining_runtime_ready;
+    bool mining_paused, hardware_fault, pools_unavailable, mining_runtime_ready, tuning_recovery_work_blocked;
 } SystemModule;
 static inline void SYSTEM_noinit_update(SystemModule *system) { (void)system; }
 typedef struct {
