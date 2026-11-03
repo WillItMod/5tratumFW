@@ -739,7 +739,7 @@ static cJSON *report(void) {
     NUM(limits,"frequencyStepMHz",tuner.core.limits.frequencyStepMHz);
     NUM(limits,"voltageStepMv",tuner.core.limits.voltageStepMv);
     STR(guidance,"asic","Recommended/default tuning ceiling: 60 C. Above 60 C needs caution; above 65 C is strongly discouraged. Higher configurable limits are not recommended operating targets or certified junction temperatures. Existing 75 C firmware protection remains active.");
-    STR(guidance,"vrm","Recommended/default tuning ceiling: 70 C. Above 70 C needs caution; 80 C and higher is strongly discouraged. Protection cutoffs are not recommended operating targets. Initial tuning ceiling 85 C; adjustable up to 95 C on the TPS546 die sensor. Existing 105 C firmware protection and regulator faults remain authoritative.");
+    STR(guidance,"vrm","Recommended/default tuning ceiling: 70 C. Above 70 C needs caution; 80 C and higher is strongly discouraged. Protection cutoffs are not recommended operating targets. The TPS546 die-sensor setting can be raised up to the allowed 95 C limit; that limit is not a recommendation. Existing 105 C firmware protection and regulator faults remain authoritative.");
     STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Frequency and voltage upper bounds initially match your saved settings; raising them is an explicit experimental choice. PLL frequency is computed from commands, not measured clock readback.");
     BOOL(guidance,"experimental",true);
     STR(status,"state",tuner.restore_pending ? "restoring" : fwt_state_name(tuner.core.state));

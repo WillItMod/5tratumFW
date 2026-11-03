@@ -148,6 +148,10 @@ int main(int argc,char **argv) {
     } else if(!strcmp(name,"read-only")) {
         unsigned before=writes,reads=sensor_reads;
         cJSON *schema=report();assert(schema);
+        const cJSON *guidance=cJSON_GetObjectItemCaseSensitive(schema,"guidance");
+        const char *asic=cJSON_GetObjectItemCaseSensitive(guidance,"asic")->valuestring;
+        const char *vrm=cJSON_GetObjectItemCaseSensitive(guidance,"vrm")->valuestring;
+        assert(strstr(asic,"60 C") && strstr(vrm,"70 C") && !strstr(vrm,"Initial tuning ceiling 85"));
         const cJSON *limits=cJSON_GetObjectItemCaseSensitive(schema,"limits");
         const char *limit_keys[]={"minFrequencyMHz","maxFrequencyMHz","minVoltageMv","maxVoltageMv",
             "maxAsicTempC","maxVrmTempC","maxPowerW","frequencyStepMHz","voltageStepMv"};
