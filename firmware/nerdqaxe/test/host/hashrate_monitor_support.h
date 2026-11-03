@@ -45,6 +45,7 @@ public:
 struct HostSystem {
     Board *board = nullptr;
     Board *getBoard() { return board; }
+    float getCurrentHashrate() { return 1000.0f; }
 };
 struct HostPower { bool isShutdown() { return false; } };
 extern HostSystem SYSTEM_MODULE;
@@ -66,6 +67,7 @@ inline void releaseHostSamples(HashrateMonitor &monitor) {
     delete[] monitor.m_chipErrorRate;
     delete[] monitor.m_prevErrorResponse;
     delete[] monitor.m_prevErrorCounter;
+    delete[] monitor.m_chipErrorSampleAvailable;
     monitor.m_chipHashrate = nullptr;
     monitor.m_prevResponse = nullptr;
     monitor.m_prevCounter = nullptr;
@@ -73,5 +75,6 @@ inline void releaseHostSamples(HashrateMonitor &monitor) {
     monitor.m_chipErrorRate = nullptr;
     monitor.m_prevErrorResponse = nullptr;
     monitor.m_prevErrorCounter = nullptr;
+    monitor.m_chipErrorSampleAvailable = nullptr;
     monitor.m_asicCount = 0;
 }

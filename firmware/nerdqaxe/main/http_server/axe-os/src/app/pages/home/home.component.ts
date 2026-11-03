@@ -15,12 +15,12 @@ import { map,
   Subscription,
   firstValueFrom, switchMap } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
-import { catchError, exhaustMap, finalize, of, Subject, takeUntil, timer } from 'rxjs';
+import { catchError, defer, exhaustMap, finalize, of, Subject, takeUntil, tap, timer } from 'rxjs';
 import { HashSuffixPipe } from '../../pipes/hash-suffix.pipe';
 import { OtpAuthService } from '../../services/otp-auth.service';
 import { SystemService } from '../../services/system.service';
 import { MiningWorkContext } from '../../models/IFiveTratumProfiles';
-import { IDashboardV2, IDashboardV2BlockHeader, IDashboardV2Pool } from '../../models/IDashboardV2';
+import { IDashboardV2, IDashboardV2BlockHeader, IDashboardV2Chip, IDashboardV2Pool } from '../../models/IDashboardV2';
 import { Chart } from 'chart.js';  // Import Chart.js
 import { registerHomeChartPlugins } from './plugins';
 import { HOME_CFG,
@@ -125,6 +125,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   public deviceName = 'Miner';
   public dashboardUnavailable = false;
   private dashboardReceivedAt = 0;
+  private dashboardErrorRequestStartedAt = -1;
   private statusReceivedAt = 0;
 
   public metric(value: unknown, digits = 1): string {
@@ -145,6 +146,42 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     const hash = this._info?.performance?.hashRate;
     return typeof watts === 'number' && Number.isFinite(watts) && watts >= 0 && typeof hash === 'number' && Number.isFinite(hash) && hash > 0
       ? this.metric(watts / (hash / 1000), 1) : '—';
+  }
+  public get asicErrorPercentage(): string {
+    const performance = this._info?.performance;
+    const chips = performance?.chips;
+    const count = performance?.asicCount;
+    if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 64 ||
+        !Array.isArray(chips) || chips.length !== count ||
+        !chips.every(chip => this.errorSampleIsFresh(chip)) ||
+        !this.validErrorPercentage(performance?.errorPercentage)) return '—';
+    const totalRate = chips.reduce((total, chip) => total + chip.hashRate + chip.errorHashRate, 0);
+    if (!Number.isFinite(totalRate) || totalRate <= 0) return '—';
+    // The device weights the board percentage by valid + error GH/s; averaging
+    // chip percentages would overrepresent a slow or failing chip.
+    return this.metric(performance!.errorPercentage, 2);
+  }
+  public chipErrorPercentage(row: FirmwareAsicStatus): string {
+    const chip = this._info?.performance?.chips?.[row.index];
+    return this.errorSampleIsFresh(chip) && this.validErrorPercentage(chip!.errorPercentage) &&
+      Number.isFinite(chip!.hashRate + chip!.errorHashRate) && chip!.hashRate + chip!.errorHashRate > 0
+      ? this.metric(chip!.errorPercentage, 2) : '—';
+  }
+  private validErrorPercentage(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+  }
+  private errorSampleIsFresh(chip: IDashboardV2Chip | undefined): boolean {
+    // Count the complete request round trip conservatively. Starting at receipt
+    // could make an old hardware sample appear fresh after a delayed response.
+    const elapsedSeconds = (performance.now() - this.dashboardErrorRequestStartedAt) / 1000;
+    const age = chip?.sampleAgeSeconds;
+    return this.dashboardIsFresh && this._info?.system?.shutdown === false &&
+      this._info?.system?.boardError === 0 && this.dashboardErrorRequestStartedAt >= 0 &&
+      Date.now() >= this.dashboardReceivedAt && Number.isFinite(elapsedSeconds) && elapsedSeconds >= 0 &&
+      chip?.errorSampleFresh === true && typeof age === 'number' && Number.isFinite(age) &&
+      age >= 0 && age + elapsedSeconds <= 15 &&
+      typeof chip.hashRate === 'number' && Number.isFinite(chip.hashRate) && chip.hashRate >= 0 &&
+      typeof chip.errorHashRate === 'number' && Number.isFinite(chip.errorHashRate) && chip.errorHashRate >= 0;
   }
   public get shareAcceptance(): string {
     const accepted = this._info?.performance?.sharesAccepted;
@@ -889,7 +926,12 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       chunkSize: this.chunkSizeDrainer,
       historyWindowMs: HOME_CFG.xAxis.maxWindowMs,
       fetchInfo: (startTimestampMs, chunkSize) =>
-        this.systemService.getDashboardV2WithSpan(startTimestampMs, chunkSize, HOME_CFG.xAxis.maxWindowMs),
+        defer(() => {
+          const requestedAt = performance.now();
+          return this.systemService.getDashboardV2WithSpan(startTimestampMs, chunkSize, HOME_CFG.xAxis.maxWindowMs).pipe(
+            tap(info => { if (info) this.dashboardErrorRequestStartedAt = requestedAt; }),
+          );
+        }),
       defaultInfo: () => SystemService.defaultDashboardV2(),
       getStoredLastTimestampMs: () => this.getStoredTimestamp(),
       getForceStartTimestampMs: () => {

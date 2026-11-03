@@ -8,6 +8,7 @@
 #include "psram_allocator.h"
 #include "global_state.h"
 #include "nvs_config.h"
+#include "tasks/mining_control.h"
 #include "http_cors.h"
 #include "http_utils.h"
 #include "ping_task.h"
@@ -91,13 +92,28 @@ esp_err_t GET_V2_dashboard(httpd_req_t *req)
         perf["asicCount"]       = board->getAsicCount();
         perf["smallCoreCount"]  = board->getAsics() ? board->getAsics()->getSmallCoreCount() : 0;
 
-        // per-chip valid hashrate + hardware error hashrate (both GH/s) from the
-        // ASIC counters. total = hashRate + errorHashRate.
+        // Read paired counters and their availability under one monitor lock.
+        // The real operation gate is closed during pause/start/stop transitions.
+        const auto errors = HASHRATE_MONITOR.getAsicErrorTelemetry(
+            esp_timer_get_time(), !shutdown && FiveTratumMining::miningWritesAllowed());
+        if (errors.asicCount == board->getAsicCount() && errors.errorPercentageAvailable)
+            perf["errorPercentage"] = errors.errorPercentage;
+        else
+            perf["errorPercentage"] = nullptr;
+
+        // Keep the legacy raw GH/s keys; new consumers must check validity.
         JsonArray chips = perf["chips"].to<JsonArray>();
         for (int i = 0; i < board->getAsicCount(); i++) {
             JsonObject chip = chips.add<JsonObject>();
-            chip["hashRate"]      = !shutdown ? HASHRATE_MONITOR.getChipHashrate(i)  : 0.0;
-            chip["errorHashRate"] = !shutdown ? HASHRATE_MONITOR.getChipErrorRate(i) : 0.0;
+            const FiveTratumTelemetry::ChipErrorTelemetry sample =
+                i < errors.asicCount ? errors.chips[i] : FiveTratumTelemetry::ChipErrorTelemetry{};
+            chip["hashRate"]      = !shutdown ? sample.hashRate : 0.0;
+            chip["errorHashRate"] = !shutdown ? sample.errorHashRate : 0.0;
+            chip["errorSampleFresh"] = sample.errorSampleFresh;
+            if (sample.errorPercentageAvailable) chip["errorPercentage"] = sample.errorPercentage;
+            else chip["errorPercentage"] = nullptr;
+            if (sample.sampleAgeAvailable) chip["sampleAgeSeconds"] = sample.sampleAgeSeconds;
+            else chip["sampleAgeSeconds"] = nullptr;
         }
     }
 

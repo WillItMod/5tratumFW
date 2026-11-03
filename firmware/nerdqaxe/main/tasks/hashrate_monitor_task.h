@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "chip_hashrate_sample.h"
+#include "asic_error_telemetry.h"
 
 #define HR_INTERVAL 5000
 
@@ -78,6 +79,7 @@ class HashrateMonitor {
     float *m_chipErrorRate = nullptr;
     int64_t *m_prevErrorResponse = nullptr;
     uint32_t *m_prevErrorCounter = nullptr;
+    bool *m_chipErrorSampleAvailable = nullptr;
 
     // Task plumbing
     static void taskWrapper(void *pv);
@@ -108,6 +110,7 @@ class HashrateMonitor {
 
     // Copy under the RX/reader mutex; no UART request or ASIC setting change.
     FiveTratumTelemetry::ChipHashrateSample getChipHashrateSample(int nr);
+    FiveTratumTelemetry::AsicErrorTelemetry getAsicErrorTelemetry(int64_t nowUs, bool miningActive = true);
     // Called from RX dispatcher for each 0x4C hardware-error-count reply.
     void onErrorReply(uint8_t asic_idx, uint32_t counterNow);
     float getChipHashrate(int nr);

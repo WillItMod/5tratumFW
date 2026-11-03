@@ -35,11 +35,16 @@ void vTaskSuspend(TaskHandle_t);
     # Replace platform include boundaries, leaving every method body intact.
     source = re.sub(r'^#include "[^"\n]+"\n', '', source, flags=re.M)
     (path / 'monitor.cpp').write_text('#include "hashrate_monitor_support.h"\n' + source)
-    binary = path / 'monitor'
-    subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-pthread',
-                    '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
-                    '-I', str(path), '-I', str(root / 'main/tasks'),
-                    '-I', str(root / 'test/host'), str(path / 'monitor.cpp'),
-                    str(root / 'test/host/hashrate_monitor_harness.cpp'),
-                    '-o', str(binary)], check=True)
-    subprocess.run([str(binary)], check=True)
+    dashboard = (root / 'main/http_server/v2/handler_v2_dashboard.cpp').read_text()
+    start = dashboard.index('    // --- performance ---\n')
+    end = dashboard.index('    // --- power ---\n', start)
+    (path / 'dashboard_performance.inc').write_text(dashboard[start:end])
+    for harness in ('hashrate_monitor_harness.cpp', 'asic_error_dashboard_harness.cpp'):
+        binary = path / Path(harness).stem
+        subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-pthread',
+                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
+                        '-I', str(path), '-I', str(root / 'main/tasks'),
+                        '-I', str(root / 'test/host'), '-I', str(root / 'components/arduinojson'),
+                        str(path / 'monitor.cpp'), str(root / 'test/host' / harness),
+                        '-o', str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)

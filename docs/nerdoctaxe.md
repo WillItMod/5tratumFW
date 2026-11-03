@@ -1,5 +1,10 @@
 # NerdOCTAXE-Gamma BETA — scoped compatibility
 
+Unreleased development: the next Beta7 source adds [overall and per-chip ASIC
+errors](../firmware/nerdqaxe/docs/asic-errors.md). The public Beta6 files below
+remain unchanged. [Software validation](../firmware/nerdqaxe/docs/validation-asic-errors-20261103.md)
+does not constitute a new hardware qualification or an auto-tuner release.
+
 The current public OctAxe pair is **`5tratumFW-oct-0.1.0-beta.6` — EXPERIMENTAL**, tag [`octaxe-v0.1.0-beta.6`](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.6), based on shufps v1.1.1-rc1 and compiled from clean source `5567a2d6c1f59808f197062e565fa6525a93f97b`. The full pinned build and software checks passed. **Later standard-screen check:** production 5tratumOS updater modules invoked by a local QA driver verified the Beta5 → Beta6 application/web pair and retained settings on the owned PCB 2.2 unit; the owner confirmed the standard screen and both fans normal. The installed OS was not upgraded for this test. The larger panel remains physically unqualified, and the original manifest flags remain unchanged. See the [5tratumOS 0.8.48 validation](https://github.com/WillItMod/5tratum/releases/download/v0.8.48/validation-0.8.48.md). See [Beta6 validation](../firmware/nerdqaxe/docs/validation-oct-beta6.md) and [release notes](../firmware/nerdqaxe/docs/releases/octaxe-v0.1.0-beta.6.md).
 
 The [experimental larger-screen support](../firmware/nerdqaxe/docs/octaxe-480-display.md) uses **480×320 = 153,600 pixels** as the accepted working assumption for the reported panel. It adds saved RGB/BGR choices to a **Standard 320×170 default** application/web pair. This assumption does not identify the controller, wiring, PCB or flash layout. No panel is detected automatically: install both Beta6 files, then choose a profile under **Miner controls → Display → Screen**, select **Save this section** and **Restart device**. See [the complete instructions](../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md#select-the-experimental-larger-screen).

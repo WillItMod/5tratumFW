@@ -16,6 +16,7 @@
     <div class="metric metric--hash"><span class="metric-label">Hashrate</span><div class="metric-value">{{ hashValue(info.performance.hashRate) }} <span>{{ hashUnit(info.performance.hashRate) }}</span></div><div class="metric-foot"><span>1 min <b>{{ hashValue(info.performance.hashRate1m) }} {{ hashUnit(info.performance.hashRate1m) }}</b></span><span>1 hour <b>{{ hashValue(info.performance.hashRate1h) }} {{ hashUnit(info.performance.hashRate1h) }}</b></span></div></div>
     <div class="metric"><span class="metric-label">Power</span><div class="metric-value">{{ metric(info.power.watts) }} <span>W</span></div><div class="metric-foot">{{ metric(info.power.voltage, 2) }} V <span class="dot-separator">·</span> {{ metric(info.power.currentA, 2) }} A</div></div>
     <div class="metric"><span class="metric-label">Efficiency</span><div class="metric-value">{{ efficiency }} <span>J/TH</span></div><div class="metric-foot">Measured power / hashrate</div></div>
+    <div class="metric" title="ASIC hardware errors / (valid hashes + hardware errors), weighted across all chips. This is separate from pool-rejected shares."><span class="metric-label">ASIC errors</span><div class="metric-value">{{ asicErrorPercentage }} <span>%</span></div><div class="metric-foot">Live hardware counters</div></div>
     <div class="metric"><span class="metric-label">Board temperature</span><div class="metric-value" [class.value--warning]="dashboardIsFresh && isAsicTempWarn(info.thermal.asicTemp, 0, info.system.overheatTemp)" [class.value--danger]="dashboardIsFresh && isAsicTempCrit(info.thermal.asicTemp, 0, info.system.overheatTemp)">{{ metric(info.thermal.asicTemp) }} <span>°C</span></div><div class="metric-foot">Regulator {{ metric(info.thermal.vrTemp) }} °C</div></div>
   </section>
 
@@ -46,6 +47,7 @@
         <article class="asic-card" *ngFor="let chip of asicRows; trackBy: trackAsic">
           <div class="asic-title"><span class="chip-symbol" aria-hidden="true"><nb-icon icon="hard-drive-outline"></nb-icon></span><h3>ASIC {{ chip.index + 1 }}</h3><span class="sample-dot" [class.sample-dot--fresh]="chipIsFresh(chip)" [title]="chipIsFresh(chip) ? 'Fresh hardware counter' : 'Counter unavailable or stale'"></span></div>
           <div class="asic-hash">{{ chipHash(chip) }} <span>GH/s</span></div>
+          <div class="asic-errors" title="ASIC hardware errors / (valid hashes + hardware errors). A dash means the counter reading is unavailable or stale."><span>ASIC errors</span><strong>{{ chipErrorPercentage(chip) }} <span>%</span></strong></div>
           <div class="asic-detail"><span *ngIf="chip.temperatureC !== null && chip.temperatureC > 0">{{ chipTemperature(chip) }} °C</span><span>{{ chipIsFresh(chip) ? 'Live counter' : 'Unavailable' }}</span></div>
         </article>
       </div>

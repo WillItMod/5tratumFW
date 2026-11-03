@@ -21,6 +21,17 @@ export interface IDashboardV2Performance {
     frequency: number;
     asicCount: number;
     smallCoreCount: number;
+    // Optional while a newer website is paired with an older application.
+    errorPercentage?: number | null;
+    chips?: IDashboardV2Chip[];
+}
+
+export interface IDashboardV2Chip {
+    hashRate: number;       // Valid counter-derived GH/s.
+    errorHashRate: number;  // Hardware error counter-derived GH/s.
+    errorPercentage?: number | null;
+    errorSampleFresh?: boolean;
+    sampleAgeSeconds?: number | null;
 }
 
 export interface IDashboardV2Power {

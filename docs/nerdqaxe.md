@@ -1,5 +1,10 @@
 # NerdQAxe++ BETA
 
+Unreleased development: the next Beta9 source adds [overall and per-chip ASIC
+errors](../firmware/nerdqaxe/docs/asic-errors.md). The public Beta8 files below
+remain unchanged. [Software validation](../firmware/nerdqaxe/docs/validation-asic-errors-20261103.md)
+does not constitute a new hardware qualification or an auto-tuner release.
+
 The current public QAxe BETA pair is [`qaxe-v0.1.0-beta.8`](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.8). Use its family-specific matched assets, not Gamma images. Board target: **NERDQAXEPLUS2**, model **NerdQAxe++**, ASIC **BM1370×4**. The tested unit's PCB revision is unidentified; support is not extended to QAxe+, OctAxe or other revisions by a shared name.
 
 The `5tratumFW-qa-0.1.0-beta.8` pair is based on shufps v1.1.1-rc1 and was compiled from clean source `1a34b24100e1238e331d8145a70f6b08f85f943d`, with full local checks and final family CI passed. Its standard 320×170 pair completed supervised OTA, all 108 packaged web-record checks, exported-settings checks, manual pause/resume and a temporary tuning schedule at the existing operating point on 28 October 2026. All settings, slots and original policies were restored and accepted shares progressed. The owner confirmed the screen and both fans normal. These are short checks, not changed-point, cold power-cycle or sustained thermal qualification. See [aligned validation](validation-aligned-20261028.md) and [release notes](../firmware/nerdqaxe/docs/releases/qaxe-v0.1.0-beta.8.md).

@@ -33,7 +33,8 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
     std::unique_ptr<float[]> errors(new (std::nothrow) float[count]());
     std::unique_ptr<int64_t[]> errorTimes(new (std::nothrow) int64_t[count]());
     std::unique_ptr<uint32_t[]> errorCounters(new (std::nothrow) uint32_t[count]());
-    if (!rates || !times || !counters || !available || !errors || !errorTimes || !errorCounters) {
+    std::unique_ptr<bool[]> errorAvailable(new (std::nothrow) bool[count]());
+    if (!rates || !times || !counters || !available || !errors || !errorTimes || !errorCounters || !errorAvailable) {
         ESP_LOGE(HR_TAG, "start(): sample allocation failed");
         return false;
     }
@@ -54,6 +55,7 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
         m_chipErrorRate = errors.release();
         m_prevErrorResponse = errorTimes.release();
         m_prevErrorCounter = errorCounters.release();
+        m_chipErrorSampleAvailable = errorAvailable.release();
         m_asicCount = count;
         if (xTaskCreatePSRAM(&HashrateMonitor::taskWrapper, "hr_monitor", 4096,
                             this, 10, nullptr) != pdPASS) {
@@ -65,6 +67,7 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
             delete[] m_chipErrorRate;
             delete[] m_prevErrorResponse;
             delete[] m_prevErrorCounter;
+            delete[] m_chipErrorSampleAvailable;
             m_chipHashrate = nullptr;
             m_prevResponse = nullptr;
             m_prevCounter = nullptr;
@@ -72,6 +75,7 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
             m_chipErrorRate = nullptr;
             m_prevErrorResponse = nullptr;
             m_prevErrorCounter = nullptr;
+            m_chipErrorSampleAvailable = nullptr;
             m_board = nullptr;
             m_asic = nullptr;
             ESP_LOGE(HR_TAG, "start(): task creation failed");
@@ -128,6 +132,37 @@ FiveTratumTelemetry::ChipHashrateSample HashrateMonitor::getChipHashrateSample(i
         return {};
     }
     return {m_chipHashrate[nr], m_prevResponse[nr], m_chipSampleAvailable[nr]};
+}
+
+FiveTratumTelemetry::AsicErrorTelemetry HashrateMonitor::getAsicErrorTelemetry(int64_t nowUs, bool miningActive) {
+    PThreadGuard lock(m_mutex);
+    FiveTratumTelemetry::AsicErrorTelemetry result;
+    if (m_asicCount < 1 || m_asicCount > result.MAX_ASICS ||
+        !m_chipHashrate || !m_prevResponse || !m_chipSampleAvailable ||
+        !m_chipErrorRate || !m_prevErrorResponse || !m_chipErrorSampleAvailable) {
+        return result;
+    }
+    result.asicCount = m_asicCount;
+    double validTotal = 0.0;
+    double errorTotal = 0.0;
+    bool allFresh = miningActive;
+    for (int i = 0; i < m_asicCount; ++i) {
+        result.chips[i] = FiveTratumTelemetry::chipErrorTelemetry(
+            {m_chipHashrate[i], m_prevResponse[i], m_chipSampleAvailable[i]},
+            {m_chipErrorRate[i], m_prevErrorResponse[i], m_chipErrorSampleAvailable[i]},
+            nowUs, miningActive);
+        allFresh = allFresh && result.chips[i].errorSampleFresh;
+        validTotal += result.chips[i].hashRate;
+        errorTotal += result.chips[i].errorHashRate;
+    }
+    const double total = validTotal + errorTotal;
+    if (allFresh && std::isfinite(total) && total > 0.0) {
+        // Aggregate counter rates before dividing. Averaging individual chip
+        // percentages would over-weight a slower chip.
+        result.errorPercentage = static_cast<float>(100.0 * errorTotal / total);
+        result.errorPercentageAvailable = true;
+    }
+    return result;
 }
 
 void HashrateMonitor::taskWrapper(void *pv)
@@ -222,6 +257,7 @@ void HashrateMonitor::resetAfterPowerCycle() {
         m_chipErrorRate[i] = 0;
         m_prevErrorResponse[i] = 0;
         m_prevErrorCounter[i] = 0;
+        m_chipErrorSampleAvailable[i] = false;
     }
     m_hashrate = m_smoothedHashrate = 0;
     m_median = Median<5>{};
@@ -246,6 +282,14 @@ void HashrateMonitor::onRegisterReply(uint8_t asic_idx, uint32_t counterNow)
 
     int64_t timeDelta = now - m_prevResponse[asic_idx];
     if (timeDelta <= 0) {
+        return;
+    }
+    if (timeDelta > FiveTratumTelemetry::ChipHashrateSample::MAX_AGE_US) {
+        // A fresh reply after a long absence is a new baseline, not a fresh
+        // five-second measurement. Wait for the next bounded interval.
+        m_prevResponse[asic_idx] = now;
+        m_prevCounter[asic_idx] = counterNow;
+        m_chipSampleAvailable[asic_idx] = false;
         return;
     }
     uint32_t counterDelta = counterNow - m_prevCounter[asic_idx];
@@ -281,6 +325,12 @@ void HashrateMonitor::onErrorReply(uint8_t asic_idx, uint32_t counterNow)
 
     int64_t timeDelta = now - m_prevErrorResponse[asic_idx];       // microseconds
     if (timeDelta <= 0) return;
+    if (timeDelta > FiveTratumTelemetry::ChipHashrateSample::MAX_AGE_US) {
+        m_prevErrorResponse[asic_idx] = now;
+        m_prevErrorCounter[asic_idx] = counterNow;
+        m_chipErrorSampleAvailable[asic_idx] = false;
+        return;
+    }
     uint32_t counterDelta = counterNow - m_prevErrorCounter[asic_idx]; // wraparound-safe
 
     // The 0x4C error counter increments in the same 2^32-hashes-per-count unit
@@ -291,6 +341,7 @@ void HashrateMonitor::onErrorReply(uint8_t asic_idx, uint32_t counterNow)
         ? ((double) counterDelta * (double) 0x100000000uLL / (double) timeDelta / 1000.0)
         : 0.0;
     setChipErrorRate(asic_idx, (float) err_ghs);
+    m_chipErrorSampleAvailable[asic_idx] = true;
 
     m_prevErrorCounter[asic_idx] = counterNow;
     m_prevErrorResponse[asic_idx] = now;

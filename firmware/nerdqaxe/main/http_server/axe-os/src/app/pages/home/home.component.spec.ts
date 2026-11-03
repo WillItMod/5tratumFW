@@ -1,5 +1,5 @@
 import { ElementRef } from '@angular/core';
-import { EMPTY, of, Subscription } from 'rxjs';
+import { EMPTY, of, Subject, Subscription } from 'rxjs';
 import { HomeComponent } from './home.component';
 import { SystemService } from '../../services/system.service';
 import { IDashboardV2 } from '../../models/IDashboardV2';
@@ -11,6 +11,7 @@ describe('5tratumFW dashboard telemetry', () => {
   let reset: jasmine.Spy;
   let auth: jasmine.Spy;
   let openDialog: jasmine.Spy;
+  let getDashboard: jasmine.Spy;
   beforeEach(() => {
     localStorage.clear();
     dashboard = SystemService.defaultDashboardV2();
@@ -22,10 +23,11 @@ describe('5tratumFW dashboard telemetry', () => {
     reset = jasmine.createSpy('resetStats').and.returnValue(of('ok'));
     auth = jasmine.createSpy('ensureOtp$').and.returnValue(of({totp:'123456'}));
     openDialog = jasmine.createSpy('open');
+    getDashboard = jasmine.createSpy('getDashboardV2WithSpan').and.callFake(() => of(dashboard));
     component = new HomeComponent(
       { get: () => of(null) } as any,
       {} as any,
-      { getDashboardV2WithSpan: () => of(dashboard), resetStats:reset } as any,
+      { getDashboardV2WithSpan: getDashboard, resetStats:reset } as any,
       { instant: (key: string) => key } as any,
       { getItem: () => null } as any,
       new ElementRef(document.createElement('div')),
@@ -64,6 +66,152 @@ describe('5tratumFW dashboard telemetry', () => {
     expect(component.metric(undefined)).toBe('—');
     expect(component.metric(NaN)).toBe('—');
     expect(component.metric(0)).toBe('0.0');
+  });
+  function freshErrorSamples(count = 4, percentage = 2) {
+    dashboard.performance.asicCount = count;
+    dashboard.performance.errorPercentage = percentage;
+    dashboard.performance.chips = Array.from({length: count}, () => ({
+      hashRate: 980, errorHashRate: 20, errorPercentage: percentage,
+      errorSampleFresh: true, sampleAgeSeconds: 0,
+    }));
+  }
+  it('keeps ASIC errors unavailable with an older app or startup placeholders', () => {
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    delete dashboard.performance.errorPercentage;
+    delete dashboard.performance.chips;
+    dashboard.performance.sharesRejected = 999;
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+  });
+  it('shows measured zero ASIC errors independently of pool-rejected shares', () => {
+    freshErrorSamples(4, 0);
+    dashboard.performance.chips!.forEach(chip => chip.errorHashRate = 0);
+    dashboard.performance.sharesRejected = 999;
+    expect(component.asicErrorPercentage).toBe('0.00');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('0.00');
+  });
+  it('shows all four QAxe and eight OctAxe error readings without manufacturing missing chips', () => {
+    for (const count of [4, 8]) {
+      freshErrorSamples(count);
+      expect(component.asicRows.length).toBe(count);
+      expect(component.asicRows.every(row => component.chipErrorPercentage(row) === '2.00')).toBeTrue();
+      expect(component.asicErrorPercentage).toBe('2.00');
+      dashboard.performance.chips!.pop();
+      expect(component.asicErrorPercentage).toBe('—');
+      expect(component.chipErrorPercentage(component.asicRows[count - 1])).toBe('—');
+      expect(component.chipErrorPercentage(component.asicRows[0])).toBe('2.00');
+    }
+  });
+  it('uses the device weighted board percentage instead of averaging chip percentages', () => {
+    freshErrorSamples();
+    dashboard.performance.chips = [
+      {hashRate:900,errorHashRate:100,errorPercentage:10,errorSampleFresh:true,sampleAgeSeconds:0},
+      ...Array.from({length:3}, () => ({hashRate:100,errorHashRate:0,errorPercentage:0,errorSampleFresh:true,sampleAgeSeconds:0})),
+    ];
+    dashboard.performance.errorPercentage = 100 * 100 / 1300;
+    expect(component.asicErrorPercentage).toBe('7.69');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('10.00');
+    expect(component.chipErrorPercentage(component.asicRows[1])).toBe('0.00');
+  });
+  it('expires a hardware sample using its age plus monotonic request age even with a fresh dashboard', () => {
+    freshErrorSamples();
+    const requestedAt = performance.now();
+    (component as any).dashboardErrorRequestStartedAt = requestedAt;
+    const now = spyOn(performance, 'now').and.returnValue(requestedAt + 500);
+    dashboard.performance.chips![0].sampleAgeSeconds = 14.5;
+    expect(component.asicErrorPercentage).toBe('2.00');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('2.00');
+    now.and.returnValue(requestedAt + 501);
+    expect(component.dashboardIsFresh).toBeTrue();
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[1])).toBe('2.00');
+  });
+  it('counts delayed response transit time and never revives an expired hardware sample on receipt', () => {
+    subscription.unsubscribe();
+    let monotonicNow = 1000;
+    spyOn(performance, 'now').and.callFake(() => monotonicNow);
+    let response = new Subject<IDashboardV2>();
+    getDashboard.and.returnValue(response);
+    subscription = component.info$.subscribe();
+    freshErrorSamples();
+    dashboard.performance.chips![0].sampleAgeSeconds = 14.5;
+    monotonicNow = 2000; // One-second round trip makes the 14.5s sample too old.
+    response.next(dashboard);
+    expect(component.dashboardIsFresh).toBeTrue();
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[1])).toBe('2.00');
+
+    subscription.unsubscribe();
+    response = new Subject<IDashboardV2>();
+    getDashboard.and.returnValue(response);
+    monotonicNow = 10000;
+    subscription = component.info$.subscribe();
+    freshErrorSamples();
+    monotonicNow = 26000; // Even a zero-age server snapshot has expired in transit.
+    response.next(dashboard);
+    expect(component.dashboardIsFresh).toBeTrue();
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.asicRows.every(row => component.chipErrorPercentage(row) === '—')).toBeTrue();
+  });
+  it('rejects missing, invalid or out-of-range error percentages and sample ages', () => {
+    const invalid: unknown[] = [null, undefined, NaN, Infinity, -1, 101, '0'];
+    for (const value of invalid) {
+      freshErrorSamples();
+      dashboard.performance.errorPercentage = value as any;
+      expect(component.asicErrorPercentage).withContext(`board percentage ${value}`).toBe('—');
+      dashboard.performance.chips![0].errorPercentage = value as any;
+      expect(component.chipErrorPercentage(component.asicRows[0])).withContext(`chip percentage ${value}`).toBe('—');
+    }
+    for (const age of [null, undefined, NaN, Infinity, -1, 15.001, '0']) {
+      freshErrorSamples();
+      dashboard.performance.chips![0].sampleAgeSeconds = age as any;
+      expect(component.asicErrorPercentage).withContext(`sample age ${age}`).toBe('—');
+      expect(component.chipErrorPercentage(component.asicRows[0])).withContext(`sample age ${age}`).toBe('—');
+    }
+  });
+  it('hides paused, powered-down, failed and stale error telemetry rather than showing zero', () => {
+    freshErrorSamples(8, 0);
+    dashboard.performance.chips!.forEach(chip => chip.errorSampleFresh = false); // Paused rail / no new sample.
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    freshErrorSamples(8, 0);
+    dashboard.system.shutdown = true;
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    dashboard.system.shutdown = false;
+    component.dashboardUnavailable = true;
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    component.dashboardUnavailable = false;
+    (component as any).dashboardReceivedAt = Date.now() - 15001;
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+  });
+  it('retains a measured board total when a fresh chip has zero work and no defined percentage', () => {
+    freshErrorSamples();
+    const chip = dashboard.performance.chips![0];
+    chip.hashRate = chip.errorHashRate = 0;
+    chip.errorPercentage = null;
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    expect(component.asicErrorPercentage).toBe('2.00');
+    dashboard.performance.chips!.forEach(sample => sample.hashRate = sample.errorHashRate = 0);
+    expect(component.asicErrorPercentage).toBe('—');
+  });
+  it('hides invalid rate and future-dated samples', () => {
+    for (const rates of [[NaN,1], [1,Infinity], [-1,1], [1,-1]]) {
+      freshErrorSamples();
+      const chip = dashboard.performance.chips![0];
+      [chip.hashRate, chip.errorHashRate] = rates;
+      expect(component.asicErrorPercentage).toBe('—');
+      expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
+    }
+    freshErrorSamples();
+    (component as any).dashboardReceivedAt = Date.now() + 1000;
+    expect(component.asicErrorPercentage).toBe('—');
+    expect(component.chipErrorPercentage(component.asicRows[0])).toBe('—');
   });
   it('shows four placeholders when chip counter endpoint is unavailable', () => {
     expect(component.asicRows.length).toBe(4);
