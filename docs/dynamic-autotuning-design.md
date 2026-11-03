@@ -5,6 +5,10 @@ endpoint, UI control or automatic operating-point change is implemented by this
 document or by the accompanying Nerd ASIC-error display work. Existing published
 firmware does not gain auto-tuning from the error display alone.
 
+See the [primary-source research and confidence record](dynamic-autotuning-research.md)
+for the evidence behind the control strategy and the remaining measurement and
+hardware-calibration gaps.
+
 The intended targets are Bitaxe Gamma PCB601/602 / BM1370×1, NerdQAxe++ /
 NERDQAXEPLUS2 / BM1370×4 and NerdOctAxe Gamma / NERDOCTAXEGAMMA / BM1370×8.
 Each actual PCB, regulator and cooling assembly needs its own qualification.
