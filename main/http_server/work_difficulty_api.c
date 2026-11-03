@@ -38,7 +38,8 @@ static esp_err_t get_work_difficulty(httpd_req_t *req)
 }
 esp_err_t work_difficulty_register(httpd_handle_t server,GlobalState *global)
 {
-    if(!global)return ESP_ERR_INVALID_ARG;state=global;
+    if (!global) return ESP_ERR_INVALID_ARG;
+    state = global;
     const httpd_uri_t route={.uri="/api/5tratum/work-difficulty",.method=HTTP_GET,.handler=get_work_difficulty};
     return httpd_register_uri_handler(server,&route);
 }
