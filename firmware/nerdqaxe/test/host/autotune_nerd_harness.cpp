@@ -25,7 +25,7 @@ static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
-    controller={};observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
+    controller={};history={};lastOwnerTickUs=0;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
     ++hostGeneration;
@@ -50,6 +50,7 @@ int main(int argc,char **argv) {
     assert(!snapshot()["backup"]["available"].as<bool>());
     assert(!snapshot()["status"]["active"].as<bool>());
     auto initial=snapshot();
+    assert(initial["config"]["maxAsicTempC"]==60 && initial["config"]["maxVrmTempC"]==70);
     for(const char *key:{"baseline","current","best"}) {
         bool present=false;
         for(JsonPairConst pair:initial["status"].as<JsonObjectConst>())if(!strcmp(pair.key().c_str(),key))present=true;
@@ -57,7 +58,76 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
-    if(scenario=="search-display") {
+    if(scenario.rfind("events-",0)==0) {
+        using namespace FiveTratumAutotune;
+        const char *configuration=R"({"action":"configure","config":{"priority":"efficiency","continuous":false,"minFrequencyMHz":590,"maxFrequencyMHz":600,"minVoltageMv":1145,"maxVoltageMv":1150,"maxAsicTempC":65,"maxVrmTempC":80,"maxPowerW":200}})";
+        assert(response(configuration)["ok"]==true);start();
+        auto first=snapshot();assert(first["status"]["eventCapacity"]==8&&first["status"]["events"].size()==1);
+        auto began=first["status"]["events"][0];assert(began["kind"]=="started"&&began["from"].isNull()&&began["point"]["frequencyMHz"]==600&&began["measurement"].isNull());
+        if(scenario=="events-failed")voltageFail=true;
+        bool found=false,baseline=false,applied=false;
+        uint32_t maxId=0;
+        for(unsigned count=0;count<1300;++count) {
+            if(controller.trial && !pending && controller.state==FWT_SETTLING) {
+                watts=scenario=="events-accepted"?95:105;
+                if(scenario=="events-errors")chipErrorWork=25;
+            }
+            step();auto d=snapshot();const auto events=d["status"]["events"].as<JsonArrayConst>();
+            assert(events.size()<=8);uint32_t prior=0;
+            for(JsonObjectConst event:events) {
+                const uint32_t id=event["id"];assert(id>prior);prior=id;maxId=std::max(maxId,id);
+                assert(event["atSeconds"].as<double>()>0&&event["point"]["frequencyMHz"].as<double>()>0&&event["point"]["coreVoltageMv"].as<double>()>0);
+                if(event["kind"]=="baseline") {baseline=true;assert(event["measurement"]["hashRateGHs"].as<double>()>0&&event["measurement"]["powerW"]==100);}
+                if(event["kind"]=="adjustment"&&event["outcome"]=="applied")applied=true;
+                if((scenario=="events-accepted"&&event["kind"]=="accepted") || (scenario=="events-rejected"&&event["kind"]=="rejected") ||
+                   (scenario=="events-errors"&&event["kind"]=="errors") || (scenario=="events-failed"&&event["outcome"]=="failed")) {
+                    found=true;
+                    if(event["kind"]=="accepted")assert(event["score"].as<double>()>event["requiredScore"].as<double>());
+                    if(event["kind"]=="rejected")assert(event["score"].as<double>()<=event["requiredScore"].as<double>());
+                    if(event["kind"]=="errors")assert(event["measurement"]["worstErrorPercentage"].as<double>()>1);
+                }
+            }
+            if(found && (scenario!="events-accepted"||events.size()==8))break;
+        }
+        assert(found&&baseline&&(scenario=="events-failed"||applied));
+        if(scenario=="events-accepted")assert(maxId>8&&fwt_history_count(&history)==8);
+        if(scenario=="events-failed") {
+            unsigned failures=0;auto d=snapshot();for(JsonObjectConst event:d["status"]["events"].as<JsonArrayConst>())if(event["outcome"]=="failed")++failures;
+            assert(failures==1); // Requested adjustment is updated in place, not duplicated.
+        }
+        const unsigned nvs=hostNvsCalls,sensors=hostSensorReads;const auto samples=controller.samples;const auto sequence=controller.eventSequence;
+        std::string wire;serializeJson(snapshot()["status"]["events"],wire);
+        for(unsigned read=0;read<12;++read) {HostStackContext external(false);std::string repeated;serializeJson(snapshot()["status"]["events"],repeated);assert(wire==repeated);DisplaySnapshot view;assert(tryDisplaySnapshot(view)&&view.lastKind!=FWT_EVENT_NONE&&view.lastLabel);}
+        assert(hostNvsCalls==nvs&&hostSensorReads==sensors&&controller.samples==samples&&controller.eventSequence==sequence);
+        boot();auto rebooted=snapshot();assert(rebooted["status"]["events"].size()==0&&!rebooted["status"]["active"].as<bool>()); // RAM-only history, no automatic resume.
+        return 0;
+    } else if(scenario=="passive-activity") {
+        using namespace FiveTratumAutotune;
+        const unsigned nvs=hostNvsCalls,sensors=hostSensorReads;
+        const auto heartbeat=lastOwnerTickUs;
+        auto read=[]() {httpd_req_t req;assert(GET_five_tratum_autotune_activity(&req)==ESP_OK);JsonDocument d;assert(deserializeJson(d,req.response)==DeserializationError::Ok);return d;};
+        {HostStackContext external(false);auto d=read();assert(d["available"]==true&&d["supported"]==true&&d["active"]==false&&d["controllerAgeSeconds"]==0);}
+        controller.active=controller.owns=true;controller.state=FWT_MEASURING;controller.config.priority=FWT_PERFORMANCE;controller.config.continuous=true;
+        hostNow+=5000000;
+        for(unsigned i=0;i<12;++i) {HostStackContext external(false);auto d=read();assert(d["active"]==true&&d["ownsSettings"]==true&&d["state"]=="measuring"&&d["priority"]=="performance"&&d["continuous"]==true&&d["controllerAgeSeconds"]==5);}
+        assert(lastOwnerTickUs==heartbeat);
+        hostNow+=11000000;auto stale=read();assert(stale["controllerAgeSeconds"].as<double>()==16); // Polling cannot renew controller freshness.
+        auto reused=read();pthread_mutex_lock(&mutex);auto busy=read();assert(activity(reused));pthread_mutex_unlock(&mutex);
+        assert(busy["schemaVersion"]==1&&busy["available"]==false&&busy.size()==2&&reused.size()==2&&reused["available"]==false);
+        observed.fault=true;auto faulted=read();assert(faulted["fault"]==true&&faulted["state"]=="measuring");observed.fault=false;
+        controller.state=FWT_FAULTED;assert(read()["fault"]==true);controller.state=FWT_MEASURING;
+        initialized=false;auto cold=read();assert(cold["supported"]==false&&!initialized);initialized=true;
+        lastOwnerTickUs=hostNow+1;assert(read()["controllerAgeSeconds"].isNull());lastOwnerTickUs=heartbeat;
+        controller.active=false;controller.owns=false;restoring=true;auto restore=read();assert(restore["active"]==false&&restore["ownsSettings"]==true&&restore["state"]=="restoring");restoring=false;
+        controller.active=controller.owns=true;externalHandoff("Manual control test");
+        auto fullRevoked=snapshot();assert(fullRevoked["status"]["active"]==false&&fullRevoked["status"]["ownsSettings"]==false);
+        auto revoked=read();assert(revoked["active"]==false&&revoked["ownsSettings"]==false&&revoked["reason"]=="Manual control test");handoff.store(nullptr);
+        firmwareUpdates=1;assert(read()["active"]==false);firmwareUpdates=0;
+        otpAllowed=false;assert(read()["available"]==true);otpAllowed=true; // Read only, never an OTP control request.
+        networkAllowed=false;httpd_req_t denied;assert(GET_five_tratum_autotune_activity(&denied)==ESP_FAIL&&denied.response.empty());networkAllowed=true;
+        assert(hostNvsCalls==nvs&&hostSensorReads==sensors&&writes.empty());
+        return 0;
+    } else if(scenario=="search-display") {
         using namespace FiveTratumAutotune;
         const unsigned nvs=hostNvsCalls,sensorReads=hostSensorReads;
         assert(initial["status"]["search"]["minimumSamples"]==8 && initial["status"]["search"]["roundExperimentLimit"]==24);
@@ -208,7 +278,7 @@ int main(int argc,char **argv) {
             return 0;
         }
         if(scenario.rfind("boot-",0)==0) {
-            JsonDocument config;config["action"]="configure";config["config"].set(snapshot()["config"]);config["config"]["priority"]="efficiency";
+            JsonDocument config;config["action"]="configure";config["config"].set(snapshot()["config"]);config["config"]["priority"]="efficiency";config["config"]["maxAsicTempC"]=65;config["config"]["maxVrmTempC"]=80;
             std::string text;serializeJson(config,text);assert(response(text.c_str())["ok"].as<bool>());
             const std::string originalBackup=nvstore["fwtune/baseline"];
             if(scenario=="boot-missing-records"){nvstore.erase("fwtune/baseline");nvstore.erase("fwtune/options");}
@@ -222,7 +292,7 @@ int main(int argc,char **argv) {
             assert(hostNvsCalls==loaded&&!paused&&writes.empty());
             auto report=snapshot();assert(!report["status"]["active"].as<bool>()&&!report["status"]["ownsSettings"].as<bool>());
             const bool bad=scenario=="boot-corrupt-options"||scenario=="boot-corrupt-baseline"||scenario=="boot-read-failure"||scenario=="boot-memory-failure";
-            if(scenario=="boot-present-records")assert(report["config"]["priority"]=="efficiency"&&report["backup"]["available"].as<bool>()&&nvstore["fwtune/baseline"]==originalBackup);
+            if(scenario=="boot-present-records")assert(report["config"]["maxAsicTempC"]==65&&report["config"]["maxVrmTempC"]==80&&report["config"]["priority"]=="efficiency"&&report["backup"]["available"].as<bool>()&&nvstore["fwtune/baseline"]==originalBackup);
             if(scenario=="boot-missing-records")assert(report["diagnostics"]["optionsStorage"]=="missing"&&report["diagnostics"]["baselineStorage"]=="missing"&&!report["backup"]["available"].as<bool>());
             if(scenario=="boot-corrupt-options")assert(report["diagnostics"]["optionsStorage"]=="invalid"&&report["backup"]["available"].as<bool>());
             if(scenario=="boot-corrupt-baseline")assert(report["diagnostics"]["baselineStorage"]=="invalid"&&!report["backup"]["available"].as<bool>());
@@ -304,9 +374,9 @@ int main(int argc,char **argv) {
         } else if(scenario=="configure-pending") {
             candidate(590,1145);
             auto good=snapshot();JsonDocument document;document["action"]="configure";document["config"].set(good["config"]);
-            document["config"]["maxAsicTempC"]=60;
+            document["config"]["maxAsicTempC"]=55;
             std::string body;serializeJson(document,body);assert(!response(body.c_str())["ok"].as<bool>());
-            assert(snapshot()["config"]["maxAsicTempC"].as<double>()==65);
+            assert(snapshot()["config"]["maxAsicTempC"].as<double>()==60);
         } else if(scenario=="pending-headroom") {
             candidate(610,1155);asicDegrees=64;step();
             assert(paused&&SYSTEM_MODULE.error==Board::NONE&&writes.empty());

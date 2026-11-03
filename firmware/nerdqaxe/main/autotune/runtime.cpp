@@ -3,6 +3,7 @@
 #include "write_gate.h"
 #include "storage_context.h"
 #include "presentation.h"
+#include "events.h"
 #include "global_state.h"
 #include "tasks/mining_control.h"
 #include "tasks/mining_schedule.h"
@@ -34,7 +35,9 @@ namespace {
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 struct Guard { Guard() { pthread_mutex_lock(&mutex); } ~Guard() { pthread_mutex_unlock(&mutex); } };
 fwt_controller controller{};
+fwt_history history{};
 fwt_input observed{};
+uint64_t lastOwnerTickUs=0;
 TuningSensors sensors{};
 bool initialized = false, optionsError = false, backupAvailable = false, backupRestored = false;
 enum class BlobStatus { Unloaded, Missing, Present, Invalid, ReadFailure };
@@ -218,8 +221,8 @@ void initialize(Board *board) {
     config.minFrequencyMHz = std::ceil(config.minFrequencyMHz);
     config.maxVoltageMv = board->getAsicVoltageMillis();
     config.minVoltageMv = std::max(limits.minVoltageMv, config.maxVoltageMv - 100);
-    config.maxAsicTempC = std::min(limits.maxAsicTempC, 65.0);
-    config.maxVrmTempC = std::min(limits.maxVrmTempC, 80.0);
+    config.maxAsicTempC = std::min(limits.maxAsicTempC, 60.0);
+    config.maxVrmTempC = std::min(limits.maxVrmTempC, 70.0);
     config.maxPowerW = limits.maxPowerW;
     optionsError=optionsStatus==BlobStatus::Invalid || optionsStatus==BlobStatus::ReadFailure;
     if (optionsStatus==BlobStatus::Present) {
@@ -307,7 +310,7 @@ void acquire(Board *board) {
 }
 bool revisionCurrent() { return !handoff.load() && !firmwareUpdates.load() && !permanentFreeze.load() && Config::tuningMutationRevision() == mutationRevision; }
 void failTransition(const char *reason) {
-    pending = false; fwt_applied(&controller,false,esp_timer_get_time());
+    pending = false; fwt_applied(&controller,false,esp_timer_get_time()); fwt_history_capture(&history,&controller);
     adapterReason = reason;
     // A failed/unconfirmed rail transition cannot be healed by clearing faults.
     SYSTEM_MODULE.setBoardError(Board::Error::VOUT_FAULT,0);
@@ -364,7 +367,7 @@ void advanceTransition(uint64_t now) {
         if (!revisionCurrent() || !power.commandTuningFrequency(frequency)) { failTransition("Tuning clock transition failed"); return; }
         voltageMatches = 0; return;
     }
-    pending = false; fwt_applied(&controller,true,now);
+    pending = false; fwt_applied(&controller,true,now); fwt_history_capture(&history,&controller);
     controller.generation = FiveTratumMining::workGeneration();
     if (restoring) {
         restoring = false; backupRestored = restoreSaved;
@@ -423,9 +426,38 @@ void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
     auto out=parent[key].to<JsonObject>();
     out["frequencyMHz"] = point->frequencyMHz; out["coreVoltageMv"] = point->coreVoltageMv;
 }
+const char *cachedReason() {
+    return adapterReason ? adapterReason : !storagePrepared ? "Tuning storage has not been preloaded on an internal boot stack" :
+        !powerInitialized ? "Waiting for power and fan initialization" : optionsError ? "Stored tuning options are invalid or unreadable" :
+        observationReason ? observationReason : controller.reason ? controller.reason : "Tuning disabled";
+}
 bool presentationObscured() {
     return restoring || pending || firmwareUpdates.load() || permanentFreeze.load() ||
            handoff.load()!=nullptr || adapterReason!=nullptr;
+}
+void eventsJson(JsonObject status) {
+    fwt_history_capture(&history,&controller);
+    status["eventCapacity"]=FWT_EVENT_CAPACITY;
+    auto events=status["events"].to<JsonArray>();
+    for(unsigned index=0;index<fwt_history_count(&history);++index) {
+        const auto *event=fwt_history_at(&history,index);
+        if(!event || !event->id) continue;
+        auto value=events.add<JsonObject>();
+        value["id"]=event->id;value["atSeconds"]=event->atUs/(double)FWT_SECOND;
+        value["kind"]=fwt_event_kind_name(event->kind);value["outcome"]=fwt_event_outcome_name(event->outcome);
+        value["reason"]=event->reason ? event->reason : "unavailable";
+        pointJson(value,"from",fwt_positive(event->from.frequencyMHz)&&fwt_positive(event->from.coreVoltageMv)?&event->from:nullptr);
+        pointJson(value,"point",fwt_positive(event->point.frequencyMHz)&&fwt_positive(event->point.coreVoltageMv)?&event->point:nullptr);
+        if(event->hasMeasurement && fwt_positive(event->hashRateGHs) && fwt_positive(event->powerW) &&
+           std::isfinite(event->errorPercentage) && event->errorPercentage>=0 && event->errorPercentage<=100 &&
+           std::isfinite(event->worstErrorPercentage) && event->worstErrorPercentage>=0 && event->worstErrorPercentage<=100) {
+            auto measured=value["measurement"].to<JsonObject>();
+            measured["hashRateGHs"]=event->hashRateGHs;measured["powerW"]=event->powerW;
+            measured["errorPercentage"]=event->errorPercentage;measured["worstErrorPercentage"]=event->worstErrorPercentage;
+        } else value["measurement"]=nullptr;
+        if(event->hasScore && std::isfinite(event->score)) value["score"]=event->score;else value["score"]=nullptr;
+        if(event->hasScore && std::isfinite(event->requiredScore)) value["requiredScore"]=event->requiredScore;else value["requiredScore"]=nullptr;
+    }
 }
 void searchJson(JsonObject status,uint64_t now) {
     const auto view=fwt_search_read(&controller,now,presentationObscured());
@@ -497,7 +529,7 @@ FirmwareUpdateGuard::FirmwareUpdateGuard() {WriteGuard wire;++firmwareUpdates;ha
 FirmwareUpdateGuard::~FirmwareUpdateGuard() {WriteGuard wire;--firmwareUpdates;}
 void tick() {
     Board *board = SYSTEM_MODULE.getBoard();
-    Guard guard; initialize(board); if (!initialized) return;
+    Guard guard; lastOwnerTickUs=esp_timer_get_time(); initialize(board); if (!initialized) return;
     const char *external = handoff.exchange(nullptr);
     const uint64_t revision = Config::tuningMutationRevision();
     if (external || revision != mutationRevision) {
@@ -527,6 +559,7 @@ void tick() {
     if (pending) { advanceTransition(now); return; }
     if (!controller.owns) return;
     const fwt_request request = fwt_tick(&controller,&observed,now);
+    fwt_history_capture(&history,&controller);
     if (request.kind == FWT_REQUEST_APPLY) {
         target = request.point; pending = true; voltageMatches = 0; transitionStarted = now;
         advanceTransition(now);
@@ -543,15 +576,18 @@ bool tryDisplaySnapshot(DisplaySnapshot &out) {
     if(!initialized || !storagePrepared || !powerInitialized || controller.limits.maxFrequencyMHz<=0 ||
        controller.limits.maxVoltageMv<=0) {pthread_mutex_unlock(&mutex);return false;}
     const uint64_t now=esp_timer_get_time();
+    fwt_history_capture(&history,&controller);
+    if(const auto *event=fwt_history_latest(&history)) {out.lastKind=event->kind;out.lastOutcome=event->outcome;out.lastReason=event->reason;out.lastLabel=fwt_event_short_label(event);}
     out.available=true;out.valid=observed.valid && observed.miningActive && !observed.fault && observed.fanOk &&
         observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=FWT_FRESH_US;
-    out.capturedAtUs=observed.capturedAtUs;
-    out.active=controller.active;out.ownsSettings=controller.owns || restoring || pending;
+    out.capturedAtUs=observed.capturedAtUs;out.ownerAtUs=lastOwnerTickUs;
+    const bool revoked=handoff.load()!=nullptr || !revisionCurrent();
+    out.active=controller.active && !revoked;out.ownsSettings=(controller.owns || restoring || pending) && !revoked;
     out.restoring=restoring;out.continuous=controller.config.continuous;
     out.fault=observed.fault || controller.state==FWT_FAULTED;
     out.updating=firmwareUpdates.load() || permanentFreeze.load();
     out.storageBlocked=optionsError || baselineLoadError;
-    out.valid=out.valid && !out.fault && !out.updating && !out.storageBlocked;
+    out.valid=out.valid && !out.fault && !out.updating && !out.storageBlocked && !revoked;
     out.state=controller.state;out.priority=controller.config.priority;
     if(out.valid) {
         out.current=observed.current;out.hashRateGHs=observed.hashRateGHs;
@@ -563,6 +599,33 @@ bool tryDisplaySnapshot(DisplaySnapshot &out) {
     out.search=fwt_search_read(&controller,now,presentationObscured());
     pthread_mutex_unlock(&mutex);
     return true;
+}
+
+bool activity(JsonDocument &document) {
+    document.clear();
+    document["schemaVersion"]=1;
+    if(pthread_mutex_trylock(&mutex)!=0) {document["available"]=false;return !document.overflowed();}
+    // Read only already-bound controller RAM. In particular, do not call
+    // initialize/acquire or register a dashboard observer from this endpoint.
+    const uint64_t now=esp_timer_get_time();
+    fwt_history_capture(&history,&controller);
+    const char *external=handoff.load();
+    const bool revoked=external || firmwareUpdates.load() || permanentFreeze.load() ||
+        (initialized && !revisionCurrent());
+    document["available"]=true;
+    document["supported"]=initialized && exactFamily(SYSTEM_MODULE.getBoard());
+    document["active"]=controller.active && !revoked && !restoring;
+    document["ownsSettings"]=(controller.owns || restoring || pending) && !revoked;
+    document["state"]=restoring ? "restoring" : fwt_state_name(controller.state);
+    document["fault"]=observed.fault || controller.state==FWT_FAULTED;
+    document["reason"]=external ? external : revoked ? "External control took ownership" : cachedReason();
+    document["priority"]=fwt_priority_name(controller.config.priority);
+    document["continuous"]=controller.config.continuous;
+    document["runId"]=controller.runId;
+    if(lastOwnerTickUs && now>=lastOwnerTickUs) document["controllerAgeSeconds"]=(now-lastOwnerTickUs)/1000000.0;
+    else document["controllerAgeSeconds"]=nullptr;
+    pthread_mutex_unlock(&mutex);
+    return !document.overflowed();
 }
 
 bool report(JsonDocument &document) {
@@ -582,15 +645,14 @@ bool report(JsonDocument &document) {
     limits["maxAsicTempC"]=l.maxAsicTempC; limits["maxVrmTempC"]=l.maxVrmTempC; limits["maxPowerW"]=l.maxPowerW;
     limits["frequencyStepMHz"]=l.frequencyStepMHz; limits["voltageStepMv"]=l.voltageStepMv;
     auto guidance = document["guidance"].to<JsonObject>(); guidance["experimental"]=true;
-    guidance["asic"]="Start below the installed ASIC protection threshold. Shared board readings are not a measured hottest-chip junction. The tuner retains at least 5 C below the existing protection setting.";
-    guidance["vrm"]="Use a separate VRM ceiling. External board and internal power-stage sensors differ; the hottest required reading constrains tuning. Existing hardware faults remain authoritative.";
+    guidance["asic"]="Recommended ASIC tuning target: 60 C; readings above 60 C deserve caution and above 65 C a stronger warning. Higher hardware protection limits are not recommended targets. Shared board readings are not a measured hottest-chip junction. The tuner retains at least 5 C below the existing protection setting.";
+    guidance["vrm"]="Recommended VRM tuning target: 70 C; readings above 70 C deserve caution and 80 C or higher a stronger warning. Higher hardware protection limits are not recommended targets. External board and internal power-stage sensors differ; the hottest required reading constrains tuning. Existing hardware faults remain authoritative.";
     guidance["power"]="Power is the regulator measurement or output-derived estimate named above; it is not wall power or a PSU rating. Default voltage and clock ceilings retain your saved operating point.";
     auto status = document["status"].to<JsonObject>();
     status["state"] = restoring ? "restoring" : fwt_state_name(controller.state);
-    status["reason"] = adapterReason ? adapterReason : !storagePrepared ? "Tuning storage has not been preloaded on an internal boot stack" :
-        !powerInitialized ? "Waiting for power and fan initialization" : optionsError ? "Stored tuning options are invalid or unreadable" :
-        observationReason ? observationReason : controller.reason ? controller.reason : "Tuning disabled";
-    status["active"]=controller.active; status["ownsSettings"]=controller.owns || restoring || pending;
+    status["reason"] = cachedReason();
+    const bool revoked=!revisionCurrent();
+    status["active"]=controller.active && !revoked; status["ownsSettings"]=(controller.owns || restoring || pending) && !revoked;
     status["runId"]=controller.runId; status["experiments"]=controller.experiments;
     pointJson(status,"baseline",controller.baselineAvailable?&controller.baseline:nullptr);
     pointJson(status,"current",observed.current.frequencyMHz>0?&observed.current:nullptr);
@@ -598,6 +660,7 @@ bool report(JsonDocument &document) {
     auto telemetry=status["telemetry"].to<JsonObject>();
     const uint64_t now=esp_timer_get_time();
     searchJson(status,now);
+    eventsJson(status);
     const bool valid=observed.valid && observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=15000000;
     telemetry["valid"]=valid; telemetry["miningActive"]=observed.miningActive; telemetry["fault"]=observed.fault; telemetry["fanOk"]=observed.fanOk;
     if (valid) {
@@ -671,6 +734,7 @@ const char *command(JsonObjectConst input) {
             WriteGuard activation;
             if (before!=Config::tuningMutationRevision() || handoff.load() || firmwareUpdates.load() || permanentFreeze.load()) return "manual-settings-changed";
             if (!fwt_start(&controller,&observed,esp_timer_get_time())) return "tuner-not-ready";
+            fwt_history_capture(&history,&controller);
             mutationRevision=before;backupRestored=false;adapterReason=nullptr;
         }
         return nullptr;
@@ -703,6 +767,11 @@ bool prepareTune(httpd_req_t *req,bool write) {
     if(set_cors_headers(req)!=ESP_OK){httpd_resp_send_500(req);return false;}
     return !write || validateOTP(req)==ESP_OK;
 }
+}
+esp_err_t GET_five_tratum_autotune_activity(httpd_req_t *req) {
+    ConGuard connection(http_server,req);if(!prepareTune(req,false))return ESP_FAIL;
+    JsonDocument document;if(!FiveTratumAutotune::activity(document))return tuneResult(req,"telemetry-unavailable");
+    return sendJsonResponse(req,document);
 }
 esp_err_t GET_five_tratum_autotune(httpd_req_t *req) {
     ConGuard connection(http_server,req);if(!prepareTune(req,false))return ESP_FAIL;

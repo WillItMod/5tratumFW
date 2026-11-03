@@ -618,6 +618,24 @@ int main(int argc, char **argv) {
     jobs.storeJob(job("late"), 5, 1); // Old generation cannot replace the new job.
     copied = jobs.getClone(5, 2); assert(copied && !strcmp(copied->jobid, "new")); free_bm_job(copied);
     assert(!jobs.getClone(250, 2)); jobs.storeJob(job("invalid-index"), 250, 2);
+    // Actual UART short-write and post-frame lease revocation must never
+    // present an attempted job as verified difficulty metadata. Ordinary job
+    // storage remains unchanged for the existing result/retirement policy.
+    resetFixture();BM1370 transmitter;AsicJobs difficultyJobs;
+    FiveTratumMining::OperationGate sendGate;FiveTratumMining::OperationLease sendLease(sendGate);
+    difficultyJobs.noteWorkReceived(0,1000000);const auto stamp=difficultyJobs.workStamp(0);
+    auto *good=job("good-difficulty");good->pool_id=0;good->pool_diff=8192;good->target=0x1d00ffff;
+    auto slot=transmitter.sendWork(0,good);difficultyJobs.storeJob(good,slot,sendLease.generation(),stamp,transmitter.transportOkay()&&sendLease.isCurrent());
+    FiveTratumWork::Sample samples[2];difficultyJobs.copyWorkDifficulty(samples,2000000);assert(samples[0].available);
+    serialShortWrite=true;auto *failed=job("failed-difficulty");failed->pool_id=0;failed->pool_diff=2048;failed->target=0x1d00ffff;
+    slot=transmitter.sendWork(1,failed);assert(!transmitter.transportOkay());difficultyJobs.storeJob(failed,slot,sendLease.generation(),stamp,transmitter.transportOkay()&&sendLease.isCurrent());
+    difficultyJobs.copyWorkDifficulty(samples,2000000);assert(!samples[0].available&&!samples[1].available);
+    copied=difficultyJobs.getClone(slot,sendLease.generation());assert(copied);free_bm_job(copied);
+    serialShortWrite=false;transmitter.resetAfterPowerCycle();auto *canceled=job("canceled-difficulty");canceled->pool_id=0;canceled->pool_diff=4096;canceled->target=0x1d00ffff;
+    slot=transmitter.sendWork(2,canceled);assert(transmitter.transportOkay());assert(sendGate.block());
+    difficultyJobs.storeJob(canceled,slot,sendLease.generation(),stamp,transmitter.transportOkay()&&sendLease.isCurrent());
+    difficultyJobs.copyWorkDifficulty(samples,2000000);assert(!samples[0].available&&!samples[1].available);
+
     std::cout << "Actual ASIC and two QAxe regulator init bodies: saved clock/voltage/VR, cooperative polling, "
                  "fault/cancel safe off, full-frame RX and classic job generation retirement pass\n";
 }

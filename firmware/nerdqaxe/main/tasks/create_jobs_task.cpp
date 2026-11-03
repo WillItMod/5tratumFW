@@ -278,6 +278,7 @@ void create_job_mining_notify(int pool, mining_notify *notify, bool abandonWork)
             asicJobs.cleanJobs(pool);
         }
         ensureV1(pool)->create_job_mining_notify(notify);
+        asicJobs.noteWorkReceived(pool,esp_timer_get_time());
     }
     trigger_job_creation();
 }
@@ -345,6 +346,7 @@ void create_jobs_task(void *pvParameters)
         }
 
         bm_job *next_job = nullptr;
+        FiveTratumWork::Stamp workStamp{};
         int active_pool = 0;
         const char *active_pool_str = "";
 
@@ -371,6 +373,7 @@ void create_jobs_task(void *pvParameters)
             }
 
             uint32_t asic_diff = STRATUM_MANAGER->selectAsicDiff(active_pool, mi->getActiveDifficulty());
+            workStamp=asicJobs.workStamp(active_pool);
             next_job = mi->buildBmJob(extranonce_2, active_pool, asic_diff);
         } // mutex
 
@@ -399,7 +402,8 @@ void create_jobs_task(void *pvParameters)
         ESP_LOGD(TAG, "(%s) Sent Job (%d): %02X", active_pool_str, active_pool, asic_job_id);
 
         // save job
-        asicJobs.storeJob(next_job, asic_job_id, operation.generation());
+        asicJobs.storeJob(next_job, asic_job_id, operation.generation(),workStamp,
+                          asics->transportOkay()&&operation.isCurrent());
 
         extranonce_2++;
 

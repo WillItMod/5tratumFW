@@ -51,6 +51,7 @@ SRCS
     "./http_server/handler_capabilities.cpp"
     "./http_server/status_report.cpp"
     "./http_server/handler_status.cpp"
+    "./http_server/handler_work_difficulty.cpp"
     "./http_server/profile_schema.cpp"
     "./http_server/profile_store.cpp"
     "./http_server/handler_profiles.cpp"

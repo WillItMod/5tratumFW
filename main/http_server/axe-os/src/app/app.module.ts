@@ -17,6 +17,7 @@ import { PoolComponent } from './components/pool/pool.component';
 import { PoolScheduleComponent } from './components/pool-schedule/pool-schedule.component';
 import { OperatingProfilesComponent } from './components/operating-profiles/operating-profiles.component';
 import { SchedulerComponent } from './components/scheduler/scheduler.component';
+import { WorkDifficultyComponent } from './components/work-difficulty/work-difficulty.component';
 import { AutotuneComponent } from './components/autotune/autotune.component';
 import { TuningScheduleComponent } from './components/tuning-schedule/tuning-schedule.component';
 import { MiningControlsComponent } from './components/mining-controls/mining-controls.component';
@@ -94,6 +95,7 @@ const components = [
   ],
   imports: [
     BrowserModule,
+    WorkDifficultyComponent,
     AppRoutingModule,
     ReactiveFormsModule,
     FormsModule,

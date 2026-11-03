@@ -406,7 +406,7 @@ inline TuningWidgets tuning(lv_obj_t *parent) {
     fields.state=text(parent,"Status unavailable",8,35,304,&ui_font_OpenSansBold14,Cyan);
     fields.goal=text(parent,"Goal unavailable",8,56,304,&ui_font_OpenSansBold13,Muted);
     fields.point=text(parent,"Requested -- MHz / -- mV",8,77,304,&ui_font_OpenSansBold13);
-    fields.work=text(parent,"-- TH/s | errors --",8,99,304,&ui_font_OpenSansBold13,Cyan);
+    fields.work=text(parent,"-- TH/s | -- J/TH | err --",8,99,304,&ui_font_OpenSansBold13,Cyan);
     fields.thermal=text(parent,"ASIC -- C / VR -- C / -- W",8,120,304,&lv_font_montserrat_10,Amber);
     fields.limits=text(parent,"Caps unavailable",8,136,304,&lv_font_montserrat_10,Muted);
     fields.progress=text(parent,"Live measurements unavailable",8,153,304,&lv_font_montserrat_10,Muted);
@@ -437,33 +437,45 @@ inline const char *tuningState(const FiveTratumAutotune::DisplaySnapshot &view) 
 inline void updateTuning(const TuningWidgets &fields,
                          const FiveTratumAutotune::DisplaySnapshot &view,uint64_t now) {
     char buffer[96];
-    lv_label_set_text(fields.state,tuningState(view));
+    const char *state=tuningState(view);
+    const char *goal=view.priority==FWT_EFFICIENCY?"Efficiency":view.priority==FWT_PERFORMANCE?"Performance":"Balanced";
+    const bool active=view.ownerFresh(now) && view.active && !view.fault && !view.updating && !view.storageBlocked && !view.restoring;
+    if(active) {std::snprintf(buffer,sizeof(buffer),"ACTIVE | %s",goal);lv_label_set_text(fields.state,buffer);}
+    else lv_label_set_text(fields.state,view.active && !view.ownerFresh(now) && !view.fault && !view.updating && !view.storageBlocked && !view.restoring ? "Tuning status stale" : state);
     if(view.available) {
-        const char *goal=view.priority==FWT_EFFICIENCY?"Efficiency":view.priority==FWT_PERFORMANCE?"Performance":"Balanced";
-        std::snprintf(buffer,sizeof(buffer),"%s | continuous %s",goal,view.continuous?"on":"off");
+        std::snprintf(buffer,sizeof(buffer),"%s | continuous %s",active?state:goal,view.continuous?"on":"off");
         lv_label_set_text(fields.goal,buffer);
     } else lv_label_set_text(fields.goal,"Goal unavailable");
-    const bool fresh=view.fresh(now) && fwt_positive(view.current.frequencyMHz) &&
+    const double joulesPerTh=fwt_positive(view.hashRateGHs)?view.powerW/(view.hashRateGHs/1000.0):0;
+    const bool fresh=view.fresh(now) && fwt_positive(joulesPerTh) && fwt_positive(view.current.frequencyMHz) &&
         fwt_positive(view.current.coreVoltageMv) && fwt_positive(view.hashRateGHs) &&
         fwt_positive(view.powerW) && fwt_positive(view.asicTempC) && fwt_positive(view.vrmTempC) &&
         std::isfinite(view.errorPercentage) && view.errorPercentage>=0 && view.errorPercentage<=100;
     if(fresh) {
         std::snprintf(buffer,sizeof(buffer),"Requested %.0f MHz / %.0f mV",view.current.frequencyMHz,view.current.coreVoltageMv);
         lv_label_set_text(fields.point,buffer);
-        std::snprintf(buffer,sizeof(buffer),"%.2f TH/s | errors %.2f%%",view.hashRateGHs/1000.0,view.errorPercentage);
+        std::snprintf(buffer,sizeof(buffer),"%.2f TH/s | %.1f J/TH | err %.2f%%",view.hashRateGHs/1000.0,joulesPerTh,view.errorPercentage);
         lv_label_set_text(fields.work,buffer);
         std::snprintf(buffer,sizeof(buffer),"ASIC %.1f C / VR %.1f C / %.1f W",view.asicTempC,view.vrmTempC,view.powerW);
         lv_label_set_text(fields.thermal,buffer);
     } else {
         lv_label_set_text(fields.point,"Requested -- MHz / -- mV");
-        lv_label_set_text(fields.work,"-- TH/s | errors --");
+        lv_label_set_text(fields.work,"-- TH/s | -- J/TH | err --");
         lv_label_set_text(fields.thermal,"ASIC -- C / VR -- C / -- W");
     }
+    const bool thermalStrong=fresh&&(view.asicTempC>65 || view.vrmTempC>=80);
+    const bool thermalCaution=fresh&&(view.asicTempC>60 || view.vrmTempC>70);
+    lv_obj_set_style_text_color(fields.thermal,lv_color_hex(thermalStrong?Danger:thermalCaution?Amber:Muted),0);
     if(view.available && fwt_positive(view.maxAsicTempC) && fwt_positive(view.maxVrmTempC) && fwt_positive(view.maxPowerW)) {
         std::snprintf(buffer,sizeof(buffer),"Caps ASIC %.0f C / VR %.0f C / %.0f W",view.maxAsicTempC,view.maxVrmTempC,view.maxPowerW);
         lv_label_set_text(fields.limits,buffer);
     } else lv_label_set_text(fields.limits,"Caps unavailable");
-    if(fresh && view.search.timed) {
+    if(fresh && view.lastKind!=FWT_EVENT_NONE) {
+        // Only immutable core literals cross the tiny display snapshot. The
+        // human label describes an actual event, never a guessed explanation.
+        std::snprintf(buffer,sizeof(buffer),"Last: %s | samples %u/%u",view.lastLabel?view.lastLabel:"Decision unavailable",view.search.samples,view.search.minimumSamples);
+        lv_label_set_text(fields.progress,buffer);
+    } else if(fresh && view.search.timed) {
         std::snprintf(buffer,sizeof(buffer),"%.0f/%.0f s min | samples %u (min %u)",
             view.search.phaseElapsedSeconds,view.search.minimumSeconds,view.search.samples,view.search.minimumSamples);
         lv_label_set_text(fields.progress,buffer);

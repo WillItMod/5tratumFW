@@ -159,6 +159,7 @@ int main(int argc,char **argv)
         .currentAvailable=true,.priority=FWT_EFFICIENCY,.current={625.125,1173},
         .search={.minimumSamples=8,.roundExperimentLimit=24}};
     save(argv[1],"tuning-disabled",&tuning,&d);
+    assert(!strcmp(lv_label_get_text(tuning.title),"TUNING OFF"));
     assert(!strcmp(tuning_row(&tuning,0),"EFFICIENCY DISABLED"));
     assert(!strcmp(tuning_row(&tuning,1),"Set 625.125MHz 1173mV"));
     assert(!strcmp(tuning_row(&tuning,2),"Read only - use web"));
@@ -174,6 +175,23 @@ int main(int argc,char **argv)
     d.tuning.search.samples=7;d.tuning.search.roundExperiments=3;d.tuning.search.rejectedWindows=2;
     save(argv[1],"tuning-measuring",&tuning,&d);
     assert(!strcmp(tuning_row(&tuning,2),"Min 74/75s S7/8"));
+    assert(!strcmp(lv_label_get_text(tuning.title),"TUNING ACTIVE"));
+    d.uptime_seconds=4;d.tuning.hashRateGHs=1200;d.tuning.powerW=18.4;
+    d.tuning.hasDecision=true;d.tuning.latestDecision="Point applied";
+    save(argv[1],"tuning-efficiency",&tuning,&d);
+    assert(!strcmp(tuning_row(&tuning,1),"1.20TH/s 15.3J/TH"));
+    assert(!strcmp(tuning_row(&tuning,2),"Point applied"));
+    const double invalid[]={0,-1,NAN,INFINITY};
+    for(unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);++i) {
+        d.tuning.hashRateGHs=invalid[i];oled_render_view(&tuning,&d);
+        assert(!strstr(tuning_row(&tuning,1),"J/TH"));
+        d.tuning.hashRateGHs=1200;d.tuning.powerW=invalid[i];oled_render_view(&tuning,&d);
+        assert(!strstr(tuning_row(&tuning,1),"J/TH"));
+        d.tuning.powerW=18.4;
+    }
+    d.tuning.state=FWT_OBSERVING;save(argv[1],"tuning-monitor",&tuning,&d);
+    assert(!strcmp(lv_label_get_text(tuning.title),"TUNING MONITOR"));
+    d.uptime_seconds=0;d.tuning.hasDecision=false;
     d.tuning.priority=FWT_PERFORMANCE;d.tuning.state=FWT_SETTLING;
     d.tuning.search.phaseElapsedSeconds=12;d.tuning.search.minimumSeconds=30;d.tuning.search.samples=0;
     save(argv[1],"tuning-settling",&tuning,&d);
@@ -238,7 +256,7 @@ int main(int argc,char **argv)
     assert(!strcmp(lv_label_get_text(views[OLED_RATE].title),"NO DATA"));
     save(argv[1],"stale-positive-efficiency",&views[OLED_HEALTH],&d);
     assert(!strcmp(lv_label_get_text(views[OLED_HEALTH].rows[2]),"Eff -- J/TH"));
-    printf("PASS: 44 actual LVGL9 I1 framebuffer views including eight read-only tuning states, six donuts (%u bitmap bytes), candidate bounds/no repeats/bounded motion, separate identify, self-test recovery and expired positive rate\n",(unsigned)(sizeof(oled_donut_variants)/sizeof(oled_donut_variants[0])*oled_donut_variants[0].data_size));
+    printf("PASS: 46 actual LVGL9 I1 framebuffer views including ten read-only tuning states, six donuts (%u bitmap bytes), candidate bounds/no repeats/bounded motion, separate identify, self-test recovery and expired positive rate\n",(unsigned)(sizeof(oled_donut_variants)/sizeof(oled_donut_variants[0])*oled_donut_variants[0].data_size));
     lv_mem_monitor_t memory;lv_mem_monitor(&memory);
     printf("LVGL_MEMORY renderer total=%zu peak_used=%zu free=%zu biggest=%zu\n",memory.total_size,memory.max_used,memory.free_size,memory.free_biggest_size);
     lv_deinit();

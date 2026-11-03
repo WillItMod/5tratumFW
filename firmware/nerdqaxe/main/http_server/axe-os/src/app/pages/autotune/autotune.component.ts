@@ -1,9 +1,13 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { EMPTY, Subject, catchError, exhaustMap, filter, finalize, map, switchMap, take, takeUntil, tap, throwError, timeout, timer } from 'rxjs';
 import { AutotuneService } from '../../services/autotune.service';
-import { AutotuneConfig, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
+import { AutotuneConfig, AutotuneEvent, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
 
-@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss', './autotune-goals.scss', './autotune-observations.scss', './autotune-readings.scss'] })
+type ObservedMetric = 'ths' | 'joules' | 'asicTempC' | 'vrmTempC' | 'powerW' | 'boardErrors' | 'worstErrors';
+interface TabObservation { at: number; ths: number | null; joules: number | null; asicTempC: number | null; vrmTempC: number | null; powerW: number | null; boardErrors: number | null; worstErrors: number | null; }
+interface ObservedLine { name: string; secondary: boolean; path: string; points: {x:number;y:number}[]; }
+
+@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss', './autotune-goals.scss', './autotune-observations.scss', './autotune-readings.scss', './autotune-activity.scss', './autotune-events.scss', './autotune-flow.scss'] })
 export class AutotuneComponent implements OnInit, OnDestroy {
   report: AutotuneReport | null = null;
   edit: AutotuneConfig | null = null;
@@ -13,6 +17,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   actionError = '';
   message = '';
   waiverAccepted = false;
+  viewMode: 'live' | 'options' = 'options';
+  private viewInitialized = false;
   readonly wholeMHz = true;
   readonly priorities = [
     {value:'efficiency', name:'Standard Glazed', level:'Level 1', goal:'Efficiency', description:'Seek lower energy per useful hash. A slower clock can win when the reduction in power outweighs the lost hashrate.'},
@@ -26,9 +32,15 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   private startUnconfirmed = false;
   // These are tab observations, not the controller's unique counter samples.
   readonly historyLimit = 120;
-  history: {at: number; ths: number | null; joules: number | null}[] = [];
+  history: TabObservation[] = [];
   private historyRun: number | null = null;
   private historyGap = false;
+  readonly eventHistoryLimit = 100;
+  events: AutotuneEvent[] = [];
+  eventGaps: {beforeId:number;missing:number}[] = [];
+  eventFeedAvailable = false;
+  private eventRun: number | null = null;
+  visibleEventCount = 12;
 
 
   constructor(private service: AutotuneService) {}
@@ -113,6 +125,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     this.report = report;
     this.requestedAt = requestedAt;
     this.readError = '';
+    if (!this.viewInitialized) {this.viewMode=report.status.active||report.status.ownsSettings?'live':'options';this.viewInitialized=true;}
+    this.observeEvents();
     this.observe();
     if (this.optionsUsable && (!this.edit || !dirty)) {
       this.edit = this.config(report.config);
@@ -133,15 +147,43 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get validationError(): string {
     const value = this.edit; const limits = this.report?.limits;
+    if (this.optionsLocked && !this.busy) return this.report?.status.state==='restoring' ? 'The miner is restoring the original backup. Wait for restoration to finish before changing options.' : 'The miner is applying a clock or voltage change. Wait for its confirmation before changing options.';
     if (!this.optionsUsable) return 'Tuning options or hardware limits are unavailable. Restore the backup or refresh after the miner has recovered.';
     if (value && this.wholeMHz && (!Number.isInteger(value.minFrequencyMHz) || !Number.isInteger(value.maxFrequencyMHz))) return 'Use whole MHz for this miner’s clock bounds.';
     if (value && (!Number.isInteger(value.minVoltageMv) || !Number.isInteger(value.maxVoltageMv))) return 'Use whole millivolts for core-voltage bounds.';
     if (!value || !limits || !this.validConfig(value)) return 'Enter valid positive limits and choose a tuning priority.';
     if (value.minFrequencyMHz < limits.minFrequencyMHz || value.maxFrequencyMHz > limits.maxFrequencyMHz) return 'Clock limits must stay inside the hardware limits shown below.';
     if (value.minVoltageMv < limits.minVoltageMv || value.maxVoltageMv > limits.maxVoltageMv) return 'Voltage limits must stay inside the hardware limits shown below.';
+    const current=this.report?.status.current;
+    if(this.isEngaged && current && this.pointValid(current) && (value.minFrequencyMHz>current.frequencyMHz || value.maxFrequencyMHz<current.frequencyMHz || value.minVoltageMv>current.coreVoltageMv || value.maxVoltageMv<current.coreVoltageMv)) return `While this tune owns the settings, clock and voltage bounds must include the current reported point: ${this.pointText(current)}.`;
     if (value.maxAsicTempC > limits.maxAsicTempC || value.maxVrmTempC > limits.maxVrmTempC) return 'Temperature ceilings must stay below the protected hardware limits shown below.';
     if (value.maxPowerW > limits.maxPowerW) return 'The power ceiling exceeds this hardware limit.';
     return '';
+  }
+  get isEngaged(): boolean {return this.report?.status.active===true || this.report?.status.ownsSettings===true;}
+  get optionsLocked(): boolean {return this.busy || this.isEngaged && ['applying','restoring'].includes(this.report?.status.state||'');}
+  get saveActionLabel(): string {return this.busy?'Working…':this.isEngaged?'Save changes to this tune':'Save options';}
+  get editExplanation(): string {
+    if (this.busy) return 'Waiting for the miner to confirm this request. No further change is sent until readback finishes.';
+    if (this.optionsLocked) return this.report?.status.state==='restoring'?'Original settings are being restored. Options unlock when restoration finishes.':'The miner is confirming an operating-point change. Options unlock when that transition finishes.';
+    if (this.isEngaged) return 'You are editing this existing tune. No new waiver or Start is needed. Saving a changed goal or bounds makes the controller reassess; temperature and power reductions can trigger safety backoff. Continuous On resumes monitoring after a held round.';
+    return 'Save your choices, then accept the waiver and Start when ready. Saving options alone does not start tuning.';
+  }
+  get startExplanation(): string {
+    if(this.optionsLocked)return this.editExplanation;
+    if(this.isEngaged)return 'This tune already owns the settings. Change its options and save; there is no second Start or waiver to accept. Disable and restore the backup when you want to end it.';
+    if(!this.isFresh)return 'A fresh miner report is required before starting. Refresh status and check the connection.';
+    if(['applying','restoring'].includes(this.report!.status.state))return 'Wait for the current operating-point transition or restoration to finish.';
+    if(this.report!.status.state==='faulted'||this.report!.status.telemetry.fault)return 'The miner reports a fault. Check its cause; the waiver cannot override protection.';
+    if(!this.optionsUsable)return 'Valid options and hardware limits are required before starting.';
+    if(this.hasUnsavedChanges)return 'Save these options before starting a new tune.';
+    if(this.validationError)return this.validationError;
+    if(!this.telemetryFresh||!this.report!.status.telemetry.fanOk||!this.report!.status.telemetry.miningActive)return 'Starting requires fresh sensors and ASIC counters, working cooling, and active mining.';
+    return this.waiverAccepted?'Ready to start a new tune.':'Accept the disclaimer below to enable Start for this new run.';
+  }
+  showView(view:'live'|'options'): void {
+    this.viewMode=view;this.viewInitialized=true;
+    requestAnimationFrame(()=>document.getElementById(view==='live'?'tuning-live-dashboard':'tuning-options')?.scrollIntoView({block:'start',behavior:'smooth'}));
   }
   get canSave(): boolean { return !this.busy && !this.loading && this.isFresh && this.optionsUsable && this.hasUnsavedChanges && !this.validationError; }
   get canStart(): boolean {
@@ -154,6 +196,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   get canRestore(): boolean { return !this.busy && !this.loading && (this.report?.backup?.available === true || this.report?.status.ownsSettings === true || this.startUnconfirmed); }
   get stateLabel(): string {
     if (!this.isFresh) return this.report ? 'Status unavailable' : 'Connecting';
+    if (!this.isEngaged && this.report?.status.telemetry.fault !== true) return this.report?.status.state === 'disabled' ? 'Disabled' : 'Inactive';
     return ({disabled:'Disabled',qualifying:'Checking miner',baseline:'Measuring baseline',evaluating:'Evaluating',applying:'Adjusting',restoring:'Restoring backup',settling:'Settling',
       measuring:'Measuring',holding:'Holding result',observing:'Monitoring conditions',suspended:'Suspended',faulted:'Faulted'} as Record<string,string>)[this.report?.status.state || ''] || 'Checking status';
   }
@@ -168,11 +211,26 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get ownershipText(): string {
     if (!this.isFresh) return 'Status unavailable';
-    if (this.report!.status.state === 'restoring') return 'Restoration in progress';
+    if (this.isEngaged && this.report!.status.state === 'restoring') return 'Restoration in progress';
     if (this.report!.status.active) return 'Run in progress';
     if (this.report!.status.ownsSettings) return 'Holding result · Disable and restore to release control';
     return 'Explicit Start required';
   }
+  get activityBanner(): {label: string; detail: string; kind: string} {
+    if (!this.isFresh) return {label:this.report ? 'TUNING STATUS UNAVAILABLE' : 'CHECKING TUNING STATUS',detail:'Waiting for a fresh miner report. Do not infer the current state from older readings.',kind:'unknown'};
+    const report=this.report!, status=report.status;
+    if (status.telemetry.fault === true) return {label:'TUNING FAULT',detail:'Miner protection is authoritative. Check the reported reason before taking action.',kind:'fault'};
+    if (!this.isEngaged) return {label:'AUTO-TUNING OFF',detail:report.backup.restored ? 'The miner reports its original pre-tuning settings restored.' : 'The miner reports no active tuning ownership. Any previous phase is historical; check the reported reason before a new Start.',kind:'off'};
+    if (status.state === 'restoring') return {label:'RESTORING ORIGINAL SETTINGS',detail:'Restoration is pending until the miner confirms the backup is restored and control is released.',kind:'restoring'};
+    if (!report.supported) return {label:'TUNING UNAVAILABLE',detail:'This hardware or operating state does not currently support automatic tuning.',kind:'unknown'};
+    if (status.state === 'suspended') return {label:'TUNING SUSPENDED',detail:'The controller is waiting. Check the reported reason and fresh sensors before interpreting the current request.',kind:'suspended'};
+    if (!this.telemetryFresh && (status.active || status.ownsSettings)) return {label:status.active ? 'LAST REPORTED ACTIVE · READINGS UNAVAILABLE' : 'LAST REPORTED HELD · READINGS UNAVAILABLE',detail:'The report still shows controller ownership, but fresh sensor and counter readings are not confirmed.',kind:'unknown'};
+    if (status.active && status.state === 'observing') return {label:'CONTINUOUS MONITORING ACTIVE',detail:'The controller still owns the settings and is watching for a reason to reassess.',kind:'observing'};
+    if (status.active) return {label:'AUTO-TUNING ACTIVE',detail:`Current phase: ${this.stateLabel}. The miner reports its controller active.`,kind:'active'};
+    if (status.ownsSettings) return {label:'RESULT HELD · TUNER STILL OWNS SETTINGS',detail:'The bounded round has stopped searching. Disable and restore the backup to release control.',kind:'holding'};
+    return {label:'AUTO-TUNING OFF',detail:report.backup.restored ? 'The miner reports its original pre-tuning settings restored.' : 'No active tuning run. Start requires your explicit waiver and action.',kind:'off'};
+  }
+  get ownedSettingsText(): string { return this.isFresh ? this.report!.status.ownsSettings ? 'Controller owns settings' : 'Controller has released settings' : 'Ownership unavailable'; }
   get activityText(): string {
     if (!this.isFresh) return 'Waiting for a fresh report. Earlier observations are kept below; they do not show the miner’s current condition.';
     const report = this.report!;
@@ -201,6 +259,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       'backup-restored':'The miner confirms the original pre-tuning backup was restored. Saved tuning options do not start another run.',
     };
     if (reasons[report.status.reason]) return reasons[report.status.reason];
+    if (!this.isEngaged && report.status.state !== 'disabled') return 'The miner reports that tuning is inactive and no longer owns the settings. The previous phase is historical; a new run still requires explicit Start and all readiness checks.';
     if (report.status.state !== 'restoring' && !this.telemetryFresh) return 'Waiting for fresh, valid counters and sensor readings. Current readings and safe tuning readiness cannot be confirmed.';
     const messages: Record<string,string> = {
       disabled:'The controller is off. Saved priorities and Continuous On do not start a run; Start always needs your explicit consent.',
@@ -244,6 +303,14 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const value = this.energyValue(hashRateGHs,powerW);
     return (!live || this.telemetryFresh) && value !== null ? value.toFixed(2) : '—';
   }
+  temperatureWarnings(config:AutotuneConfig|null|undefined): {sensor:string;value:number;recommended:number;severity:string}[] {
+    if(!config)return [];
+    const rows=[{sensor:'ASIC',value:config.maxAsicTempC,recommended:60,severity:config.maxAsicTempC>65?'danger':'warning'},
+      {sensor:'VRM',value:config.maxVrmTempC,recommended:70,severity:config.maxVrmTempC>=80?'danger':'warning'}];
+    return rows.filter(row=>this.finite(row.value)&&row.value>row.recommended);
+  }
+  get savedTemperatureWarnings(): {sensor:string;value:number;recommended:number;severity:string}[] {return this.temperatureWarnings(this.report?.config);}
+  get editedTemperatureWarnings(): {sensor:string;value:number;recommended:number;severity:string}[] {return this.temperatureWarnings(this.edit);}
   get headroom(): {name: string; value: string; used: number; over: boolean}[] {
     if (!this.optionsUsable || !this.telemetryFresh) return [];
     const config = this.report!.config, t = this.report!.status.telemetry;
@@ -257,29 +324,133 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const at = performance.now(), run = this.report!.status.runId;
     if (this.historyRun !== run) { this.history = []; this.historyRun = run; this.historyGap = false; }
     const last = this.history[this.history.length-1];
-    if (last && (this.historyGap || at-last.at > 12000)) this.history.push({at:at-1,ths:null,joules:null});
+    if (last && (this.historyGap || at-last.at > 12000)) this.history.push({at:at-1,ths:null,joules:null,asicTempC:null,vrmTempC:null,powerW:null,boardErrors:null,worstErrors:null});
     const t = this.report!.status.telemetry;
     const valid = this.telemetryFresh;
-    this.history.push({at,ths:valid ? t.hashRateGHs!/1000 : null,joules:valid ? this.energyValue(t.hashRateGHs,t.powerW) : null});
+    this.history.push({at,ths:valid ? t.hashRateGHs!/1000 : null,joules:valid ? this.energyValue(t.hashRateGHs,t.powerW) : null,
+      asicTempC:valid ? t.asicTempC : null,vrmTempC:valid ? t.vrmTempC : null,powerW:valid ? t.powerW : null,
+      boardErrors:valid ? t.errorPercentage : null,worstErrors:valid ? t.worstErrorPercentage : null});
     this.history = this.history.filter(point => at-point.at <= 600000).slice(-this.historyLimit);
     this.historyGap = !valid;
   }
-  get trends(): {name: string; unit: string; path: string; points: {x:number;y:number}[]; minimum:string; maximum:string}[] {
-    return ([{name:'Useful hashrate',unit:'TH/s',key:'ths'},{name:'Energy per useful hash',unit:'J/TH',key:'joules'}] as const).map(series => {
-      const values = this.history.map(point => point[series.key]).filter((n): n is number => n !== null);
+  get trends(): {name: string; unit: string; path: string; points: {x:number;y:number}[]; lines: ObservedLine[]; minimum:string; maximum:string}[] {
+    const charts: {name:string;unit:string;digits:number;lines:{name:string;key:ObservedMetric}[]}[] = [
+      {name:'Useful hashrate',unit:'TH/s',digits:2,lines:[{name:'Useful hashrate',key:'ths'}]},
+      {name:'ASIC temperature',unit:'°C',digits:1,lines:[{name:'ASIC temperature',key:'asicTempC'}]},
+      {name:'VRM temperature',unit:'°C',digits:1,lines:[{name:'VRM temperature',key:'vrmTempC'}]},
+      {name:'Reported power',unit:'W',digits:1,lines:[{name:'Reported power',key:'powerW'}]},
+      {name:'ASIC errors',unit:'%',digits:2,lines:[{name:'Board',key:'boardErrors'},{name:'Worst ASIC',key:'worstErrors'}]},
+      {name:'Energy per useful hash',unit:'J/TH',digits:2,lines:[{name:'Energy per useful hash',key:'joules'}]},
+    ];
+    return charts.map(chart => {
+      const values = chart.lines.flatMap(line => this.history.map(point => point[line.key])).filter((n): n is number => n !== null && Number.isFinite(n));
       const min = values.length ? Math.min(...values) : 0, max = values.length ? Math.max(...values) : 0;
       const padding = Math.max((max-min)*.15,max*.01,.01), low=Math.max(0,min-padding), high=Number.isFinite(max+padding) ? max+padding : max;
       const first = this.history[0]?.at || 0, last = this.history[this.history.length-1]?.at || first;
-      let connected = false; const points: {x:number;y:number}[] = [];
-      const path = this.history.map(point => {
-        const value = point[series.key];
-        if (value === null) { connected=false; return ''; }
-        const x=8+584*(point.at-first)/Math.max(last-first,1000), y=88-72*((value-low)/(high-low));
-        const command=connected ? 'L' : 'M'; connected=true; points.push({x,y}); return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
-      }).join(' ');
-      return {name:series.name,unit:series.unit,path,points,minimum:values.length ? low.toFixed(2) : '—',maximum:values.length ? high.toFixed(2) : '—'};
+      const lines = chart.lines.map((series,index) => {
+        let connected=false; const points: {x:number;y:number}[]=[];
+        const path=this.history.map(point => {
+          const value=point[series.key];
+          if (value === null || !Number.isFinite(value)) {connected=false;return '';}
+          const x=8+584*(point.at-first)/Math.max(last-first,1000),y=88-72*((value-low)/(high-low));
+          const command=connected ? 'L' : 'M';connected=true;points.push({x,y});return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
+        }).join(' ');
+        return {name:series.name,secondary:index>0,path,points};
+      });
+      return {name:chart.name,unit:chart.unit,path:lines[0].path,points:lines[0].points,lines,
+        minimum:values.length ? low.toFixed(chart.digits) : '—',maximum:values.length ? high.toFixed(chart.digits) : '—'};
     });
   }
+  private eventValid(event: AutotuneEvent): boolean {
+    const text=(value:unknown,max:number) => typeof value === 'string' && value.length>0 && value.length<=max;
+    const measurement=event?.measurement;
+    return !!event && typeof event === 'object' && !Array.isArray(event)
+      && Number.isInteger(event.id) && event.id>0 && event.id<=0xffffffff
+      && this.finite(event.atSeconds) && event.atSeconds>=0 && event.atSeconds<=Number.MAX_SAFE_INTEGER
+      && text(event.kind,64) && text(event.outcome,64) && text(event.reason,256)
+      && (event.from===null || !!event.from && this.pointValid(event.from)) && !!event.point && this.pointValid(event.point)
+      && (measurement===null || !!measurement && typeof measurement==='object' && !Array.isArray(measurement)
+        && [measurement.hashRateGHs,measurement.powerW,measurement.errorPercentage,measurement.worstErrorPercentage].every(value=>this.finite(value)&&value>=0)
+        && measurement.powerW>0 && measurement.errorPercentage<=100 && measurement.worstErrorPercentage<=100)
+      && (event.score===null || this.finite(event.score)) && (event.requiredScore===null || this.finite(event.requiredScore));
+  }
+  private observeEvents(): void {
+    const status=this.report!.status;
+    const incoming=status.events,capacity=status.eventCapacity;
+    this.eventFeedAvailable=Number.isInteger(capacity) && capacity!>0 && capacity!<=64 && Array.isArray(incoming)
+      && incoming.length<=capacity! && incoming.every((event,index)=>this.eventValid(event) && (index===0 || event.id>incoming[index-1].id));
+    const oldById=new Map(this.events.map(event=>[event.id,event]));
+    const sequenceReset=this.eventFeedAvailable && incoming!.length>0 && this.events.length>0
+      && incoming![incoming!.length-1].id<this.events[this.events.length-1].id
+      && Math.max(...incoming!.map(event=>event.atSeconds))<Math.min(...this.events.map(event=>event.atSeconds));
+    const clockReset=this.eventFeedAvailable && (sequenceReset || incoming!.some(event=>oldById.has(event.id) && event.atSeconds<oldById.get(event.id)!.atSeconds));
+    if (this.eventRun!==status.runId || clockReset) {
+      this.events=[];this.eventGaps=[];this.visibleEventCount=12;this.eventRun=status.runId;
+      if (clockReset) {this.history=[];this.historyRun=null;this.historyGap=false;}
+    }
+    if (!this.eventFeedAvailable) return;
+    const last=this.events[this.events.length-1]?.id || 0;
+    const newer=incoming!.filter(event=>event.id>last);
+    if (newer.length && newer[0].id>last+1) this.eventGaps.push({beforeId:newer[0].id,missing:newer[0].id-last-1});
+    const byId=new Map(this.events.map(event=>[event.id,event]));
+    for(const event of incoming!) {
+      // Keep only bounded presentation fields; unknown payloads never enter the tab cache.
+      const point=(value:AutotunePoint):AutotunePoint => ({frequencyMHz:value.frequencyMHz,coreVoltageMv:value.coreVoltageMv});
+      const measurement=event.measurement;
+      byId.set(event.id,{id:event.id,atSeconds:event.atSeconds,kind:event.kind,reason:event.reason,outcome:event.outcome,
+        from:event.from ? point(event.from) : null,point:point(event.point),
+        measurement:measurement ? {hashRateGHs:measurement.hashRateGHs,powerW:measurement.powerW,errorPercentage:measurement.errorPercentage,worstErrorPercentage:measurement.worstErrorPercentage} : null,
+        score:event.score,requiredScore:event.requiredScore});
+    }
+    this.events=Array.from(byId.values()).sort((a,b)=>a.id-b.id).slice(-this.eventHistoryLimit);
+    const earliest=this.events[0]?.id || 0;this.eventGaps=this.eventGaps.filter(gap=>gap.beforeId>=earliest).slice(-this.eventHistoryLimit);
+  }
+  get visibleEvents(): AutotuneEvent[] { return this.events.slice(-this.visibleEventCount).reverse(); }
+  showEarlierEvents(): void { this.visibleEventCount=this.eventHistoryLimit; }
+  eventGapBefore(event: AutotuneEvent): number { return this.eventGaps.find(gap=>gap.beforeId===event.id)?.missing || 0; }
+  get eventFeedNote(): string {
+    if (!this.isFresh) return 'Current decisions are unavailable. Any entries below are earlier observations from this tab.';
+    if (!this.eventFeedAvailable) return 'This report has no usable recent-event feed. Any entries below are earlier observations; Restore remains available.';
+    return this.events.length ? 'Newest first. Requests are updated in place when the miner reports applied or failed; a request alone is not confirmation.' : 'No controller decisions have been reported for this run yet.';
+  }
+  eventTitle(event: AutotuneEvent): string {
+    return ({started:'Tuning started',baseline:'Round reference measured',accepted:'Measured point accepted',rejected:'Comparison rejected',retained:'Best point rechecked',errors:'ASIC error window',adjustment:'Operating-point adjustment'} as Record<string,string>)[event.kind] || 'Controller event';
+  }
+  eventOutcome(event: AutotuneEvent): string {
+    return ({requested:'Requested · awaiting confirmation',applied:'Applied · miner confirmed',failed:'Failed · check the reason',measured:'Measured'} as Record<string,string>)[event.outcome] || `Reported outcome: ${event.outcome}`;
+  }
+  eventReason(event: AutotuneEvent): string {
+    return ({'measuring-starting-point':'The run started at this operating point.',
+      'round-reference-measured':'A valid measurement window established this round’s reference.',
+      'score-beat-required-margin':'The measured goal score cleared the controller’s required comparison margin.',
+      'improvement-within-noise-margin':'The trial did not clear the required goal and noise margin.',
+      'best-point-remeasured':'The best point was measured again; no new trial was accepted.',
+      'error-window-limit':'Measured ASIC errors exceeded the controller’s error limit.',
+      'evaluating-nearby-operating-point':'Testing a nearby point within the saved search bounds.',
+      'temperature-limit-backoff':'Reducing load because a saved temperature ceiling is close or exceeded.',
+      'power-limit-backoff':'Reducing load because the reported power ceiling is close or exceeded.',
+      'error-recovery-voltage-trial':'Trying higher voltage for timing errors after checking temperature and power headroom.',
+      'error-recovery-clock-backoff':'Reducing clock to recover from excessive ASIC errors.',
+      'restoring-better-measured-point':'Returning to the previously measured better point, within current safety headroom.',
+      'rollback-lacks-headroom':'Backing off because returning to the measured best would lack headroom.',
+      'new-user-limits':'Adjusting to newly saved user limits.',
+      'held-point-became-unstable':'The held point no longer meets the error or stability checks.'} as Record<string,string>)[event.reason] || `Miner reason: ${event.reason.replace(/[-_]/g,' ')}`;
+  }
+  eventHasChange(event: AutotuneEvent): boolean { return !!event.from && (Math.abs(event.from.frequencyMHz-event.point.frequencyMHz)>.001 || Math.abs(event.from.coreVoltageMv-event.point.coreVoltageMv)>.001); }
+  eventChange(event: AutotuneEvent): string {
+    if (!event.from || !this.eventHasChange(event)) return '';
+    const delta=(value:number,unit:string) => `${value>0?'+':''}${value.toFixed(2).replace(/\.?0+$/,'')} ${unit}`;
+    const changes=[];
+    if (Math.abs(event.point.frequencyMHz-event.from.frequencyMHz)>.001) changes.push(`clock ${delta(event.point.frequencyMHz-event.from.frequencyMHz,'MHz')}`);
+    if (Math.abs(event.point.coreVoltageMv-event.from.coreVoltageMv)>.001) changes.push(`voltage ${delta(event.point.coreVoltageMv-event.from.coreVoltageMv,'mV')}`);
+    return 'Request difference: '+changes.join(' · ');
+  }
+  eventTime(event: AutotuneEvent): string {
+    const seconds=Math.floor(event.atSeconds),hours=Math.floor(seconds/3600),minutes=Math.floor(seconds%3600/60);
+    return `${hours ? hours+' h ' : ''}${minutes} min ${seconds%60} s after miner boot`;
+  }
+  eventScore(value: number | null): string { return this.finite(value) ? value.toFixed(6) : '—'; }
+  eventMeasurement(value: number | null | undefined,digits=2): string { return this.finite(value) ? value.toFixed(digits) : '—'; }
   get historySpan(): string {
     if (this.history.length < 2) return 'Waiting for more tab observations';
     const clock = (at: number) => new Date(performance.timeOrigin+at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -289,7 +460,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (!this.canSave) return;
     const payload = this.config(this.edit!);
     this.execute({action:'configure',config:payload}, report => JSON.stringify(this.config(report.config)) === JSON.stringify(payload),
-      'Tuning options saved.');
+      this.isEngaged?'Changes saved for this tune. The controller will apply its safety checks and remeasure when required.':'Tuning options saved. Accept the waiver and Start when ready.');
   }
   start(): void {
     if (!this.canStart) return;
@@ -325,6 +496,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     }),takeUntil(this.destroyed),finalize(() => this.busy = false)).subscribe({
       next: ({report}) => {
         this.startUnconfirmed = false;
+        if (body['action'] === 'start') {this.viewMode='live';document.querySelector('.run-banner')?.scrollIntoView({block:'start'});}
         if (body['action'] === 'configure') { this.edit = this.config(report.config); this.baseline = JSON.stringify(this.edit); }
         this.message = success;
       },

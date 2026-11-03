@@ -210,11 +210,16 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
             break;
         }
         snprintf(a,sizeof(a),"%s %s",oled_tuning_priority(s->priority),oled_tuning_state(s));
-        if (s->telemetryFresh && s->currentAvailable && fwt_positive(s->current.frequencyMHz) && fwt_positive(s->current.coreVoltageMv))
+        if(s->telemetryFresh && (d->uptime_seconds/4)%2 && fwt_positive(s->hashRateGHs) && fwt_positive(s->powerW) &&
+           isfinite(s->powerW/(s->hashRateGHs/1000))) {
+            snprintf(b,sizeof(b),"%.2fTH/s %.1fJ/TH",s->hashRateGHs/1000,s->powerW/(s->hashRateGHs/1000));
+            if(strlen(b)>21) strcpy(b,"--TH/s --J/TH");
+        } else if (s->telemetryFresh && s->currentAvailable && fwt_positive(s->current.frequencyMHz) && fwt_positive(s->current.coreVoltageMv))
             snprintf(b,sizeof(b),"Set %.3fMHz %.0fmV",s->current.frequencyMHz,s->current.coreVoltageMv);
         else strcpy(b,"Set --MHz --mV");
         if (!s->telemetryFresh) strcpy(c,"Readings unavailable");
         else if (s->fault || s->restoring || (!s->active && !s->ownsSettings)) strcpy(c,"Read only - use web");
+        else if(s->hasDecision && (d->uptime_seconds/4)%2) snprintf(c,sizeof(c),"%s",s->latestDecision);
         else if (s->search.timed) {
             char elapsed[8], samples[8];
             if (s->search.phaseElapsedSeconds > 999) strcpy(elapsed,"999+");
@@ -316,6 +321,11 @@ static inline void oled_render_view(FiveTratumOledView *v, const FiveTratumOledD
         break;
     }
     if (v->page == OLED_TUNING) {
+        const GammaAutotuneDisplaySnapshot *s=&d->tuning;
+        const char *heading=!s->available?"TUNING UNKNOWN":s->fault?"TUNING BLOCKED":s->restoring?"TUNING RESTORE":
+            !s->telemetryFresh&&(s->active||s->ownsSettings)?"TUNING STALE":
+            s->active?(s->state==FWT_OBSERVING?"TUNING MONITOR":"TUNING ACTIVE"):s->ownsSettings?"TUNING HOLD":"TUNING OFF";
+        lv_label_set_text(v->title,heading);
         lv_label_set_text_fmt(v->tuning_body,"%s\n%s\n%s",a,b,c);
         return;
     }

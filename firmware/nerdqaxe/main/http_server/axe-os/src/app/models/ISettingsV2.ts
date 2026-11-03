@@ -53,6 +53,8 @@ export interface ISettingsV2 {
     ecoCoreVoltage?: number;
     frequencyOptions: number[];
     voltageOptions: number[];
+    /** Detected-board ceiling; absent on older firmware. Never infer it from presets. */
+    absMaxFrequency?: number | null;
     absMinCoreVoltage: number;
     absMaxCoreVoltage: number;
 

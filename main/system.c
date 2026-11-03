@@ -1,3 +1,4 @@
+#include "work_difficulty.h"
 #include <inttypes.h>
 #include <math.h>
 #include <stdint.h>
@@ -325,6 +326,7 @@ esp_err_t SYSTEM_init_peripherals(GlobalState * GLOBAL_STATE) {
 
 void SYSTEM_clean_jobs_queue(GlobalState * GLOBAL_STATE)
 {
+    work_difficulty_invalidate_dispatch();
     ESP_LOGI(TAG, "Clean Jobs: clearing queue");
     queue_clear(&GLOBAL_STATE->stratum_queue);
 

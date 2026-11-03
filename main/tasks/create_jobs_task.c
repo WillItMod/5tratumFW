@@ -1,3 +1,4 @@
+#include "work_difficulty.h"
 #include <sys/time.h>
 #include <limits.h>
 
@@ -10,6 +11,7 @@
 #include "esp_timer.h"
 
 #include "asic.h"
+#include "serial.h"
 #include "system.h"
 #include "esp_heap_caps.h"
 #include "sv2_protocol.h"
@@ -192,6 +194,8 @@ void create_jobs_task(void *pvParameters)
 
 static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification, uint64_t extranonce_2, double difficulty)
 {
+    const work_source_stamp source=notification->work_source;
+    const uint64_t work_generation=work_difficulty_prepare(&source);
     if (GLOBAL_STATE->extranonce_2_len > MAX_EXTRANONCE2_LEN) {
         ESP_LOGE(TAG, "extranonce_2_len %d exceeds maximum %d, skipping job", GLOBAL_STATE->extranonce_2_len, MAX_EXTRANONCE2_LEN);
         return;
@@ -229,7 +233,13 @@ static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification
         return;
     }
 
+    const double dispatched_diff=next_job->pool_diff;
+    const uint32_t dispatched_target=next_job->target;
+    const uint32_t tx_before=SERIAL_tx_failure_count();
     ASIC_send_work(GLOBAL_STATE, next_job);
+    const uint32_t tx_after=SERIAL_tx_failure_count();
+    work_difficulty_dispatched(&source,work_generation,dispatched_diff,dispatched_target,
+        mining_state_work_allowed(GLOBAL_STATE)&&tx_before!=UINT32_MAX&&tx_before==tx_after);
 }
 
 // Construct bm_job directly from SV2 fields (no coinbase/merkle computation needed).
@@ -237,6 +247,8 @@ static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification
 // version bits using version_mask, giving different midstates per nonce search space.
 static void generate_work_sv2(GlobalState *GLOBAL_STATE, sv2_job_t *sv2_job, double difficulty)
 {
+    const work_source_stamp source=sv2_job->work_source;
+    const uint64_t work_generation=work_difficulty_prepare(&source);
     bm_job *next_job = malloc(sizeof(bm_job));
     if (next_job == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for new SV2 job");
@@ -303,7 +315,13 @@ static void generate_work_sv2(GlobalState *GLOBAL_STATE, sv2_job_t *sv2_job, dou
         return;
     }
 
+    const double dispatched_diff=next_job->pool_diff;
+    const uint32_t dispatched_target=next_job->target;
+    const uint32_t tx_before=SERIAL_tx_failure_count();
     ASIC_send_work(GLOBAL_STATE, next_job);
+    const uint32_t tx_after=SERIAL_tx_failure_count();
+    work_difficulty_dispatched(&source,work_generation,dispatched_diff,dispatched_target,
+        mining_state_work_allowed(GLOBAL_STATE)&&tx_before!=UINT32_MAX&&tx_before==tx_after);
 }
 
 // Extended channel work generation: compute coinbase hash from prefix+extranonce+suffix,
@@ -311,6 +329,8 @@ static void generate_work_sv2(GlobalState *GLOBAL_STATE, sv2_job_t *sv2_job, dou
 static void generate_work_sv2_ext(GlobalState *GLOBAL_STATE, sv2_ext_job_t *ext_job,
                                    double difficulty, uint64_t extranonce_2_counter)
 {
+    const work_source_stamp source=ext_job->work_source;
+    const uint64_t work_generation=work_difficulty_prepare(&source);
     sv2_conn_t *conn = GLOBAL_STATE->sv2_conn;
     if (!conn) return;
 
@@ -409,5 +429,11 @@ static void generate_work_sv2_ext(GlobalState *GLOBAL_STATE, sv2_ext_job_t *ext_
         return;
     }
 
+    const double dispatched_diff=next_job->pool_diff;
+    const uint32_t dispatched_target=next_job->target;
+    const uint32_t tx_before=SERIAL_tx_failure_count();
     ASIC_send_work(GLOBAL_STATE, next_job);
+    const uint32_t tx_after=SERIAL_tx_failure_count();
+    work_difficulty_dispatched(&source,work_generation,dispatched_diff,dispatched_target,
+        mining_state_work_allowed(GLOBAL_STATE)&&tx_before!=UINT32_MAX&&tx_before==tx_after);
 }

@@ -13,3 +13,5 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 991px) { .menu-toggle { display: inline-flex; } .header-device { display: none; } }
 @media (max-width: 575px) { :host { gap: 8px; } .brand-group, .header-tools { gap: 8px; } .fw-brand img { width: 104px; max-height: 64px; } .theme-picker select { min-width: 72px; padding: 0 7px; } .menu-toggle span { display: none; } .menu-toggle { width: 44px; padding: 0; } .ap-badge { display: none; } }
+
+@media(max-width:991px){:host{flex-wrap:wrap;gap:8px 16px}.brand-group{order:0}.header-tools{order:1;margin-left:auto}.header-tuning{order:2;flex:0 0 100%;max-width:100%}}

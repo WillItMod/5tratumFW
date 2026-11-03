@@ -1,3 +1,4 @@
+#include "handler_work_difficulty.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -158,9 +159,9 @@ esp_err_t start_rest_server(void * pvParameters)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
-    config.max_uri_handlers = 67;
+    config.max_uri_handlers = 71;
 #if defined(FIVETRATUM_BM1370_CAPTURE) && FIVETRATUM_BM1370_CAPTURE
-    config.max_uri_handlers = 75;
+    config.max_uri_handlers = 79;
 #endif
     config.lru_purge_enable = true;
     config.max_open_sockets = 10;
@@ -206,6 +207,10 @@ esp_err_t start_rest_server(void * pvParameters)
         {.uri = "/api/5tratum/profiles/apply", .method = HTTP_POST, .handler = POST_five_tratum_profiles_apply, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_GET, .handler = GET_five_tratum_pool_schedule, .user_ctx = rest_context},
         {.uri = "/api/5tratum/pool-schedule", .method = HTTP_POST, .handler = POST_five_tratum_pool_schedule, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/work-difficulty", .method = HTTP_GET, .handler = GET_five_tratum_work_difficulty, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/work-difficulty", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
+        {.uri = "/api/5tratum/autotune/activity", .method = HTTP_GET, .handler = GET_five_tratum_autotune_activity, .user_ctx = rest_context},
+        {.uri = "/api/5tratum/autotune/activity", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},
         {.uri = "/api/5tratum/autotune", .method = HTTP_GET, .handler = GET_five_tratum_autotune, .user_ctx = rest_context},
         {.uri = "/api/5tratum/autotune", .method = HTTP_POST, .handler = POST_five_tratum_autotune, .user_ctx = rest_context},
         {.uri = "/api/5tratum/autotune", .method = HTTP_OPTIONS, .handler = handle_options_request, .user_ctx = nullptr},

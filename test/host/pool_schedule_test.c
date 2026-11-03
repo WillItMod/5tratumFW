@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+// Count metadata invalidation at the same fake platform boundary as tasks.
+static unsigned difficulty_disconnects;
+void work_difficulty_disconnect(void) { ++difficulty_disconnects; }
 // Include actual coordinator to exercise its internal handoff with fake tasks.
 #include "../../main/tasks/protocol_coordinator.c"
 #include "stratum_close_hooks.inc"
@@ -236,10 +239,10 @@ int main(int argc,char **argv)
         while(!atomic_load(&close_started)){struct timespec delay={.tv_nsec=1000000};nanosleep(&delay,NULL);}
         struct timespec delay={.tv_nsec=20000000};nanosleep(&delay,NULL);assert(!atomic_load(&close_done) && closes==0);
         atomic_store(&release_share,true);assert(!pthread_join(share,NULL) && !pthread_join(closer,NULL));
-        assert(state.transport==NULL && closes==1 && job_clears==1 && protocol_coordinator_work_generation()!=generation);unchanged_power(&state);
+        assert(state.transport==NULL && closes==1 && job_clears==1 && difficulty_disconnects==1 && protocol_coordinator_work_generation()!=generation);unchanged_power(&state);
         state.transport=(void*)1;state.sv2_noise_ctx=(void*)1;state.sv2_conn=calloc(1,sizeof(sv2_conn_t));generation=protocol_coordinator_work_generation();
         stratum_v2_close_connection(&state);stratum_v2_release_state(&state,state.sv2_conn);
-        assert(!state.transport && !state.sv2_noise_ctx && !state.sv2_conn && closes==2 && job_clears==2 && protocol_coordinator_work_generation()!=generation);unchanged_power(&state);
+        assert(!state.transport && !state.sv2_noise_ctx && !state.sv2_conn && closes==2 && job_clears==2 && difficulty_disconnects==2 && protocol_coordinator_work_generation()!=generation);unchanged_power(&state);
     } else if (!strcmp(scenario,"coordinator")) {
         protocol_coordinator_request_primary_reload(&state);protocol_coordinator_init(&state);s_primary_protocol=STRATUM_PROTOCOL_V1;assert(apply_primary_reload(&state));assert(protocol_starts==0 && !strcmp(state.SYSTEM_MODULE.pool_url,"new-pool.invalid"));unchanged_power(&state);
         s_state=COORD_STATE_RUNNING_PRIMARY;s_running_protocol=STRATUM_PROTOCOL_V1;start_protocol_task(&state,s_running_protocol);unsigned old_generation=atomic_load(&s_running_generation);protocol_coordinator_request_primary_reload(&state);assert(apply_primary_reload(&state) && protocol_starts==2 && job_clears==1 && s_running_protocol==STRATUM_PROTOCOL_V2);unchanged_power(&state);

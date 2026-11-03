@@ -4,6 +4,7 @@
 #include "global_state.h"
 #include "macros.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "create_jobs_sv2";
 
@@ -35,6 +36,7 @@ void create_job_sv2_standard(int pool, uint32_t job_id, uint32_t version,
 
     // Point the global miningInfo to our V2 standard instance
     miningInfo[pool] = s_v2_standard[pool];
+    asicJobs.noteWorkReceived(pool,esp_timer_get_time());
 
     ESP_LOGI(TAG, "(%s) SV2 standard job %lu ready, diff=%lu",
              pool ? "Sec" : "Pri", (unsigned long)job_id, (unsigned long)difficulty);
@@ -65,6 +67,7 @@ void create_job_sv2_extended(int pool, const sv2_ext_job_t *job,
 
     // Point the global miningInfo to our V2 extended instance
     miningInfo[pool] = s_v2_extended[pool];
+    asicJobs.noteWorkReceived(pool,esp_timer_get_time());
 
     ESP_LOGI(TAG, "(%s) SV2 extended job %lu ready, diff=%lu",
              pool ? "Sec" : "Pri", (unsigned long)job->job_id, (unsigned long)difficulty);

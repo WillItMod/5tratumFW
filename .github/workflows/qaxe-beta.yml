@@ -1,6 +1,7 @@
 name: QAxe paired BETA validation
 on:
   push:
+    branches: ['**']
     paths: ['firmware/nerdqaxe/**', '.github/workflows/qaxe-beta.yml', '.gitmodules']
   pull_request:
     paths: ['firmware/nerdqaxe/**', '.github/workflows/qaxe-beta.yml', '.gitmodules']

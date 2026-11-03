@@ -115,9 +115,10 @@
           <label class="field"><span>Core voltage (mV)</span><nb-select formControlName="coreVoltage" [ngClass]="{'unsafe-setting': isVoltageTooHigh()}"><nb-option *ngFor="let option of voltageOptions" [value]="option.value">{{ option.name }}</nb-option></nb-select></label>
         </div>
         <div class="field-grid" *ngIf="supportLevel >= 1 || manualTuning">
-          <label class="field"><span>ASIC clock (MHz)</span><input nbInput formControlName="frequency" type="number" step="1" [min]="profiles?.limits?.frequency?.min || 50" [max]="profiles?.limits?.frequency?.max || 800" (input)="checkFrequencyLimit()" [ngClass]="{'unsafe-setting': isFrequencyTooHigh()}" /></label>
+          <label class="field"><span>ASIC clock (MHz)</span><input nbInput formControlName="frequency" type="number" step="1" [min]="profiles?.limits?.frequency?.min || 50" [max]="frequencyMaximum" [readonly]="frequencyMaximum === null" (input)="checkFrequencyLimit()" [ngClass]="{'unsafe-setting': isFrequencyTooHigh()}" /></label>
           <label class="field"><span>Core voltage (mV)</span><input nbInput formControlName="coreVoltage" type="number" step="1" [min]="profiles?.limits?.coreVoltage?.min || 1005" [max]="profiles?.limits?.coreVoltage?.max || 1400" (input)="checkVoltageLimit()" [ngClass]="{'unsafe-setting': isVoltageTooHigh()}" /></label>
         </div>
+        <p class="section-note" *ngIf="frequencyMaximum === null">The detected clock limit is unavailable. The saved clock is retained; refresh settings before changing it.</p>
         <p class="section-note">Current values are retained. Manual requests use 1 MHz and 1 mV steps; the ASIC PLL and regulator choose the nearest hardware setting. Changes apply to the whole ASIC chain.</p>
         <div class="field-grid" *ngIf="supportLevel >= 2">
           <label class="field"><span>Job interval (ms)</span><input nbInput formControlName="jobInterval" type="number" /></label>

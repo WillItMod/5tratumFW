@@ -2,6 +2,7 @@ name: Gamma BETA validation
 
 on:
   push:
+    branches: ['**']
     paths-ignore:
       - 'docs/**'
       - 'readme.md'

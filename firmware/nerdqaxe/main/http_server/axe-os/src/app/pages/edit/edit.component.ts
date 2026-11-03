@@ -16,6 +16,11 @@ import { ISystemV2 } from '../../models/ISystemV2';
 import { sectionFields, changedFields, settingsPatch } from './settings-scope';
 import { TuningScheduleComponent } from '../../components/tuning-schedule/tuning-schedule.component';
 
+export function detectedFrequencyMaximum(value: unknown): number | null {
+  if (value === undefined) return 800;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
 enum SupportLevel { Safe = 0, Advanced = 1, Pro = 2 }
 
 @Component({
@@ -82,6 +87,7 @@ export class EditComponent implements OnInit, OnDestroy {
   public asicModel!: eASICModel;
 
   public defaultFrequency: number = 0;
+  public frequencyMaximum: number | null = 800;
   public defaultCoreVoltage: number = 0;
   public defaultVrFrequency: number = 0;
   public fanCount: number = 1;
@@ -308,15 +314,25 @@ export class EditComponent implements OnInit, OnDestroy {
     this.profileAction(totp => this.poolRouteDirty(index) ? throwError(() => ({error:{error:'unsaved-pool-settings'}})) : this.systemService.applyProfile(this.uri,{type:'pool',slot,poolTarget},totp),`Pool applied to ${index === 0 ? 'Primary' : 'Secondary'}.`,'pool',index);
   }
   clearProfile(kind: 'tuning' | 'pool'): void { this.profileAction(totp => this.systemService.saveProfile(this.uri,{type:kind,slot:kind==='tuning'?this.tuningSlot:this.poolSlot,clear:true},totp),'Profile cleared.'); }
+  private frequencyAllowed(value: unknown): boolean {
+    const number = Number(value);
+    return Number.isInteger(number) && number >= 50 && (this.frequencyMaximum === null
+      ? number === Number(this.originalSettings['frequency']) : number <= this.frequencyMaximum);
+  }
+  private rejectUnavailableFrequency(value: unknown): boolean {
+    if (this.frequencyAllowed(value)) return false;
+    this.profilesError = this.frequencyMaximum === null ? 'The detected clock limit is unavailable. Refresh settings before changing clock.' : 'The requested clock exceeds the detected board limit.';
+    return true;
+  }
   reviewTuning(saved=false):void {
     const p=saved ? this.selectedProfile('tuning') : null;
     const frequencyMHz=Number(saved ? p?.frequencyMHz : this.form.get('frequency')?.value);
     const coreVoltageMv=Number(saved ? p?.coreVoltageMv : this.form.get('coreVoltage')?.value);
-    if(!Number.isInteger(frequencyMHz)||!Number.isInteger(coreVoltageMv))return;
+    if(!Number.isInteger(frequencyMHz)||!Number.isInteger(coreVoltageMv)||this.rejectUnavailableFrequency(frequencyMHz))return;
     this.tuningReview={frequencyMHz,coreVoltageMv,name:saved ? p?.name || 'Saved slot' : 'Manual operating point',source:saved?'slot':'manual'};
   }
-  applyReviewedTuning():void {const point=this.tuningReview;if(!point)return;this.profileAction(totp=>this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:point.frequencyMHz,coreVoltageMv:point.coreVoltageMv},totp),'Clock and voltage applied.','tuning');this.tuningReview=null;}
-  applyTuning(): void { this.profileAction(totp => this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:this.form.get('frequency')?.value,coreVoltageMv:this.form.get('coreVoltage')?.value},totp),'Clock and voltage applied.', 'tuning'); }
+  applyReviewedTuning():void {const point=this.tuningReview;if(!point||this.rejectUnavailableFrequency(point.frequencyMHz))return;this.profileAction(totp=>this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:point.frequencyMHz,coreVoltageMv:point.coreVoltageMv},totp),'Clock and voltage applied.','tuning');this.tuningReview=null;}
+  applyTuning(): void { if(this.rejectUnavailableFrequency(this.form.get('frequency')?.value))return;this.profileAction(totp => this.systemService.applyProfile(this.uri,{type:'tuning',frequencyMHz:this.form.get('frequency')?.value,coreVoltageMv:this.form.get('coreVoltage')?.value},totp),'Clock and voltage applied.', 'tuning'); }
   private profileAction(action: (totp?: string) => Observable<any>, message: string, applied?: 'tuning' | 'pool', poolIndex?: 0 | 1): void {
     if (this.profileBusy || this.saving) return;
     const previousRoute = poolIndex !== undefined ? this.form.getRawValue() : undefined;
@@ -428,6 +444,7 @@ export class EditComponent implements OnInit, OnDestroy {
         this.frequencyOptions = this.assembleDropdownOptions(freqBase, info.frequency);
         this.voltageOptions = this.assembleDropdownOptions(voltBase, info.coreVoltage);
 
+        this.frequencyMaximum = detectedFrequencyMaximum(info.absMaxFrequency);
         // Build the form (Min/Max for volt/freq will be set dynamically right after)
         this.form = this.fb.group({
           stratumKeep: [info.stratumKeep == 1],
@@ -480,7 +497,7 @@ export class EditComponent implements OnInit, OnDestroy {
           wifiPass: ['*****'],
 
           coreVoltage: [info.coreVoltage, [Validators.min(info.absMinCoreVoltage || 1005), Validators.max(info.absMaxCoreVoltage || 1400), Validators.pattern(/^\d+$/), Validators.required]],
-          frequency: [info.frequency, [Validators.required,Validators.min(50),Validators.max(800),Validators.pattern(/^\d+$/)]],
+          frequency: [info.frequency, [Validators.required,Validators.min(50),...(this.frequencyMaximum===null ? [(control:any)=>Number(control.value)===Number(info.frequency)?null:{frequencyLimitUnavailable:true}] : [Validators.max(this.frequencyMaximum)]),Validators.pattern(/^\d+$/)]],
           jobInterval: [info.jobInterval, [Validators.required]],
           stratumDifficulty: [info.stratumDifficulty, [Validators.required, Validators.min(1)]],
 
@@ -642,6 +659,7 @@ export class EditComponent implements OnInit, OnDestroy {
     const needsRestart=this.requiresReboot;
     const payload=settingsPatch(snapshot,this.baseline,section,this.fanCount,
       this.displayProfileEditable ? this.displayProfileChoices.map(option => option.id) : []);
+    if('frequency' in payload && !this.frequencyAllowed(payload.frequency))return throwError(()=>new Error('Detected clock limit unavailable or exceeded.'));
     const request=Object.keys(payload).length ? this.systemService.updateSettingsV2(this.uri,payload,totp) : of(null);
     return request.pipe(tap(()=>{
       if(section==='display' && fields.includes('timeFormat')) {

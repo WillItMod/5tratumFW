@@ -79,14 +79,24 @@ int main(int argc,char **argv)
     screen_button_press(); assert(get_current_screen()==SCR_STATS);
     screen_button_press(); assert(get_current_screen()==SCR_WIFI); /* Decode off skips job metadata. */
     screen_show(SCR_OPERATING);screen_button_press();assert(get_current_screen()==SCR_TUNING);
-    update();assert(!strcmp(lv_label_get_text(compact_views[SCR_TUNING].title),"TUNING - READ ONLY"));
+    update();assert(!strcmp(lv_label_get_text(compact_views[SCR_TUNING].title),"TUNING ACTIVE"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"BALANCED MEASURING"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],1),"Set 580.000MHz 1155mV"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],2),"Min 42/75s S4/8"));
+    host_tuning.hashRateGHs=1200;host_tuning.powerW=18.4;
+    host_tuning.hasDecision=true;host_tuning.latestDecision="Point applied";
+    host_now=12000000;update();
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],1),"1.20TH/s 15.3J/TH"));
+    assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],2),"Point applied"));
+    host_tuning.powerW=NAN;update();
+    assert(!strstr(tuning_row(&compact_views[SCR_TUNING],1),"J/TH"));
+    host_tuning.powerW=18.4;
     host_tuning_busy=true;update();
+    assert(!strcmp(lv_label_get_text(compact_views[SCR_TUNING].title),"TUNING UNKNOWN"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"Tuning unavailable"));
     assert(!strstr(tuning_row(&compact_views[SCR_TUNING],1),"580"));
     host_tuning_busy=false;host_tuning.telemetryFresh=false;update();
+    assert(!strcmp(lv_label_get_text(compact_views[SCR_TUNING].title),"TUNING STALE"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],0),"BALANCED WAITING"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],1),"Set --MHz --mV"));
     assert(!strcmp(tuning_row(&compact_views[SCR_TUNING],2),"Readings unavailable"));

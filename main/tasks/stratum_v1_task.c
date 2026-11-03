@@ -1,3 +1,4 @@
+#include "work_difficulty.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "system.h"
@@ -211,6 +212,8 @@ void stratum_v1_task(void *pvParameters)
 {
     GlobalState *GLOBAL_STATE = (GlobalState *)pvParameters;
     mux_peer_status_disconnect();
+    const unsigned work_pool=GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback?1:0;
+    work_difficulty_select(work_pool);
 
     uint16_t pool_idx = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback ? GLOBAL_STATE->SYSTEM_MODULE.secondary_pool_index : GLOBAL_STATE->SYSTEM_MODULE.primary_pool_index;
     char *stratum_url = GLOBAL_STATE->SYSTEM_MODULE.pools[pool_idx].url;
@@ -320,6 +323,7 @@ void stratum_v1_task(void *pvParameters)
 
         stratum_socket_set_options(GLOBAL_STATE->transport);
         uint64_t mux_generation = mux_peer_status_begin(GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback);
+        const uint64_t work_session=work_difficulty_connect(work_pool);
 
         const char *protocol = (conn_info.addr_family == AF_INET6) ? "IPv6" : "IPv4";
         const char *tls_status;
@@ -422,6 +426,7 @@ void stratum_v1_task(void *pvParameters)
                                 mining_notify *next_notify_json_str = (mining_notify *) queue_dequeue(&GLOBAL_STATE->stratum_queue);
                                 STRATUM_V1_free_mining_notify(next_notify_json_str);
                             }
+                            stratum_api_v1_message.mining_notification->work_source=work_difficulty_received(work_pool,work_session,(uint64_t)receive_time_us);
                             queue_enqueue(&GLOBAL_STATE->stratum_queue, stratum_api_v1_message.mining_notification);
                             decode_mining_notification(GLOBAL_STATE, stratum_api_v1_message.mining_notification);
                             stratum_api_v1_message.mining_notification = NULL;
@@ -468,6 +473,7 @@ void stratum_v1_task(void *pvParameters)
                         GLOBAL_STATE->extranonce_2_len = stratum_api_v1_message.extranonce_2_len;
                         free(old_extranonce_str);
                         GLOBAL_STATE->reset_extranonce2 = true;
+                        work_difficulty_forget_job(work_pool,work_session);
                     }
                     break;
 

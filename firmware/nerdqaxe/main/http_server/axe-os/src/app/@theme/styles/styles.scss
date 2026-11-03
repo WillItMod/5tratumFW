@@ -86,10 +86,11 @@ angular2-smart-table-tags-list {
 
 .main-container { top: 0px !important; }
 
-html, body {
-  max-width: 100%;
-  overflow-x: hidden;
-}
+html, body { max-width: 100%; }
+html { overflow-x: hidden; }
+/* The document is the scroller. A second non-scrolling body overflow box
+   prevents sticky tuning controls from following the document viewport. */
+body { overflow: visible; }
 
 mat-icon{
   font-family: 'Material Icons' !important;

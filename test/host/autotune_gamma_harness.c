@@ -87,7 +87,7 @@ static void init(void) {
     gs.POWER_MANAGEMENT_MODULE.actual_frequency=625.125f;
     gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=1173;
     autotune_gamma_init(&gs);assert(tuner.supported&&tuner.generation==1);
-    assert(autotune_gamma_register(NULL)==ESP_OK&&route_count==5);
+    assert(autotune_gamma_register(NULL)==ESP_OK&&route_count==6);
     observe();assert(tuner.input.valid);
 }
 static void start(void) {
@@ -139,6 +139,12 @@ int main(int argc,char **argv) {
         expect_error("{\"action\":\"start\",\"waiverAccepted\":1,\"waiverVersion\":1}","waiver-required");
         expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":2}","waiver-required");
         assert(writes==before&&!tuner.core.owns&&!tuner.backup_available);
+    } else if(!strcmp(name,"conservative-defaults")) {
+        assert(tuner.core.config.maxAsicTempC==60 && tuner.core.config.maxVrmTempC==70);
+        fwt_config config=tuner.core.config;config.maxAsicTempC=63;config.maxVrmTempC=75;
+        assert(configure_request(config).code==200);reboot_runtime();
+        assert(tuner.core.config.maxAsicTempC==63 && tuner.core.config.maxVrmTempC==75);
+        assert(!tuner.core.active && !tuner.core.owns);
     } else if(!strcmp(name,"read-only")) {
         unsigned before=writes,reads=sensor_reads;
         cJSON *schema=report();assert(schema);
@@ -152,6 +158,60 @@ int main(int argc,char **argv) {
         assert(writes==before&&sensor_reads==reads&&!tuner.core.owns);
         authorized=false;
         httpd_req_t req=tune_request(true,"{\"action\":\"stop\"}");assert(req.code==401&&req.received==0&&writes==before);
+    } else if(!strcmp(name,"passive-activity")) {
+        const unsigned before=writes,reads=sensor_reads;
+        const uint64_t observer=tuner.observer_until;
+        const fwt_controller unchanged=tuner.core;
+        tuner.last_owner_tick=host_now;
+        for(unsigned i=0;i<4;++i) {
+            httpd_req_t req={.code=200};assert(get_activity(&req)==ESP_OK&&req.code==200);
+            cJSON *json=cJSON_Parse(req.reply);assert(json);
+            assert(cJSON_IsTrue(cJSON_GetObjectItem(json,"available")));
+            assert(cJSON_IsFalse(cJSON_GetObjectItem(json,"active")));
+            assert(cJSON_GetObjectItem(json,"controllerAgeSeconds")->valuedouble==0);
+            cJSON_Delete(json);
+        }
+        pthread_mutex_lock(&tuner_mutex);
+        httpd_req_t busy={.code=200};assert(get_activity(&busy)==ESP_OK&&strstr(busy.reply,"\"available\":false"));
+        pthread_mutex_unlock(&tuner_mutex);
+        tuner.initialized=false;httpd_req_t cold={.code=200};assert(get_activity(&cold)==ESP_OK&&strstr(cold.reply,"\"available\":false"));tuner.initialized=true;
+        host_now+=16*FWT_SECOND;httpd_req_t stale={.code=200};assert(get_activity(&stale)==ESP_OK);
+        cJSON *json=cJSON_Parse(stale.reply);assert(json&&cJSON_GetObjectItem(json,"controllerAgeSeconds")->valuedouble==16);cJSON_Delete(json);
+        authorized=false;httpd_req_t denied={.code=200};assert(get_activity(&denied)==ESP_OK&&denied.code==401);authorized=true;
+        assert(writes==before&&sensor_reads==reads&&tuner.observer_until==observer&&!memcmp(&unchanged,&tuner.core,sizeof(unchanged)));
+    } else if(!strcmp(name,"passive-owned-fault")) {
+        start();tuner.last_owner_tick=host_now;
+        httpd_req_t req={.code=200};assert(get_activity(&req)==ESP_OK);
+        cJSON *json=cJSON_Parse(req.reply);assert(cJSON_IsTrue(cJSON_GetObjectItem(json,"active"))&&cJSON_IsTrue(cJSON_GetObjectItem(json,"ownsSettings")));cJSON_Delete(json);
+        gs.SYSTEM_MODULE.hardware_fault=true;req=(httpd_req_t){.code=200};assert(get_activity(&req)==ESP_OK);
+        json=cJSON_Parse(req.reply);assert(cJSON_IsTrue(cJSON_GetObjectItem(json,"fault")));cJSON_Delete(json);
+        gs.SYSTEM_MODULE.hardware_fault=false;autotune_gamma_manual_override();req=(httpd_req_t){.code=200};assert(get_activity(&req)==ESP_OK);
+        json=cJSON_Parse(req.reply);assert(cJSON_IsFalse(cJSON_GetObjectItem(json,"active"))&&cJSON_IsFalse(cJSON_GetObjectItem(json,"ownsSettings")));cJSON_Delete(json);
+        cJSON *full=report(),*status=cJSON_GetObjectItem(full,"status");
+        assert(cJSON_IsFalse(cJSON_GetObjectItem(status,"active"))&&cJSON_IsFalse(cJSON_GetObjectItem(status,"ownsSettings")));
+        cJSON_Delete(full);GammaAutotuneDisplaySnapshot snapshot;
+        assert(autotune_gamma_try_display_snapshot(&snapshot,host_now)&&!snapshot.active&&!snapshot.ownsSettings);
+        assert(tuner.core.active && tuner.core.owns); /* Projection did not mutate the owner. */
+    } else if(!strcmp(name,"decision-history")) {
+        start();assert(fwt_history_count(&tuner.history)==1);
+        assert(fwt_history_latest(&tuner.history)->kind==FWT_EVENT_STARTED);
+        for(unsigned i=0;i<500&&tuner.core.owns;++i) step(true);
+        assert(fwt_history_count(&tuner.history)==FWT_EVENT_CAPACITY);
+        uint32_t previous=0;bool measured=false,applied=false;
+        for(unsigned i=0;i<fwt_history_count(&tuner.history);++i) {
+            const fwt_event *e=fwt_history_at(&tuner.history,i);assert(e&&e->id>previous);previous=e->id;
+            measured|=e->hasMeasurement;applied|=e->kind==FWT_EVENT_ADJUSTMENT&&e->outcome==FWT_OUTCOME_APPLIED;
+        }
+        assert(measured&&applied);
+        const fwt_controller unchanged=tuner.core;const uint32_t latest=tuner.history.latestSequence;
+        for(unsigned i=0;i<4;++i) {
+            cJSON *schema=report();assert(schema);cJSON *status=cJSON_GetObjectItem(schema,"status"),*events=cJSON_GetObjectItem(status,"events");
+            assert(cJSON_IsArray(events)&&cJSON_GetArraySize(events)==8&&cJSON_GetObjectItem(status,"eventCapacity")->valueint==8);
+            cJSON *event=cJSON_GetArrayItem(events,7);assert(cJSON_GetObjectItem(event,"id")->valuedouble==latest&&cJSON_IsObject(cJSON_GetObjectItem(event,"point")));
+            cJSON_Delete(schema);
+        }
+        assert(tuner.history.latestSequence==latest&&!memcmp(&unchanged,&tuner.core,sizeof(unchanged)));
+        reboot_runtime();assert(!tuner.core.active&&!tuner.core.owns&&fwt_history_count(&tuner.history)==0);
     } else if(!strcmp(name,"search-presentation")) {
         const unsigned before=writes,reads=sensor_reads;
         cJSON *schema=report();assert(schema);

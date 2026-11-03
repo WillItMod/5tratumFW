@@ -1,7 +1,7 @@
 # 5tratumFW — choose your device
 
-**Unreleased development:** Gamma Beta12, NerdQAxe++ Beta9 and NerdOctAxe Gamma
-Beta7 add the [adaptive Tuning page](docs/autotuning.md), explicit waiver and
+**Unreleased development:** Gamma Beta13, NerdQAxe++ Beta10 and NerdOctAxe Gamma
+Beta8 add the [adaptive Tuning page](docs/autotuning.md), explicit waiver and
 verified original-settings backup/restore. QAxe/OctAxe also add ASIC error
 percentages. These candidates are being validated; the public downloads below
 remain the previous released pairs until publication.

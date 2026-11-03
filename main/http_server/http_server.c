@@ -53,6 +53,7 @@
 #include "tuning_schedule_api.h"
 #include "autotune_runtime.h"
 #include "autotune_api.h"
+#include "work_difficulty_api.h"
 
 static const char * TAG = "http_server";
 static const char * CORS_TAG = "CORS";
@@ -1559,7 +1560,7 @@ esp_err_t start_rest_server(GlobalState * global_state)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
     config.max_open_sockets = 20;
-    config.max_uri_handlers = 44;
+    config.max_uri_handlers = 46;
     config.close_fn = websocket_close_fn;
     config.lru_purge_enable = true;
     config.keep_alive_enable = true;
@@ -1594,6 +1595,7 @@ esp_err_t start_rest_server(GlobalState * global_state)
     ESP_ERROR_CHECK(register_pool_schedule_api(server));
     ESP_ERROR_CHECK(register_tuning_schedule_api(server));
     ESP_ERROR_CHECK(autotune_gamma_register(server));
+    ESP_ERROR_CHECK(work_difficulty_register(server, GLOBAL_STATE));
 
     /* URI handler for fetching system info */
     httpd_uri_t system_info_get_uri = {

@@ -181,6 +181,10 @@ void checkDurableSettingsAndBootLatchedMetadata(Handler handler) {
     displayProfileRuntime.latch(selectedProfile.c_str());
     JsonDocument settings, system;
     get(GET_V2_settings, settings);
+    assert(settings["absMaxFrequency"]==800);
+    SYSTEM_MODULE.board.maximumFrequency=1000;get(GET_V2_settings,settings);assert(settings["absMaxFrequency"]==1000);
+    SYSTEM_MODULE.board.maximumFrequency=0;get(GET_V2_settings,settings);assert(settings["absMaxFrequency"].isNull());
+    SYSTEM_MODULE.board.maximumFrequency=800;get(GET_V2_settings,settings);
     assert(settings["displayProfile"] == "320x170");
     for (const char *key : {"displayActiveProfile", "displayRestartRequired", "displayWidth",
              "displayHeight", "displayProfileOptions", "displayProfileCapabilityVersion",

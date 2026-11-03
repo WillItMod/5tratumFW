@@ -2,6 +2,7 @@ name: OctAxe paired BETA candidate validation
 
 on:
   push:
+    branches: ['**']
     paths:
       - 'firmware/nerdqaxe/**'
       - 'docs/nerdoctaxe.md'

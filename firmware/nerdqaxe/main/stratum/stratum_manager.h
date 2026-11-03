@@ -10,6 +10,7 @@
 #include "coinbase_decoder.h"
 #include "stratum_task.h"
 #include "../tasks/ping_task.h"
+#include "../tasks/work_difficulty.h"
 
 #define DIFF_STRING_SIZE 12
 
@@ -151,6 +152,8 @@ class StratumManager {
     };
     // Select the displayed failover pool and its context under one manager lock.
     MuxDisplayState getMuxDisplayState();
+    // Passive snapshot of actual dispatched jobs; never an observer lease.
+    FiveTratumWork::Snapshot getWorkDifficulty();
 
     void reconnectAll();
 

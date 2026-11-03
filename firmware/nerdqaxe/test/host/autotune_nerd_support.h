@@ -1,6 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 #include "autotune/core.h"
+#include "autotune/events.h"
 #include "autotune/display_snapshot.h"
 #include "autotune/write_gate.h"
 #include "boards/drivers/BuckConverter.h"
@@ -27,7 +28,7 @@ static uint64_t hostNow=20000000,hostGeneration=1;
 static bool storageFail=false,verifyFail=false,voltageFail=false,sensorFail=false,networkAllowed=true,otpAllowed=true,paused=false;
 static bool sensorValid=true;
 static bool miningGateOpen=true,counterValid=true;
-static float voltageOffset=0,asicDegrees=50,vrmDegrees=55,watts=100;
+static float voltageOffset=0,asicDegrees=50,vrmDegrees=55,watts=100,chipErrorWork=1;
 static bool weakChip=false; static std::vector<std::string> writes;
 static std::map<std::string,std::string> nvstore,staged;
 static std::map<int,std::string> handles;
@@ -194,8 +195,8 @@ struct HashMonitor {
   FiveTratumTelemetry::AsicErrorTelemetry out;out.asicCount=hostBoard.count;
   if(!sensorValid||!counterValid)return out;
   const auto stamp=static_cast<int64_t>(now/5000000*5000000);
-  for(int i=0;i<out.asicCount;++i){out.chips[i]=FiveTratumTelemetry::chipErrorTelemetry({weakChip&&i==0?0.859f:1000.0f,stamp,true},{1,stamp,true},now,true);}
-  out.errorPercentage=100.0/1001;out.errorPercentageAvailable=true;return out;
+  for(int i=0;i<out.asicCount;++i){out.chips[i]=FiveTratumTelemetry::chipErrorTelemetry({weakChip&&i==0?0.859f:1000.0f,stamp,true},{chipErrorWork,stamp,true},now,true);}
+  out.errorPercentage=100.0*chipErrorWork/(1000+chipErrorWork);out.errorPercentageAvailable=true;return out;
  }
  bool copyTuningErrorTelemetry(FiveTratumTelemetry::TuningErrorTelemetry &out,int expected,uint64_t now,bool active){
   out={};if(hostBoard.count!=expected||(expected!=4&&expected!=8))return false;

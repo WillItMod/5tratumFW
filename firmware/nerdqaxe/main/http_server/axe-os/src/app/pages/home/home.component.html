@@ -20,6 +20,7 @@
     <div class="metric"><span class="metric-label">Board temperature</span><div class="metric-value" [class.value--warning]="dashboardIsFresh && isAsicTempWarn(info.thermal.asicTemp, 0, info.system.overheatTemp)" [class.value--danger]="dashboardIsFresh && isAsicTempCrit(info.thermal.asicTemp, 0, info.system.overheatTemp)">{{ metric(info.thermal.asicTemp) }} <span>°C</span></div><div class="metric-foot">Regulator {{ metric(info.thermal.vrTemp) }} °C</div></div>
   </section>
 
+  <app-work-difficulty></app-work-difficulty>
   <div class="dashboard-grid">
     <section class="panel chart-panel" aria-label="Hashrate history">
       <header class="panel-heading"><div><h2>Hashrate history</h2><span class="panel-meta">{{ dashboardIsFresh ? 'Live + device history' : 'Historical data' }}</span></div><div class="chart-tools"><span class="chart-window">{{ zoomWindowLabel }}</span><button type="button" (click)="zoomIn($event)" aria-label="Shorter chart time range">−</button><button type="button" (click)="zoomOut($event)" aria-label="Longer chart time range">+</button><button type="button" (click)="toggleChartCollapsed($event)" [attr.aria-expanded]="!isChartCollapsed" aria-label="Toggle chart"><nb-icon [icon]="isChartCollapsed ? 'expand-outline' : 'collapse-outline'"></nb-icon></button></div></header>
@@ -34,7 +35,7 @@
           <div class="route-title"><span class="route-number">{{ isDualPool ? (physicalPoolIndex(i) === 0 ? 'A' : 'B') : physicalPoolIndex(i) + 1 }}</span><span class="route-host" [title]="pool.host">{{ pool.host || 'Not configured' }}</span><span class="route-state" [class.route-state--online]="dashboardIsFresh && pool.connected && !pool.verifyBlocked">{{ !dashboardIsFresh ? '—' : pool.verifyBlocked ? 'Blocked' : pool.connected ? 'Online' : 'Offline' }}</span></div>
           <div class="route-details"><span>{{ muxConnected(physicalPoolIndex(i)) ? '5tratMUX' : 'Stratum' }} <span *ngIf="pool.port">:{{ pool.port }}</span></span><span *ngIf="dashboardIsFresh && pool.connected">{{ routingAllocationLabel(i) }}</span></div>
           <div class="route-counters"><span><b>{{ metric(pool.accepted, 0) }}</b> accepted</span><span><b>{{ metric(pool.rejected, 0) }}</b> rejected</span><span *ngIf="pool.connected && pool.pingRtt > 0">{{ metric(pool.pingRtt, 0) }} ms</span></div>
-          <div class="route-work" *ngIf="poolWorkContext(physicalPoolIndex(i)) as work"><span>{{ poolCoinLabel(physicalPoolIndex(i)) }}</span><span>Height {{ work.height === null ? '—' : (work.height | number:'1.0-0') }}</span><span>Difficulty (bdiff) {{ workDifficulty(work.networkDifficulty) }}</span><span class="job-id" [title]="work.jobId">Job {{ work.jobId }}</span></div>
+          <div class="route-work" *ngIf="poolWorkContext(physicalPoolIndex(i)) as work"><span>{{ poolCoinLabel(physicalPoolIndex(i)) }}</span><span>Height {{ work.height === null ? '—' : (work.height | number:'1.0-0') }}</span><span class="job-id" [title]="work.jobId">Job {{ work.jobId }}</span></div>
           <div class="route-warning" *ngIf="pool.verifyBlocked">{{ pool.verifyBlocked }}</div>
         </div>
       </div>

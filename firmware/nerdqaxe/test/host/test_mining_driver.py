@@ -97,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     (path / "board.cpp").write_text(board_methods)
     jobs = (ROOT / "main/tasks/asic_jobs.h").read_text()
     jobs = re.sub(r'^#include "[^"\n]+"\n', '', jobs, flags=re.M)
-    (path / "asic_jobs_actual.h").write_text('#include "mining_driver_support.h"\n' + jobs)
+    (path / "asic_jobs_actual.h").write_text('#include "mining_driver_support.h"\n#include "tasks/work_difficulty.h"\n' + jobs)
     power = (ROOT / "main/tasks/power_management_task.cpp").read_text()
     power_methods = '#include "mining_driver_support.h"\n#include "mining_control.h"\nstatic const char *TAG="power";\n'
     for signature in ("bool PowerManagementTask::refreshProtectionForMining(",

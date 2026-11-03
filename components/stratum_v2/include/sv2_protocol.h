@@ -50,6 +50,8 @@ typedef struct {
     uint32_t msg_length; // 24-bit value stored in 32-bit
 } sv2_frame_header_t;
 
+#include "work_source_stamp.h"
+
 // Complete SV2 job (NewMiningJob + SetNewPrevHash combined)
 typedef struct {
     uint32_t job_id;
@@ -59,6 +61,7 @@ typedef struct {
     uint32_t ntime;
     uint32_t nbits;
     bool clean_jobs;
+    work_source_stamp work_source;
 } sv2_job_t;
 
 // Pending future job (waiting for SetNewPrevHash)
@@ -84,6 +87,7 @@ typedef struct {
     uint16_t coinbase_prefix_len;
     uint8_t *coinbase_suffix;     // heap
     uint16_t coinbase_suffix_len;
+    work_source_stamp work_source;
 } sv2_ext_job_t;
 
 #define SV2_PENDING_JOBS_SIZE 8
@@ -92,6 +96,8 @@ typedef struct {
 
 // SV2 connection state
 typedef struct sv2_conn {
+    uint64_t work_source_session;
+    uint8_t work_source_pool;
     uint32_t channel_id;
     uint32_t sequence_number;       // also the count of shares submitted
     uint32_t resolved_shares;       // shares the pool has accepted or rejected

@@ -1,7 +1,7 @@
 # Adaptive tuning — development candidates
 
-The first candidates are **Bitaxe Gamma 601/602 Beta12**, **NerdQAxe++ Beta9**
-and **NerdOctAxe Gamma Beta7**. They are unreleased while validation is in
+The first candidates are **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10**
+and **NerdOctAxe Gamma Beta8**. They are unreleased while validation is in
 progress. Use each family's own matched application and web image; no factory
 erase or NVS image is part of an update.
 
@@ -12,6 +12,9 @@ measurements; it does not independently tune or route individual ASICs.
 ## Tuning page
 
 Open **Tuning** in the firmware web interface. The Scheduler remains separate.
+An active or held session opens on **Live dashboard**; use **Adjust this tune**
+to change the goal or limits. An idle miner opens on **Tuning options**. The
+activity banner and restore action stay visible when switching views.
 
 | Priority | Goal |
 | --- | --- |
@@ -40,8 +43,12 @@ when conditions change or the reassessment interval expires. Stable conditions
 need not cause any write. **Off** completes one bounded search and holds its
 best measured result. Protection remains active while a result is held.
 
-Changing saved options guides an existing session. Saving options while the
-tuner is disabled does not start it. Boot and OTA never automatically restart
+Changing saved options guides an existing session. Use **Save changes to this
+tune** while it is running; the page confirms the changed saved options after
+reading them back. There is no second Start or waiver to edit an admitted
+session. While an adjustment or restore is pending, the page explains why
+another change must wait. Saving options while the tuner is disabled does not
+start it. Boot and OTA never automatically restart
 a tuning session, even if Continuous tuning was saved as On.
 
 ## Temperature and electrical limits
@@ -51,10 +58,17 @@ sensor sources and gives guidance for that hardware. A shared board reading
 is not an independently measured hottest-chip junction, and an external VRM
 sensor differs from a power-stage or regulator die sensor.
 
-The initial temperature values are conservative controller starting options,
-not manufacturer-approved universal operating temperatures. They remain below
-the installed protection boundaries. The supported Gamma adapter retains its
-existing 75°C ASIC and 105°C regulator protection; user tuning ceilings cannot
+The recommended default tuning targets are **60°C ASIC** and **70°C VRM**
+(or lower if the installed protection requires it). The page warns above 60°C
+ASIC, with a stronger warning above 65°C; it warns above 70°C VRM, with a
+stronger warning at 80°C or higher. These are project starting recommendations,
+not manufacturer-approved universal operating temperatures or permission to
+run continuously at a protection cutoff. Saved user choices survive upgrades;
+the new defaults do not silently replace an existing configuration.
+
+User-configurable higher values remain bounded by the installed protection.
+Emergency protection thresholds are not recommended operating targets. The
+supported Gamma adapter retains its existing 75°C ASIC and 105°C regulator protection; user tuning ceilings cannot
 raise or disable these. Nerd ceilings also depend on its actual configured
 protection channels. Missing or disabled required protection prevents Start.
 
@@ -72,6 +86,12 @@ when starting or changing an owned session. They do not force a large jump to a
 new minimum. Gamma supports fractional MHz requests; the Nerd control interface
 uses whole MHz. Both use whole mV requests. Search increments and computed PLL
 frequency are not independent measurements of the actual silicon clock.
+
+Nerd limits come from the detected board profile. The standard supported
+QAxe/OctAxe profile is capped at 800MHz; the recognized QAxe rev7 regulator
+profile exposes 1,000MHz. The normal settings editor and Tuning both use the
+reported board limit. This metadata is a firmware boundary, not a guarantee
+that a particular miner can operate reliably at that frequency.
 
 Reported power may be regulator input telemetry or a labelled output-derived
 estimate. It is not measured wall power or a guaranteed PSU input-power limit.
@@ -131,6 +151,11 @@ a later explicit restore.
 
 ## Measurements and search behaviour
 
+The normal web header displays **TUNING ACTIVE** and the saved objective while
+a session is running, including when the Tuning page is closed. Monitoring,
+holding, restoration, blocked and stale/unavailable states have separate labels.
+An unavailable observation must not silently turn an active session into Off.
+
 The Tuning page explains the current state in plain language alongside the
 actual controller reason. The visual loop represents repeated tests, not a
 linear progress bar for the entire tune. A settling or observation duration is
@@ -145,6 +170,27 @@ immutable original-settings backup. Experiment counts reset for each round;
 the reported rejected-window count accumulates across the current run. Browser trend observations start when the
 page is opened, contain connection gaps and are not additional controller
 samples. Reopening the page does not reconstruct a complete tuning history.
+
+The live overview includes useful **TH/s**, **J/TH**, ASIC and VRM temperatures,
+reported watts, and board/worst-ASIC error percentages. J/TH is reported watts
+divided by useful TH/s; it is not a wall-meter measurement. Six recent trend
+charts cover temperatures separately, power, useful hashrate, energy per useful
+hash and ASIC errors. Invalid or missing readings produce gaps, not zeroes.
+
+**Recent controller decisions** comes from actual miner records: starting a run,
+measuring a reference, requesting/applying/failing a change, accepting a better
+measured point, rejecting a trial or encountering excessive errors. Completed
+window means and the actual comparison threshold accompany evaluated results.
+A requested change is not labelled applied until confirmed. The miner retains
+eight recent events in RAM; an open tab can retain up to 100 observed events for
+the same run, and identifies missed entries. This is not a permanent audit log.
+
+Both Overview and Tuning show **pool share difficulty** and **network/job target
+difficulty** separately for each pool. Values come from the miner's current
+valid dispatched work, normalized to Bitcoin difficulty-1 units. They are not
+best-share difficulty or an external explorer estimate. Disconnects and
+invalidated work show unavailable data; an older still-valid job keeps its
+original age instead of acquiring a fabricated new timestamp.
 
 The controller uses unique complete hardware-counter intervals. Receiving the
 same reading in several browser requests does not create more evidence. After
@@ -181,8 +227,10 @@ limits. Searches are local and bounded, not a guaranteed global optimum.
 ## Physical tuning display
 
 The additional Tuning page on the miner is read-only and uses the normal screen
-navigation. It reports the current goal, state and available measurements;
-limited displays abbreviate that information. Selecting it cannot start tuning,
+navigation. It reports the current goal, state and available measurements, including useful
+TH/s and J/TH. Limited displays alternate concise measurements with the current
+point and last real decision. On Gamma, ACTIVE/MONITOR/HOLD/OFF/RESTORE/BLOCKED or
+STALE remains visible in the heading. Selecting it cannot start tuning,
 change limits or accept a waiver. Setup, update, shutdown and fault screens
 retain priority. The full explanations and controls remain in the web Tuning
 tab. Native rendered fixtures are separate from physical panel qualification.

@@ -127,6 +127,7 @@ class MuxPeerStatus {
     }
 
     uint64_t generation() const { return m_generation; }
+    bool connected() const { return m_connected; }
 
     void invalidate(uint64_t generation) {
         if (generation == m_generation) {

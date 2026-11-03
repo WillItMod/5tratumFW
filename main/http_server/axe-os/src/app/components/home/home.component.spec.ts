@@ -2,6 +2,8 @@
 import 'chartjs-adapter-moment';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HomeComponent } from './home.component';
+import { WorkDifficultyComponent } from '../work-difficulty/work-difficulty.component';
+import { WorkDifficultyService } from '../../services/work-difficulty.service';
 import { provideHttpClient } from '@angular/common/http';
 import { provideToastr } from 'ngx-toastr';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
@@ -58,6 +60,7 @@ describe('HomeComponent', () => {
         ByteSuffixPipe
       ],
       imports: [
+        WorkDifficultyComponent,
         ReactiveFormsModule,
         FormsModule,
         NoopAnimationsModule,
@@ -69,6 +72,7 @@ describe('HomeComponent', () => {
       ],
       providers: [
         provideRouter([]),
+        {provide:WorkDifficultyService,useValue:{get:()=>of({schemaVersion:1,normalization:'bitcoin-diff1',pools:[0,1].map(index=>({index,selected:false,connected:false,available:false,shareDifficulty:null,networkDifficulty:null,jobAgeSeconds:null,source:'active-stratum-job'}))})}},
         provideHttpClient(),
         provideToastr(),
         SystemApiService,

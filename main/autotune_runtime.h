@@ -3,13 +3,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "../firmware/nerdqaxe/main/autotune/presentation.h"
+#include "../firmware/nerdqaxe/main/autotune/events.h"
 typedef struct GlobalState GlobalState;
 typedef struct {
     bool available, supported, telemetryFresh, fault, active, ownsSettings, restoring, currentAvailable;
     fwt_state state;
     fwt_priority priority;
     fwt_point current; /* Confirmed requested settings, not measured PLL frequency. */
+    double hashRateGHs, powerW;
     fwt_search_view search;
+    const char *latestDecision;
+    bool hasDecision;
     char reason[96];
 } GammaAutotuneDisplaySnapshot;
 /* RAM-only, nonblocking copy. Safe from an LVGL callback: never waits for the

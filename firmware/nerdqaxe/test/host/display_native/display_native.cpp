@@ -162,7 +162,7 @@ static void tuningFixtures(const std::string &directory) {
     ui.ui_lbTuningPoint=widgets.point;ui.ui_lbTuningWork=widgets.work;ui.ui_lbTuningThermal=widgets.thermal;
     ui.ui_lbTuningLimits=widgets.limits;ui.ui_lbTuningProgress=widgets.progress;
     auto &view=driver.m_tuningSnapshot;
-    view.available=view.valid=view.active=view.ownsSettings=true;view.capturedAtUs=fixtureNowUs;
+    view.available=view.valid=view.active=view.ownsSettings=true;view.capturedAtUs=view.ownerAtUs=fixtureNowUs;
     view.state=FWT_MEASURING;view.priority=FWT_BALANCED;view.continuous=true;
     view.current={700,1180};view.hashRateGHs=11540;view.errorPercentage=.21;
     view.asicTempC=62.5;view.vrmTempC=66.2;view.powerW=182.5;
@@ -170,20 +170,37 @@ static void tuningFixtures(const std::string &directory) {
     view.search.timed=true;view.search.phaseElapsedSeconds=42;view.search.minimumSeconds=75;
     view.search.samples=9;view.search.minimumSamples=8;view.search.roundExperiments=2;view.search.roundExperimentLimit=24;
     driver.updateTuningReadings(fixtureNowUs);
-    assert(hasLabel(page,"Measuring") && hasLabel(page,"Balanced | continuous on"));
-    assert(hasLabel(page,"Requested 700 MHz / 1180 mV") && hasLabel(page,"11.54 TH/s | errors 0.21%"));
+    assert(hasLabel(page,"ACTIVE | Balanced") && hasLabel(page,"Measuring | continuous on"));
+    assert(hasLabel(page,"Requested 700 MHz / 1180 mV") && hasLabel(page,"11.54 TH/s | 15.8 J/TH | err 0.21%"));
     assert(hasLabel(page,"42/75 s min | samples 9 (min 8)"));
+    view.lastKind=FWT_EVENT_REJECTED;view.lastOutcome=FWT_OUTCOME_MEASURED;view.lastReason="improvement-within-noise-margin";view.lastLabel="Trial not better";
+    driver.updateTuningReadings(fixtureNowUs);
+    assert(hasLabel(page,"Last: Trial not better | samples 9/8"));
+    view.priority=FWT_PERFORMANCE;driver.updateTuningReadings(fixtureNowUs);
+    assert(hasLabel(page,"ACTIVE | Performance"));
+    driver.updateTuningReadings(fixtureNowUs+15000001);
+    assert(hasLabel(page,"Tuning status stale")&&!hasLabel(page,"ACTIVE | Performance"));
+    driver.updateTuningReadings(fixtureNowUs);
     // Updating an inactive read-only page cannot replace QR or its safety layer.
     auto *qr=screen();header(qr,"AUTHENTICATOR");lv_scr_load(qr);
     auto *fault=warning(lv_layer_top(),"MINER OVERHEATED","Protection remains authoritative");
     driver.updateTuningReadings(fixtureNowUs);
     assert(lv_scr_act()==qr && lv_obj_get_parent(fault)==lv_layer_top());
     lv_obj_del(fault);lv_scr_load(parkingScreen);lv_obj_del(qr);
+    view.asicTempC=60;view.vrmTempC=70;driver.updateTuningReadings(fixtureNowUs);assert(lv_obj_get_style_text_color(widgets.thermal,0).full==lv_color_hex(Muted).full);
+    view.asicTempC=65;driver.updateTuningReadings(fixtureNowUs);assert(lv_obj_get_style_text_color(widgets.thermal,0).full==lv_color_hex(Amber).full);
+    view.asicTempC=65.1;driver.updateTuningReadings(fixtureNowUs);assert(lv_obj_get_style_text_color(widgets.thermal,0).full==lv_color_hex(Danger).full);
+    view.asicTempC=60;view.vrmTempC=80;driver.updateTuningReadings(fixtureNowUs);assert(lv_obj_get_style_text_color(widgets.thermal,0).full==lv_color_hex(Danger).full);
+    view.asicTempC=62.5;view.vrmTempC=66.2;
+    view.hashRateGHs=0;driver.updateTuningReadings(fixtureNowUs);assert(hasLabel(page,"-- TH/s | -- J/TH | err --"));
+    view.hashRateGHs=11540;view.powerW=0;driver.updateTuningReadings(fixtureNowUs);assert(hasLabel(page,"-- TH/s | -- J/TH | err --"));
+    view.powerW=182.5;driver.updateTuningReadings(fixtureNowUs);
     capture(page,directory+"/display-tuning-measuring-simulated.ppm");
+
     page=screen();widgets=tuning(page);
     view.active=false;view.state=FWT_DISABLED;view.fault=true;
     updateTuning(widgets,view,fixtureNowUs);
-    assert(hasLabel(page,"Protection active") && hasLabel(page,"-- TH/s | errors --"));
+    assert(hasLabel(page,"Protection active") && hasLabel(page,"-- TH/s | -- J/TH | err --"));
     capture(page,directory+"/display-tuning-disabled-protection-simulated.ppm");
     page=screen();widgets=tuning(page);
     view.fault=false;view.updating=true;updateTuning(widgets,view,fixtureNowUs);
@@ -201,7 +218,7 @@ static void tuningFixtures(const std::string &directory) {
     assert(hasLabel(page,"Requested -- MHz / -- mV") && hasLabel(page,"ASIC -- C / VR -- C / -- W"));
     capture(page,directory+"/display-tuning-expired-simulated.ppm");
     page=screen();widgets=tuning(page);view={};updateTuning(widgets,view,fixtureNowUs);
-    assert(hasLabel(page,"Status unavailable") && hasLabel(page,"-- TH/s | errors --") && hasLabel(page,"Caps unavailable"));
+    assert(hasLabel(page,"Status unavailable") && hasLabel(page,"-- TH/s | -- J/TH | err --") && hasLabel(page,"Caps unavailable"));
     capture(page,directory+"/display-tuning-unavailable-simulated.ppm");
 }
 

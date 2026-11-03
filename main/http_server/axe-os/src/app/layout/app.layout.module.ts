@@ -19,6 +19,7 @@ import { AppMenuitemComponent } from './app.menuitem.component';
 import { AppSidebarComponent } from './app.sidebar.component';
 import { AppTopBarComponent } from './app.topbar.component';
 import { LoadingComponent } from '../components/loading/loading.component';
+import { TuningStatusComponent } from '../components/tuning-status/tuning-status.component';
 import { WifiIconComponent } from '../components/wifi-icon/wifi-icon.component';
 
 @NgModule({
@@ -33,6 +34,7 @@ import { WifiIconComponent } from '../components/wifi-icon/wifi-icon.component';
         WifiIconComponent,
     ],
     imports: [
+        TuningStatusComponent,
         BrowserModule,
         FormsModule,
         HttpClientModule,

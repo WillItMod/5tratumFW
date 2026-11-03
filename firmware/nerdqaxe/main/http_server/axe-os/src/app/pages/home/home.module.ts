@@ -1,3 +1,4 @@
+import { WorkDifficultyComponent } from '../../components/work-difficulty/work-difficulty.component';
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,6 +21,7 @@ import { AsicTempBarsModule } from 'src/app/components/asic-temp-bars/asic-temp-
   ],
   imports: [
     CommonModule,
+    WorkDifficultyComponent,
     FormsModule,
     RouterModule,
     NbCardModule,

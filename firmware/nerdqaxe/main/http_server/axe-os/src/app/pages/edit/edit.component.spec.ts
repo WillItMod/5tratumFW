@@ -5,7 +5,7 @@ import { NbDialogService, NbLayoutModule, NbThemeModule, NbToastrService } from 
 import { NbEvaIconsModule } from '@nebular/eva-icons';
 import { TranslateModule } from '@ngx-translate/core';
 import { of, Subject, throwError } from 'rxjs';
-import { EditComponent } from './edit.component';
+import { EditComponent, detectedFrequencyMaximum } from './edit.component';
 import { EditModule } from './edit.module';
 import { ISettingsV2 } from '../../models/ISettingsV2';
 import { ISystemV2 } from '../../models/ISystemV2';
@@ -93,6 +93,26 @@ describe('Nerd settings payload preservation', () => {
     component.ngOnInit();
   });
   afterEach(()=>component.ngOnDestroy());
+
+  it('uses only valid detected-board clock metadata, with an800MHz legacy fallback', () => {
+    expect(detectedFrequencyMaximum(undefined)).toBe(800);
+    for(const value of [null,0,-1,NaN,Infinity,'1000',999.5])expect(detectedFrequencyMaximum(value)).toBeNull();
+    expect(detectedFrequencyMaximum(800)).toBe(800);expect(detectedFrequencyMaximum(1000)).toBe(1000);expect(detectedFrequencyMaximum(600)).toBe(600);
+    source.absMaxFrequency=1000;component.ngOnDestroy();component.ngOnInit();
+    component.form.get('frequency')!.setValue(1000);expect(component.form.get('frequency')!.hasError('max')).toBeFalse();
+    component.form.get('frequency')!.setValue(1001);expect(component.form.get('frequency')!.hasError('max')).toBeTrue();
+    delete source.absMaxFrequency;source.frequencyOptions=[500,1600];source.frequency=1600;component.ngOnDestroy();component.ngOnInit();
+    expect(component.frequencyMaximum).toBe(800);expect(component.form.get('frequency')!.hasError('max')).toBeTrue();expect(update).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for explicit-null clock metadata but still saves unrelated settings', () => {
+    source.absMaxFrequency=null;component.ngOnDestroy();component.ngOnInit();expect(component.frequencyMaximum).toBeNull();
+    component.form.get('frequency')!.setValue(578);expect(component.form.get('frequency')!.hasError('frequencyLimitUnavailable')).toBeTrue();
+    component.applyTuning();expect(applyProfile).not.toHaveBeenCalled();expect(auth).not.toHaveBeenCalled();
+    component.updateSystem().subscribe({error:error=>expect(error.message).toContain('clock limit')});expect(update).not.toHaveBeenCalled();
+    component.form.get('frequency')!.setValue(source.frequency);component.section='network';component.form.get('hostname')!.setValue('new-host');component.updateSystem().subscribe();
+    expect(update.calls.mostRecent().args[1]).toEqual({hostname:'new-host'});
+  });
 
   it('saves only weekly power policy after OTP without modifying clock, voltage or pool settings',()=>{
     component.powerSchedule={enabled:true,timezone:'Europe/London',windows:[{days:62,start:'22:00',end:'06:00'}]};

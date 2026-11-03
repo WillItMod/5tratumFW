@@ -57,3 +57,7 @@ nb-toggle,nb-checkbox { vertical-align:middle; }
   nb-layout.fw-command-shell nb-layout-footer nav { padding-inline: 16px !important; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:0s!important; animation-duration:0s!important; } }
+
+/* Reserve the additional cached tuner-status row in the fixed header. */
+@media(max-width:991px){nb-layout.fw-command-shell{--fw-masthead-height:144px}}
+@media(max-width:575px){nb-layout.fw-command-shell{--fw-masthead-height:132px}}

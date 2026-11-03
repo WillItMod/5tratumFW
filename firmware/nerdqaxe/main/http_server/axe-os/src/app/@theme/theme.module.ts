@@ -1,3 +1,4 @@
+import { TuningStatusComponent } from '../components/tuning-status/tuning-status.component';
 import { RouterModule } from '@angular/router';
 import { CommonModule } from "@angular/common";
 import { ModuleWithProviders, NgModule } from "@angular/core";
@@ -110,7 +111,7 @@ const PIPES = [
 ];
 
 @NgModule({
-    imports: [CommonModule, RouterModule, TranslateModule, I18nModule, ...NB_MODULES, CustomDirectivesModule],
+    imports: [CommonModule, RouterModule, TuningStatusComponent, TranslateModule, I18nModule, ...NB_MODULES, CustomDirectivesModule],
     exports: [CommonModule, ...PIPES, ...COMPONENTS, I18nModule, CustomDirectivesModule],
     declarations: [...COMPONENTS, ...PIPES],
   })

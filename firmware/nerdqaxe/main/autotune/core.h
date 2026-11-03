@@ -37,6 +37,19 @@ typedef struct {
 } fwt_input;
 typedef enum { FWT_REQUEST_NONE=0, FWT_REQUEST_APPLY, FWT_REQUEST_PAUSE } fwt_request_kind;
 typedef struct { fwt_request_kind kind; fwt_point point; } fwt_request;
+/* Observational records only: never consulted by the control policy. */
+typedef enum { FWT_EVENT_NONE=0, FWT_EVENT_STARTED, FWT_EVENT_BASELINE,
+ FWT_EVENT_ACCEPTED, FWT_EVENT_REJECTED, FWT_EVENT_RETAINED, FWT_EVENT_ERRORS,
+ FWT_EVENT_ADJUSTMENT } fwt_event_kind;
+typedef enum { FWT_OUTCOME_REQUESTED=0, FWT_OUTCOME_APPLIED,
+ FWT_OUTCOME_FAILED, FWT_OUTCOME_MEASURED } fwt_event_outcome;
+typedef struct {
+ uint32_t id; fwt_event_kind kind; fwt_event_outcome outcome;
+ uint64_t atUs; const char *reason;
+ fwt_point from, point;
+ double hashRateGHs, powerW, errorPercentage, worstErrorPercentage, score, requiredScore;
+ bool hasMeasurement, hasScore;
+} fwt_event;
 typedef struct {
  fwt_limits limits; fwt_config config;
  fwt_state state; const char *reason;
@@ -50,6 +63,8 @@ typedef struct {
  double baselineHash, baselinePower, bestHash, bestPower, bestScore, bestUncertainty;
  double previousAsicTemp, previousVrmTemp;
  bool trial, recovering, rebaseline, holdAfterRecovery;
+ uint32_t eventSequence;
+ fwt_event lastDecision, lastAdjustment;
 } fwt_controller;
 
 static inline bool fwt_config_valid(const fwt_config *cfg,const fwt_limits *limits);
@@ -82,6 +97,28 @@ static inline double fwt_clamp(double n,double lo,double hi) {
 static inline bool fwt_positive(double n) { return isfinite(n) && n > 0; }
 static inline bool fwt_point_equal(fwt_point a,fwt_point b) {
  return fabs(a.frequencyMHz-b.frequencyMHz)<0.01 && fabs(a.coreVoltageMv-b.coreVoltageMv)<0.01;
+}
+static inline void fwt_event_record(fwt_controller *c,fwt_event *event,fwt_event_kind kind,
+ fwt_event_outcome outcome,fwt_point from,fwt_point point,const char *reason,uint64_t now) {
+ memset(event,0,sizeof(*event));
+ if(c->eventSequence==UINT32_MAX) return; /* Metadata exhaustion cannot change control. */
+ event->id=++c->eventSequence;event->kind=kind;event->outcome=outcome;
+ event->atUs=now;event->reason=reason;event->from=from;event->point=point;
+}
+static inline void fwt_event_measure(fwt_controller *c,fwt_event_kind kind,const char *reason,
+ uint64_t now,double hash,double power,bool scored,double score,double required) {
+ const fwt_point none={0,0};
+ fwt_event_record(c,&c->lastDecision,kind,FWT_OUTCOME_MEASURED,
+  c->bestAvailable?c->best:none,c->current,reason,now);
+ fwt_event *event=&c->lastDecision;
+ if(!event->id) return;
+ event->hasMeasurement=fwt_positive(hash)&&fwt_positive(power)&&c->samples>0;
+ if(event->hasMeasurement) {
+  event->hashRateGHs=hash;event->powerW=power;
+  event->errorPercentage=c->sumError/c->samples;event->worstErrorPercentage=c->worstError;
+ }
+ event->hasScore=scored&&fwt_positive(score)&&fwt_positive(required);
+ if(event->hasScore) {event->score=score;event->requiredScore=required;}
 }
 static inline bool fwt_config_contains(const fwt_config *cfg,fwt_point p) {
  return fwt_positive(p.frequencyMHz)&&fwt_positive(p.coreVoltageMv)&&
@@ -126,6 +163,9 @@ static inline void fwt_init(fwt_controller *c,const fwt_limits *l,const fwt_conf
  c->state=FWT_DISABLED;c->reason="disabled";
 }
 static inline void fwt_cancel(fwt_controller *c,const char *reason) {
+ if(c->awaitingApply&&c->lastAdjustment.id) {
+  c->lastAdjustment.outcome=FWT_OUTCOME_FAILED;c->lastAdjustment.reason=reason?reason:"disabled";
+ }
  c->active=false;c->owns=false;c->awaitingApply=false;c->trial=false;
  c->state=FWT_DISABLED;c->reason=reason?reason:"disabled";
 }
@@ -171,6 +211,8 @@ static inline bool fwt_start(fwt_controller *c,const fwt_input *i,uint64_t now) 
  c->baseline=c->current=i->current;c->baselineAvailable=true;
  c->generation=i->generation;c->lastNowUs=now;c->stateSinceUs=now;
  c->state=FWT_BASELINE;c->reason="measuring-starting-point";
+ const fwt_point none={0,0};
+ fwt_event_record(c,&c->lastDecision,FWT_EVENT_STARTED,FWT_OUTCOME_MEASURED,none,c->current,c->reason,now);
  fwt_clear_window(c,now);return true;
 }
 static inline fwt_request fwt_none(void) {
@@ -178,6 +220,9 @@ static inline fwt_request fwt_none(void) {
 }
 static inline fwt_request fwt_pause(fwt_controller *c,const char *reason) {
  fwt_request r=fwt_none();r.kind=FWT_REQUEST_PAUSE;
+ if(c->awaitingApply&&c->lastAdjustment.id) {
+  c->lastAdjustment.outcome=FWT_OUTCOME_FAILED;c->lastAdjustment.reason=reason;
+ }
  c->active=false;c->owns=false;c->awaitingApply=false;c->trial=false;
  c->state=FWT_FAULTED;c->reason=reason;return r;
 }
@@ -188,15 +233,19 @@ static inline fwt_request fwt_apply(fwt_controller *c,fwt_point p,uint64_t now,c
  if(!fwt_point_allowed(c,p)) return fwt_pause(c,"candidate-outside-limits");
  fwt_request r=fwt_none();r.kind=FWT_REQUEST_APPLY;r.point=p;
  c->pending=p;c->awaitingApply=true;c->state=FWT_APPLYING;c->stateSinceUs=now;
- c->reason=reason;if(c->decisions<UINT32_MAX) ++c->decisions;return r;
+ c->reason=reason;if(c->decisions<UINT32_MAX) ++c->decisions;
+ fwt_event_record(c,&c->lastAdjustment,FWT_EVENT_ADJUSTMENT,FWT_OUTCOME_REQUESTED,c->current,p,reason,now);
+ return r;
 }
 static inline void fwt_applied(fwt_controller *c,bool success,uint64_t now) {
  if(!c->owns||!c->awaitingApply) return;
  if(!success||now<c->lastNowUs) {
+  if(c->lastAdjustment.id) {c->lastAdjustment.outcome=FWT_OUTCOME_FAILED;c->lastAdjustment.reason="transition-not-verified";}
   c->active=false;c->owns=false;c->awaitingApply=false;
   c->state=FWT_FAULTED;c->reason="transition-not-verified";return;
  }
  c->current=c->pending;c->awaitingApply=false;c->state=FWT_SETTLING;
+ if(c->lastAdjustment.id) c->lastAdjustment.outcome=FWT_OUTCOME_APPLIED;
  c->reason="waiting-for-stable-measurements";c->stateSinceUs=now;c->lastNowUs=now;
  c->generation=0;c->lastSampleId=0;c->invalidSinceUs=0;fwt_clear_window(c,now);
 }
@@ -326,6 +375,7 @@ static inline fwt_request fwt_tick(fwt_controller *c,const fwt_input *i,uint64_t
  if(!isfinite(uncertainty)) return fwt_pause(c,"measurement-uncertainty-invalid");
  const bool errors=c->worstError>FWT_CHIP_ERROR_LIMIT||c->sumError/c->samples>FWT_BOARD_ERROR_LIMIT;
  if(errors) {
+  fwt_event_measure(c,FWT_EVENT_ERRORS,"error-window-limit",now,hash,power,false,0,0);
   if(++c->recoveryAttempts>6) return fwt_pause(c,"error-recovery-exhausted");
   ++c->rejected;c->trial=false;
   /* Correct errors with voltage only while both thermal/electrical margins
@@ -339,12 +389,17 @@ static inline fwt_request fwt_tick(fwt_controller *c,const fwt_input *i,uint64_t
  }
  c->recoveryAttempts=0;
  if(!c->bestAvailable) {
+  fwt_event_measure(c,FWT_EVENT_BASELINE,"round-reference-measured",now,hash,power,false,0,0);
   c->baselineHash=hash;c->baselinePower=power;c->bestHash=hash;c->bestPower=power;
   c->best=c->current;c->bestScore=1;c->bestUncertainty=uncertainty;c->bestAvailable=true;
   if(c->holdAfterRecovery) {fwt_hold(c,now);return fwt_none();}
  } else {
   const double score=fwt_score(c,hash,power);
   if(!isfinite(score)||score<=0) return fwt_pause(c,"measurement-score-invalid");
+  const double required=c->bestScore*(1+fmax(0.002,uncertainty+c->bestUncertainty));
+  fwt_event_measure(c,score>required?FWT_EVENT_ACCEPTED:c->trial?FWT_EVENT_REJECTED:FWT_EVENT_RETAINED,
+   score>required?"score-beat-required-margin":c->trial?"improvement-within-noise-margin":"best-point-remeasured",
+   now,hash,power,true,score,required);
   if(score>c->bestScore*(1+fmax(0.002,uncertainty+c->bestUncertainty))) {
    c->bestScore=score;c->best=c->current;c->bestHash=hash;c->bestPower=power;c->bestUncertainty=uncertainty;c->noImprovement=0;
   } else if(c->trial) {

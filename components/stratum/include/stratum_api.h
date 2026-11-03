@@ -38,6 +38,8 @@ typedef enum
     CUSTOM_CRT = 2,
 } tls_mode;
 
+#include "work_source_stamp.h"
+
 typedef struct mining_notify
 {
     char *job_id;
@@ -50,6 +52,7 @@ typedef struct mining_notify
     uint32_t target;
     uint32_t ntime;
     bool clean_jobs;
+    work_source_stamp work_source;
 } mining_notify;
 
 typedef struct StratumApiV1Message

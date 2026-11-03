@@ -41,8 +41,10 @@ typedef struct {
     unsigned confirmations, backup_matches, rail_confirmations;
     float rail_frequency;
     uint64_t backup_match_at;
+    uint64_t last_owner_tick;
     char mac[13], board[8];
     fwt_controller core;
+    fwt_history history;
     fwt_input input;
     TPS546_StrictTelemetry strict;
     bool sensor_ok;
@@ -321,7 +323,7 @@ void autotune_gamma_init(GlobalState *state) {
         .maxPowerW=40,.frequencyStepMHz=6.25,.voltageStepMv=5};
     const fwt_config config = {.priority=FWT_BALANCED,.continuous=false,
         .minFrequencyMHz=400,.maxFrequencyMHz=mhz,.minVoltageMv=1000,.maxVoltageMv=mv,
-        .maxAsicTempC=65,.maxVrmTempC=85,.maxPowerW=state ? state->DEVICE_CONFIG.power_consumption_target : 22};
+        .maxAsicTempC=60,.maxVrmTempC=70,.maxPowerW=state ? state->DEVICE_CONFIG.power_consumption_target : 22};
     fwt_init(&tuner.core,&limits,&config);
     if (tuner.supported) {
         cJSON *record = NULL;
@@ -405,6 +407,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
     if (!tuner.initialized || !tuner.supported || !mv || !mhz) return false;
     pthread_mutex_lock(&tuner_mutex);
     uint64_t now = esp_timer_get_time();
+    tuner.last_owner_tick = now;
     const uint32_t epoch = atomic_load(&manual_epoch);
     if (atomic_load(&transition_live) && atomic_load(&transition_epoch) != epoch)
         autotune_gamma_owner_idle();
@@ -485,6 +488,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
         owned = true;
     } else if (tuner.core.owns) {
         fwt_request request = fwt_tick(&tuner.core,&tuner.input,now);
+        fwt_history_capture(&tuner.history,&tuner.core);
         if (request.kind == FWT_REQUEST_PAUSE) {
             tuner.override_reason = tuner.core.reason;
             pthread_mutex_unlock(&tuner_mutex);
@@ -534,7 +538,10 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
                 tuner.restore_pending = !equal;
                 tuner.override_reason = equal ? "backup-restored" : "restore-readback-failed";
                 owned = false; atomic_store(&transition_live,false);
-            } else fwt_applied(&tuner.core,true,now);
+            } else {
+                fwt_applied(&tuner.core,true,now);
+                fwt_history_capture(&tuner.history,&tuner.core);
+            }
         }
     }
     if (owned) {
@@ -567,6 +574,7 @@ bool autotune_gamma_transition_finished(GlobalState *state, bool success) {
             uart_wait_tx_done(UART_NUM_1,pdMS_TO_TICKS(1000)) == ESP_OK;
         if (!success) {
             if (tuner.core.awaitingApply) fwt_applied(&tuner.core,false,now);
+            fwt_history_capture(&tuner.history,&tuner.core);
             tuner.override_reason = "transition-failed";
         } else {
             tuner.commanded = true; tuner.confirming = true;
@@ -623,8 +631,13 @@ static bool fresh_input(uint64_t now) {
     return live_mining() && tuner.input.valid && tuner.input.capturedAtUs &&
         now >= tuner.input.capturedAtUs && now-tuner.input.capturedAtUs <= TUNE_FRESH_US;
 }
+static bool ownership_revoked(void) {
+    return tuner.frozen || ((tuner.core.owns || tuner.restore_pending) &&
+        tuner.owner_epoch != atomic_load(&manual_epoch));
+}
 static const char *presentation_reason(uint64_t now) {
     if (!tuner.storage_ok) return "storage-unavailable";
+    if (ownership_revoked()) return tuner.frozen && tuner.override_reason ? tuner.override_reason : "manual-control";
     const char *reason = inactive_fault_reason();
     if (reason) return reason;
     reason = tuner.override_reason ? tuner.override_reason : tuner.core.reason;
@@ -637,7 +650,7 @@ static const char *presentation_reason(uint64_t now) {
     return reason ? reason : "disabled";
 }
 static bool obscured_search(void) {
-    return tuner.restore_pending || tuner.frozen || tuner.override_reason != NULL;
+    return tuner.restore_pending || ownership_revoked() || tuner.override_reason != NULL;
 }
 bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out, uint64_t now) {
     if (!out) return false;
@@ -648,10 +661,14 @@ bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out, uint
     out->supported = tuner.initialized && tuner.supported;
     out->available = out->supported && tuner.storage_ok;
     out->telemetryFresh = fresh_input(now);
+    if(out->telemetryFresh) {out->hashRateGHs=tuner.input.hashRateGHs;out->powerW=tuner.input.powerW;}
     out->fault = current_fault();
-    out->active = tuner.core.active; out->ownsSettings = tuner.core.owns || tuner.restore_pending;
+    out->active = !ownership_revoked() && tuner.core.active; out->ownsSettings = !ownership_revoked() && (tuner.core.owns || tuner.restore_pending);
     out->restoring = tuner.restore_pending; out->state = tuner.core.state; out->priority = tuner.core.config.priority;
     out->search = fwt_search_read(&tuner.core,now,obscured_search());
+    fwt_history_capture(&tuner.history,&tuner.core);
+    out->hasDecision = fwt_history_count(&tuner.history)>0;
+    out->latestDecision = fwt_event_short_label(fwt_history_latest(&tuner.history));
     out->currentAvailable = out->telemetryFresh && fwt_positive(tuner.input.current.frequencyMHz) &&
         fwt_positive(tuner.input.current.coreVoltageMv);
     if (out->currentAvailable) out->current = tuner.input.current;
@@ -660,12 +677,40 @@ bool autotune_gamma_try_display_snapshot(GammaAutotuneDisplaySnapshot *out, uint
     return true;
 }
 _Static_assert(sizeof(GammaAutotuneDisplaySnapshot) <= 256,"Keep display snapshots small and on-stack");
+static bool add_events(cJSON *status) {
+    cJSON *events=cJSON_AddArrayToObject(status,"events");
+    if(!events || !cJSON_AddNumberToObject(status,"eventCapacity",FWT_EVENT_CAPACITY)) return false;
+    for(unsigned i=0;i<fwt_history_count(&tuner.history);++i) {
+        const fwt_event *e=fwt_history_at(&tuner.history,i);
+        cJSON *event=cJSON_CreateObject();
+        if(!event) return false;
+        if(!cJSON_AddItemToArray(events,event)) {cJSON_Delete(event);return false;}
+        if(!cJSON_AddNumberToObject(event,"id",e->id) || !cJSON_AddNumberToObject(event,"atSeconds",e->atUs/1000000.0) ||
+           !cJSON_AddStringToObject(event,"kind",fwt_event_kind_name(e->kind)) ||
+           !cJSON_AddStringToObject(event,"reason",e->reason?e->reason:"unknown") ||
+           !cJSON_AddStringToObject(event,"outcome",fwt_event_outcome_name(e->outcome)) ||
+           !add_point(event,"from",fwt_positive(e->from.frequencyMHz)&&fwt_positive(e->from.coreVoltageMv),e->from) ||
+           !add_point(event,"point",true,e->point)) return false;
+        if(e->hasMeasurement) {
+            cJSON *mean=cJSON_AddObjectToObject(event,"measurement");
+            if(!mean || !cJSON_AddNumberToObject(mean,"hashRateGHs",e->hashRateGHs) ||
+               !cJSON_AddNumberToObject(mean,"powerW",e->powerW) ||
+               !cJSON_AddNumberToObject(mean,"errorPercentage",e->errorPercentage) ||
+               !cJSON_AddNumberToObject(mean,"worstErrorPercentage",e->worstErrorPercentage)) return false;
+        } else if(!cJSON_AddNullToObject(event,"measurement")) return false;
+        if(e->hasScore) {
+            if(!cJSON_AddNumberToObject(event,"score",e->score)||!cJSON_AddNumberToObject(event,"requiredScore",e->requiredScore)) return false;
+        } else if(!cJSON_AddNullToObject(event,"score")||!cJSON_AddNullToObject(event,"requiredScore")) return false;
+    }
+    return true;
+}
 static cJSON *report(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) return NULL;
     pthread_mutex_lock(&tuner_mutex);
     uint64_t now = esp_timer_get_time();
     tuner.observer_until = now + UINT64_C(15000000);
+    fwt_history_capture(&tuner.history,&tuner.core);
     cJSON *hardware = cJSON_AddObjectToObject(root,"hardware");
     cJSON *limits = cJSON_AddObjectToObject(root,"limits");
     cJSON *guidance = cJSON_AddObjectToObject(root,"guidance");
@@ -693,14 +738,15 @@ static cJSON *report(void) {
     NUM(limits,"maxPowerW",tuner.core.limits.maxPowerW);
     NUM(limits,"frequencyStepMHz",tuner.core.limits.frequencyStepMHz);
     NUM(limits,"voltageStepMv",tuner.core.limits.voltageStepMv);
-    STR(guidance,"asic","Initial tuning ceiling 65 C; adjustable up to 70 C. Existing 75 C firmware protection remains active. These are experimental control margins, not a manufacturer-certified junction limit.");
-    STR(guidance,"vrm","Initial tuning ceiling 85 C; adjustable up to 95 C on the TPS546 die sensor. Existing 105 C firmware protection and regulator faults remain authoritative.");
+    STR(guidance,"asic","Recommended/default tuning ceiling: 60 C. Above 60 C needs caution; above 65 C is strongly discouraged. Higher configurable limits are not recommended operating targets or certified junction temperatures. Existing 75 C firmware protection remains active.");
+    STR(guidance,"vrm","Recommended/default tuning ceiling: 70 C. Above 70 C needs caution; 80 C and higher is strongly discouraged. Protection cutoffs are not recommended operating targets. Initial tuning ceiling 85 C; adjustable up to 95 C on the TPS546 die sensor. Existing 105 C firmware protection and regulator faults remain authoritative.");
     STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Frequency and voltage upper bounds initially match your saved settings; raising them is an explicit experimental choice. PLL frequency is computed from commands, not measured clock readback.");
     BOOL(guidance,"experimental",true);
     STR(status,"state",tuner.restore_pending ? "restoring" : fwt_state_name(tuner.core.state));
     STR(status,"reason",presentation_reason(now));
-    BOOL(status,"active",tuner.core.active); BOOL(status,"ownsSettings",tuner.core.owns || tuner.restore_pending);
+    BOOL(status,"active",!ownership_revoked() && tuner.core.active); BOOL(status,"ownsSettings",!ownership_revoked() && (tuner.core.owns || tuner.restore_pending));
     NUM(status,"runId",tuner.core.runId); NUM(status,"experiments",tuner.core.experiments);
+    if(!add_events(status)) goto failed;
     if (!add_point(status,"baseline",tuner.core.baselineAvailable,tuner.core.baseline) ||
         !add_point(status,"current",tuner.input.current.frequencyMHz > 0,tuner.input.current) ||
         !add_point(status,"best",tuner.core.bestAvailable,tuner.core.best)) goto failed;
@@ -836,6 +882,7 @@ static const char *handle_action(const cJSON *json) {
         tuner.override_reason="restore-requested";
     } else error="invalid-request";
 done:
+    fwt_history_capture(&tuner.history,&tuner.core);
     pthread_mutex_unlock(&tuner_mutex);
     return error;
 }
@@ -859,6 +906,35 @@ static esp_err_t get_tuner(httpd_req_t *req) {
     httpd_resp_set_type(req,"application/json");
     int prebuffer=4096; esp_err_t err=HTTP_send_json(req,json,&prebuffer); cJSON_Delete(json); return err;
 }
+static esp_err_t get_activity(httpd_req_t *req) {
+    if(!allowed(req)) return ESP_OK;
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    cJSON *json=cJSON_CreateObject();
+    if(!json) return response(req,"503 Service Unavailable","report-unavailable");
+    bool locked=pthread_mutex_trylock(&tuner_mutex)==0;
+    bool ok=cJSON_AddNumberToObject(json,"schemaVersion",1) &&
+        cJSON_AddBoolToObject(json,"available",locked&&tuner.initialized);
+    if(locked&&tuner.initialized) {
+        const uint64_t now=esp_timer_get_time();
+        const bool revoked=ownership_revoked();
+        ok=ok && cJSON_AddBoolToObject(json,"supported",tuner.supported) &&
+            cJSON_AddBoolToObject(json,"active",!revoked&&tuner.core.active) &&
+            cJSON_AddBoolToObject(json,"ownsSettings",!revoked&&(tuner.core.owns||tuner.restore_pending)) &&
+            cJSON_AddBoolToObject(json,"fault",current_fault()||tuner.core.state==FWT_FAULTED) &&
+            cJSON_AddStringToObject(json,"state",tuner.restore_pending?"restoring":fwt_state_name(tuner.core.state)) &&
+            cJSON_AddStringToObject(json,"reason",presentation_reason(now)) &&
+            cJSON_AddStringToObject(json,"priority",fwt_priority_name(tuner.core.config.priority)) &&
+            cJSON_AddBoolToObject(json,"continuous",tuner.core.config.continuous) &&
+            cJSON_AddNumberToObject(json,"runId",tuner.core.runId);
+        if(tuner.last_owner_tick&&now>=tuner.last_owner_tick)
+            ok=ok&&cJSON_AddNumberToObject(json,"controllerAgeSeconds",(now-tuner.last_owner_tick)/1000000.0);
+        else ok=ok&&cJSON_AddNullToObject(json,"controllerAgeSeconds");
+    }
+    if(locked) pthread_mutex_unlock(&tuner_mutex);
+    if(!ok) {cJSON_Delete(json);return response(req,"503 Service Unavailable","report-unavailable");}
+    httpd_resp_set_type(req,"application/json");
+    int prebuffer=1024;esp_err_t error=HTTP_send_json(req,json,&prebuffer);cJSON_Delete(json);return error;
+}
 static esp_err_t post_tuner(httpd_req_t *req) {
     if (!allowed(req)) return ESP_OK;
     if (!req->content_len || req->content_len >= TUNE_BODY_MAX) return response(req,"400 Bad Request","invalid-request");
@@ -881,8 +957,9 @@ static esp_err_t post_tuner(httpd_req_t *req) {
 esp_err_t autotune_gamma_register(httpd_handle_t server) {
     const httpd_uri_t routes[] = {
         {.uri="/api/5tratum/autotune",.method=HTTP_GET,.handler=get_tuner},
-        {.uri="/api/5tratum/autotune",.method=HTTP_POST,.handler=post_tuner}};
-    for(unsigned i=0;i<2;++i) {
+        {.uri="/api/5tratum/autotune",.method=HTTP_POST,.handler=post_tuner},
+        {.uri="/api/5tratum/autotune/activity",.method=HTTP_GET,.handler=get_activity}};
+    for(unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);++i) {
         esp_err_t error=httpd_register_uri_handler(server,&routes[i]);
         if(error!=ESP_OK) return error;
     }

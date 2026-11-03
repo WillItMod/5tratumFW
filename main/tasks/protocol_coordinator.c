@@ -1,3 +1,4 @@
+#include "work_difficulty.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_transport.h"
@@ -105,7 +106,7 @@ void protocol_coordinator_request_network_reconnect(void)
     if (s_event_queue) xQueueSend(s_event_queue, &event, 0);
 }
 unsigned protocol_coordinator_work_generation(void) { return atomic_load(&s_work_generation); }
-void protocol_coordinator_invalidate_work(void) { atomic_fetch_add(&s_work_generation, 1); }
+void protocol_coordinator_invalidate_work(void) { atomic_fetch_add(&s_work_generation, 1); work_difficulty_disconnect(); }
 static void send_protocol_event(coordinator_event_type_t type, bool exiting)
 {
     // Capture generation before marking the task quiescent. Late old-connection

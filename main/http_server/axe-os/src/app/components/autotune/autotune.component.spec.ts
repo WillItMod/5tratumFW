@@ -206,9 +206,9 @@ describe('Dynamic tuning controls', () => {
     expect(component.history.length).toBe(1);expect(component.trends[0].points.length).toBe(1);expect(service.command).not.toHaveBeenCalled();
   });
   it('uses each distinct controller state for its live explanation without claiming an improvement', () => {
-    report.status.state='holding';component.load();expect(component.activityText).toContain('does not guarantee an improvement');
+    report.status.ownsSettings=true;report.status.state='holding';component.load();expect(component.activityText).toContain('does not guarantee an improvement');
     report.status.state='restoring';component.load();expect(component.activityText).toContain('confirms restoration');
-    report.status.state='disabled';component.load();expect(component.activityText).toContain('explicit consent');
+    report.status.ownsSettings=false;report.status.state='disabled';component.load();expect(component.activityText).toContain('explicit consent');
   });
 
   it('rejects overflowing derived energy without losing a legitimate zero-hash observation', () => {
@@ -232,6 +232,113 @@ describe('Dynamic tuning controls', () => {
     for(const change of [{phaseElapsedSeconds:null},{minimumSeconds:null},{minimumSeconds:0}]) {
       report.status.search={...search,...change};component.load();expect(component.search).toBeNull();expect(component.readError).toBe('');
     }
+  });
+
+  it('makes active, monitoring, held ownership, protection and stale status unambiguous', () => {
+    report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';component.load();expect(component.activityBanner.kind).toBe('active');
+    report.status.state='observing';component.load();expect(component.activityBanner.kind).toBe('observing');
+    report.status.active=false;report.status.state='holding';component.load();expect(component.activityBanner.kind).toBe('holding');expect(component.activityBanner.label).toContain('STILL OWNS');
+    report.status.telemetry.fault=true;component.load();expect(component.activityBanner.kind).toBe('fault');
+    now+=13000;expect(component.activityBanner.kind).toBe('unknown');
+  });
+  it('plots all five requested sensor panels and efficiency with board and worst errors on one scale', () => {
+    report.status.telemetry.errorPercentage=.05;report.status.telemetry.worstErrorPercentage=.08;component.load();
+    expect(component.trends.map(chart=>chart.name)).toEqual(['Useful hashrate','ASIC temperature','VRM temperature','Reported power','ASIC errors','Energy per useful hash']);
+    now+=5000;Object.assign(report.status.telemetry,{asicTempC:56,vrmTempC:50,powerW:82,hashRateGHs:4050,errorPercentage:.06,worstErrorPercentage:.09});component.load();
+    const row=component.history[component.history.length-1];expect(row.asicTempC).toBe(56);expect(row.vrmTempC).toBe(50);expect(row.powerW).toBe(82);expect(row.boardErrors).toBe(.06);expect(row.worstErrors).toBe(.09);
+    expect(component.trends[4].lines.map(line=>line.name)).toEqual(['Board','Worst ASIC']);expect(component.trends[4].lines[0].path).not.toBe(component.trends[4].lines[1].path);
+    expect(component.trends.every(chart=>chart.lines.every(line=>!line.path.includes('NaN')&&!line.path.includes('Infinity')))).toBeTrue();
+  });
+  it('breaks every sensor trace on invalid reads and resets each panel for a new run', () => {
+    report.status.telemetry.valid=false;now+=5000;component.load();
+    report.status.telemetry.valid=true;now+=5000;component.load();
+    expect(component.trends.every(chart=>chart.lines.every(line=>line.path.split('M').length-1===2))).toBeTrue();
+    report.status.runId++;component.load();expect(component.history.length).toBe(1);expect(component.trends.every(chart=>chart.lines.every(line=>line.points.length===1))).toBeTrue();
+  });
+  function event(id:number,change:any={}):any {return {id,atSeconds:100+id,kind:'adjustment',reason:'evaluating-nearby-operating-point',outcome:'requested',from:{frequencyMHz:525,coreVoltageMv:1150},point:{frequencyMHz:515,coreVoltageMv:1150},measurement:null,score:null,requiredScore:null,...change};}
+  it('keeps real requested and confirmed outcomes separate and upserts the same controller event ID', () => {
+    report.status.eventCapacity=8;report.status.events=[event(1,{kind:'started',reason:'measuring-starting-point',outcome:'measured',from:null}),event(2)];component.load();
+    expect(component.events.length).toBe(2);expect(component.eventOutcome(component.events[1])).toContain('awaiting confirmation');
+    report.status.events=[event(1,{kind:'started',reason:'measuring-starting-point',outcome:'measured',from:null}),event(2,{outcome:'applied'})];component.load();
+    expect(component.events.length).toBe(2);expect(component.eventOutcome(component.events[1])).toContain('miner confirmed');
+    report.status.events.push(event(3,{kind:'rejected',outcome:'measured',reason:'improvement-within-noise-margin',score:1.001,requiredScore:1.004,measurement:{hashRateGHs:4050,powerW:82,errorPercentage:.05,worstErrorPercentage:.08}}));component.load();
+    expect(component.eventTitle(component.events[2])).toBe('Comparison rejected');expect(component.eventScore(component.events[2].score)).toBe('1.001000');expect(component.eventReason(component.events[2])).toContain('did not clear');
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('records missed controller IDs, keeps at most100 events and clears run-scoped history', () => {
+    report.status.eventCapacity=8;report.status.events=[event(1)];component.load();report.status.events=[event(10),event(11)];component.load();
+    expect(component.eventGapBefore(component.events.find(row=>row.id===10)!)).toBe(8);
+    report.status.runId++;report.status.events=[];component.load();expect(component.events).toEqual([]);expect(component.eventGaps).toEqual([]);
+    for(let id=1;id<=130;id++){report.status.events=[event(id)];component.load();}
+    expect(component.events.length).toBe(100);expect(component.events[0].id).toBe(31);expect(component.visibleEvents.length).toBe(12);component.showEarlierEvents();expect(component.visibleEvents.length).toBe(100);
+  });
+  it('keeps Restore reachable and cached decisions historical when optional feed data is missing or malformed', () => {
+    report.status.eventCapacity=8;report.status.events=[event(1)];report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();
+    report.status.events=[event(2,{score:NaN})];report.config=null as any;component.load();
+    expect(component.readError).toBe('');expect(component.eventFeedAvailable).toBeFalse();expect(component.events.length).toBe(1);expect(component.eventFeedNote).toContain('earlier observations');expect(component.canRestore).toBeTrue();
+    report.status.events=undefined;component.load();expect(component.canRestore).toBeTrue();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('renders future event kinds/outcomes as reported data without fabricating an accepted decision', () => {
+    report.status.eventCapacity=8;report.status.events=[event(1,{kind:'future-kind',outcome:'future-outcome',reason:'future-controller-reason',unboundedExtra:'x'.repeat(10000)})];component.load();
+    expect(Object.keys(component.events[0])).not.toContain('unboundedExtra');expect(component.eventTitle(component.events[0])).toBe('Controller event');expect(component.eventOutcome(component.events[0])).toContain('future-outcome');expect(component.eventReason(component.events[0])).toContain('future controller reason');
+    now+=13000;expect(component.eventFeedNote).toContain('earlier observations');
+  });
+  it('clears graphs and events when a reused run ID reports a new boot clock', () => {
+    report.status.eventCapacity=8;report.status.events=[event(1,{atSeconds:100})];component.load();now+=5000;component.load();expect(component.history.length).toBeGreaterThan(1);
+    report.status.events=[event(1,{atSeconds:5})];component.load();expect(component.events.length).toBe(1);expect(component.events[0].atSeconds).toBe(5);expect(component.history.length).toBe(1);
+  });
+
+  it('warns on saved and edited ceilings at exact user-defined recommendation boundaries without changing settings', () => {
+    expect(component.savedTemperatureWarnings.map(row=>[row.sensor,row.severity])).toEqual([['ASIC','warning'],['VRM','danger']]);
+    for(const [asic,vrm,expected] of [[60,70,[]],[65,79.99,['warning','warning']],[65.01,80,['danger','danger']]] as any[]) {
+      component.edit={...report.config,maxAsicTempC:asic,maxVrmTempC:vrm};expect(component.editedTemperatureWarnings.map(row=>row.severity)).toEqual(expected);
+    }
+    expect(report.config.maxAsicTempC).toBe(65);expect(report.config.maxVrmTempC).toBe(85);expect(service.command).not.toHaveBeenCalled();
+  });
+
+  it('edits an existing active tune without another waiver or Start and confirms saved feedback', fakeAsync(() => {
+    report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();
+    component.edit!.priority='performance';expect(component.waiverAccepted).toBeFalse();expect(component.canSave).toBeTrue();expect(component.saveActionLabel).toBe('Save changes to this tune');expect(component.editExplanation).toContain('No new waiver or Start');
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});component.save();tick(0);
+    expect(service.command.calls.count()).toBe(1);expect(service.command.calls.mostRecent().args[0].action).toBe('configure');expect(component.message).toContain('Changes saved for this tune');expect(component.waiverAccepted).toBeFalse();
+  }));
+  it('requires owned clock and voltage bounds to include the reported point but permits lower thermal and power ceilings', () => {
+    report.status.ownsSettings=true;report.status.active=true;report.status.state='measuring';report.status.current={frequencyMHz:500,coreVoltageMv:1100};component.load();
+    component.edit!.maxFrequencyMHz=499;expect(component.validationError).toContain('current reported point');component.save();expect(service.command).not.toHaveBeenCalled();
+    component.edit={...report.config,maxVoltageMv:1099};expect(component.validationError).toContain('current reported point');
+    component.edit={...report.config,maxAsicTempC:50,maxVrmTempC:40,maxPowerW:70};expect(component.validationError).toBe('');expect(component.canSave).toBeTrue();
+  });
+  it('explains applying and restoring locks without removing the recovery action', () => {
+    report.status.ownsSettings=true;report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    for(const state of ['applying','restoring']){report.status.state=state;component.load();component.edit!.priority='efficiency';expect(component.optionsLocked).toBeTrue();expect(component.canSave).toBeFalse();expect(component.validationError).not.toBe('');expect(component.canRestore).toBeTrue();}
+  });
+  it('opens an already-owned tune on its live dashboard and keeps an unsaved draft through polling', () => {
+    component.ngOnDestroy();report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';component=new AutotuneComponent(service as any);component.load();
+    expect(component.viewMode).toBe('live');component.viewMode='options';component.edit!.priority='performance';component.load();expect(component.edit!.priority).toBe('performance');expect(component.viewMode).toBe('options');expect(component.hasUnsavedChanges).toBeTrue();
+  });
+
+  it('uses released ownership ahead of cached phases without relaxing Start safety checks', () => {
+    report.status.active=false;report.status.ownsSettings=false;report.status.reason='manual-control';
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    for(const state of ['applying','restoring','suspended','faulted','measuring']) {
+      report.status.state=state;component.load();component.edit!.priority='efficiency';
+      expect(component.activityBanner.kind).toBe('off');expect(component.stateLabel).toBe('Inactive');
+      expect(component.ownershipText).toBe('Explicit Start required');expect(component.optionsLocked).toBeFalse();
+      expect(component.canSave).toBeTrue();expect(component.canRestore).toBeTrue();
+      expect(component.activityText).toContain('does not overwrite');
+      if(['applying','restoring','faulted'].includes(state)){component.waiverAccepted=true;expect(component.canStart).toBeFalse();}
+    }
+    report.status.telemetry.fault=true;component.load();expect(component.activityBanner.kind).toBe('fault');
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('clears old boot observations even when the reused event IDs have been evicted', () => {
+    report.status.runId=1;report.status.eventCapacity=8;
+    for(let id=1;id<=130;id++){report.status.events=[event(id,{atSeconds:1000+id})];now+=1000;component.load();}
+    expect(component.events.length).toBe(100);expect(component.events[0].id).toBe(31);
+    report.status.events=Array.from({length:8},(_,i)=>event(i+1,{atSeconds:5+i}));component.load();
+    expect(component.events.map(event=>event.id)).toEqual([1,2,3,4,5,6,7,8]);
+    expect(component.history.length).toBe(1);expect(component.eventGapBefore(component.events[0])).toBe(0);
+    expect(service.command).not.toHaveBeenCalled();
   });
 
 });

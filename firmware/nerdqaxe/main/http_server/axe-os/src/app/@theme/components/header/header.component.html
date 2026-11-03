@@ -3,6 +3,7 @@
   <span class="header-device">{{ deviceModel }}</span>
   <span *ngIf="apActive" class="ap-badge">Wi-Fi setup</span>
 </div>
+<app-tuning-status *ngIf="!apActive" class="header-tuning" tuningRoute="/pages/tuning"></app-tuning-status>
 <div class="header-tools">
   <label class="theme-picker"><span class="sr-only">Colour theme</span>
     <select [value]="currentTheme" (change)="changeTheme($any($event.target).value)">

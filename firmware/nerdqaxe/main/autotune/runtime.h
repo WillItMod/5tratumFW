@@ -19,9 +19,12 @@ bool transitionHealthy();
 void externalHandoff(const char *reason);
 struct FirmwareUpdateGuard { FirmwareUpdateGuard(); ~FirmwareUpdateGuard(); };
 bool report(JsonDocument &document);
+// Passive, nonblocking cache projection; never initializes the runtime.
+bool activity(JsonDocument &document);
 // Nonblocking RAM-only copy. A busy or uninitialized controller returns no data;
 // this never initializes storage, polls hardware or waits for the power owner.
 bool tryDisplaySnapshot(DisplaySnapshot &snapshot);
 }
 esp_err_t GET_five_tratum_autotune(httpd_req_t *req);
+esp_err_t GET_five_tratum_autotune_activity(httpd_req_t *req);
 esp_err_t POST_five_tratum_autotune(httpd_req_t *req);

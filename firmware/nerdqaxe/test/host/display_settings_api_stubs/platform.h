@@ -182,6 +182,8 @@ CONFIG_GETTER(isAutoScreenOffEnabled)
 struct PidSettings { int targetTemp = 57, p = 120, i = 40, d = 10; };
 struct Board {
     enum class Error { NONE, COINBASE_VERIFY_FAULT };
+    int maximumFrequency=800;
+    int getAbsMaxAsicFrequency(){return maximumFrequency;}
     void loadSettings() { assert(profileLockDepth > 0 && powerLockDepth > 0); record("Board::loadSettings"); }
     const char *getAsicModel() { return "BM1370"; }
     const char *getDeviceModel() {

@@ -1,3 +1,4 @@
+import { WorkDifficultyComponent } from '../components/work-difficulty/work-difficulty.component';
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -24,6 +25,7 @@ import { AutotuneComponent } from './autotune/autotune.component';
 @NgModule({
   imports: [
     CommonModule,
+    WorkDifficultyComponent,
     FormsModule,
     PagesRoutingModule,
     ThemeModule,

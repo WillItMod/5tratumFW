@@ -24,7 +24,7 @@ static bool queue_pending, draining_queue;
 static jmp_buf queue_drained;
 static void (*nvs_worker)(void *);
 static unsigned writes, commits, erases, reloads;
-static httpd_uri_t routes[5];
+static httpd_uri_t routes[8];
 static unsigned route_count;
 static GlobalState gs;
 static int fail_journal_allocation = -1, journal_allocations;
@@ -92,7 +92,7 @@ esp_err_t httpd_resp_sendstr(httpd_req_t *req,const char *text){snprintf(req->re
 esp_err_t httpd_resp_send_err(httpd_req_t *req,int code,const char *text){req->code=code;return httpd_resp_sendstr(req,text);}
 void httpd_resp_send_500(httpd_req_t *req){req->code=500;}
 int httpd_req_recv(httpd_req_t *req,char *out,size_t size){size_t count=req->content_len-req->received;if(count>size)count=size;if(count>17)count=17;memcpy(out,req->body+req->received,count);req->received+=count;return count;}
-esp_err_t httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route){(void)server;assert(route_count<5);routes[route_count++]=*route;return ESP_OK;}
+esp_err_t httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route){(void)server;assert(route_count<sizeof(routes)/sizeof(routes[0]));routes[route_count++]=*route;return ESP_OK;}
 esp_err_t HTTP_send_json(httpd_req_t *req,const cJSON *root,int *prebuffer){(void)prebuffer;char *text=cJSON_PrintUnformatted(root);if(!text)return ESP_ERR_NO_MEM;esp_err_t error=httpd_resp_sendstr(req,text);free(text);return error;}
 static httpd_req_t request(unsigned route,const char *body){httpd_req_t req={.code=200,.body=body,.content_len=body?strlen(body):0};routes[route].handler(&req);return req;}
 static void assert_string(NvsConfigKey key,const char *value){char *actual=nvs_config_get_string(key);assert(actual&&!strcmp(actual,value));free(actual);}

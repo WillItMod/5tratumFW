@@ -29,6 +29,12 @@ export interface AutotuneSearch {
   samples: number; minimumSamples: number; roundExperiments: number; roundExperimentLimit: number;
   rejectedWindows: number; reference: AutotuneMeans | null; best: AutotuneMeans | null;
 }
+export interface AutotuneEvent {
+  id: number; atSeconds: number; kind: string; reason: string; outcome: string;
+  from: AutotunePoint | null; point: AutotunePoint;
+  measurement: {hashRateGHs: number; powerW: number; errorPercentage: number; worstErrorPercentage: number} | null;
+  score: number | null; requiredScore: number | null;
+}
 export interface AutotuneReport {
   schemaVersion: 1; supported: boolean; waiverVersion: 1;
   hardware: { model: string; asicCount: number; asicSensor: string; vrmSensor: string; powerSource: string };
@@ -40,6 +46,7 @@ export interface AutotuneReport {
     telemetry: AutotuneTelemetry;
     /** Additive presentation data; never required to authorize Restore. */
     search?: AutotuneSearch;
+    eventCapacity?: number; events?: AutotuneEvent[];
   };
   backup: { available: boolean; restored: boolean; frequencyMHz: number | null; coreVoltageMv: number | null };
 }

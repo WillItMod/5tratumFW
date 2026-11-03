@@ -9,5 +9,6 @@
       <button type="button" class="fw-command-action" (click)="restart()" aria-label="Restart device"><i class="pi pi-refresh" aria-hidden="true"></i><span>Restart</span></button>
     </div>
   </ng-container>
+  <app-tuning-status *ngIf="!isAPMode" class="fw-global-tuning" tuningRoute="/tuning"></app-tuning-status>
   <button *ngIf="!isAPMode" #menubutton type="button" class="fw-menu-toggle" aria-label="Toggle navigation" [attr.aria-expanded]="layoutService.state.staticMenuMobileActive" (click)="layoutService.onMenuToggle()"><i class="pi" [ngClass]="layoutService.state.staticMenuMobileActive ? 'pi-times' : 'pi-bars'" aria-hidden="true"></i><span>Menu</span></button>
 </div>

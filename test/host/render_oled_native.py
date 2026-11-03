@@ -58,8 +58,9 @@ for index in range(6):
     donuts.paste(Image.open(OUT/f"{name}.png").convert("RGB").resize((512,128),Image.Resampling.NEAREST),(x,y+22))
 donuts.save(OUT/"oled-candidate-contact-sheet.png")
 tuning_names=["tuning-disabled","tuning-measuring","tuning-settling","tuning-holding",
-              "tuning-restoring","tuning-blocked","tuning-stale","tuning-unavailable"]
-tuning=Image.new("RGB",(1080,4*164+44),"#101820")
+              "tuning-restoring","tuning-blocked","tuning-stale","tuning-unavailable",
+              "tuning-efficiency","tuning-monitor"]
+tuning=Image.new("RGB",(1080,((len(tuning_names)+1)//2)*164+44),"#101820")
 tuning_draw=ImageDraw.Draw(tuning)
 tuning_draw.text((14,10),"SIMULATED TUNING - actual read-only LVGL 128 x 32, enlarged 4x",fill="white")
 for index,name in enumerate(tuning_names):

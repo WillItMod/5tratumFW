@@ -1,0 +1,6 @@
+<a *ngIf="!hiddenLegacy" class="tuning-badge" [ngClass]="'tuning-badge--'+badge.tone" [routerLink]="tuningRoute"
+   [attr.aria-label]="badge.description" [attr.title]="badge.description">
+  <span class="tuning-dot" aria-hidden="true"></span>
+  <span class="tuning-copy" role="status" aria-live="polite"><strong>{{ badge.label }}</strong><small><span class="tuning-goal" *ngIf="badge.goal">{{ badge.goal }} · </span>{{ badge.phase }}</small></span>
+  <span class="tuning-open" aria-hidden="true">↗</span>
+</a>

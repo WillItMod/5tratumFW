@@ -1,3 +1,4 @@
+#include "tasks/mining_control.h"
 #include <ctype.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -81,6 +82,22 @@ StratumManager::MuxDisplayState StratumManager::getMuxDisplayState() {
         if (m_stratumTasks[pool]) result.pools[pool] = m_stratumTasks[pool]->getMuxStatus();
     }
     return result;
+}
+
+FiveTratumWork::Snapshot StratumManager::getWorkDifficulty() {
+    PThreadGuard lock(m_mutex);
+    FiveTratumWork::Snapshot out;out.nowUs=esp_timer_get_time();
+    FiveTratumWork::Sample jobs[2]{};const uint64_t generation=asicJobs.copyWorkDifficulty(jobs,out.nowUs);
+    const bool live=FiveTratumMining::miningWritesAllowed()&&generation==FiveTratumMining::workGeneration();
+    const int active=getCompatPingPoolIndex()==SECONDARY?SECONDARY:PRIMARY;
+    for(int pool=PRIMARY;pool<=SECONDARY;++pool) {
+        auto *task=m_stratumTasks[pool];
+        auto &row=out.pools[pool];
+        if(task) {PThreadGuard peer(task->m_muxStatusMutex);row.connected=task->m_muxStatus.connected();}
+        row.selected=row.connected&&(isDualPool()||pool==active);
+        if(row.selected&&live) row.work=jobs[pool];
+    }
+    return out;
 }
 
 // This static wrapper converts the void* parameter into a StratumManager pointer

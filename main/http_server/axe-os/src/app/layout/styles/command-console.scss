@@ -142,3 +142,7 @@
 .fw-command-shell .fw-update-note { color: var(--text-color-secondary); font-size: 12px; line-height: 1.6; margin: 0 0 20px; }
 
 .fw-command-shell .fw-config-page > app-edit > .fw-control-warning { color: var(--text-color-secondary); font-size: 12px; line-height: 1.6; }
+
+/* A cached, read-only tuner indicator remains visible outside the Tuning page. */
+@media(max-width:991px){.fw-command-shell{--fw-masthead-height:144px;.layout-topbar.fw-masthead{flex-wrap:wrap;align-content:center;gap:8px 14px}.fw-global-tuning{order:3;flex:0 0 100%;max-width:100%}}.fw-command-shell.orbit-ap-mode{--fw-masthead-height:88px}}
+@media(max-width:575px){.fw-command-shell{--fw-masthead-height:184px}.fw-command-shell.orbit-ap-mode{--fw-masthead-height:88px}}

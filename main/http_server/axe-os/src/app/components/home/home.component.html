@@ -6,6 +6,7 @@
   </header>
   <div class="fw-notices"><p-message *ngFor="let message of messages" [severity]="message.severity" [text]="message.text" styleClass="w-full mb-3" /></div>
   <div *ngIf="info.showNewBlock" class="fw-candidate fw-candidate-notice"><span>Block candidate detected. Verify acceptance with your pool.</span><button type="button" (click)="dismissBlockFound()" aria-label="Dismiss block candidate notification"><i class="pi pi-times" aria-hidden="true"></i></button></div>
+  <app-work-difficulty></app-work-difficulty>
   <div class="fw-workspace" [class.fw-stale]="telemetryStale">
     <section class="fw-performance fw-panel" aria-label="Mining performance">
       <div class="fw-panel-heading"><h2>Mining performance</h2><span class="fw-subtle">SHA-256</span></div>
@@ -61,7 +62,7 @@
       <div class="fw-display-option"><label><input type="checkbox" [checked]="showCoinbaseData" (change)="setCoinbaseDisplay($any($event.target).checked)" />Show job &amp; coinbase details</label><small>Saved in this browser. Observed job data does not verify pool or MUX payouts.</small></div>
       <section class="fw-job-details" *ngIf="showCoinbaseData" aria-label="Job and coinbase details">
         <div class="fw-panel-heading"><h3>Current job</h3><span class="fw-subtle">Optional diagnostics</span></div>
-        <dl class="fw-reading-list"><div><dt>Block height</dt><dd>{{info.blockHeight}}</dd></div><div><dt>Network difficulty</dt><dd>{{info.networkDifficulty | diffSuffix}}</dd></div><div><dt>Scriptsig</dt><dd class="fw-job-script">{{info.scriptsig}}</dd></div></dl>
+        <dl class="fw-reading-list"><div><dt>Block height</dt><dd>{{info.blockHeight}}</dd></div><div><dt>Scriptsig</dt><dd class="fw-job-script">{{info.scriptsig}}</dd></div></dl>
         <div class="fw-coinbase-output" *ngFor="let output of info.coinbaseOutputs"><span sensitive-data>{{output.address | address}}</span><strong>{{output.value | number:'1.0-0'}}</strong></div>
       </section>
     </div>

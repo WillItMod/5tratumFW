@@ -1,3 +1,4 @@
+#include "work_difficulty.h"
 #include "esp_log.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -260,6 +261,7 @@ static void stratum_v2_enqueue_job(GlobalState *GLOBAL_STATE, sv2_conn_t *conn,
         free(old);
     }
 
+    job->work_source=work_difficulty_received(conn->work_source_pool,conn->work_source_session,(uint64_t)esp_timer_get_time());
     queue_enqueue(&GLOBAL_STATE->stratum_queue, job);
 }
 
@@ -290,6 +292,7 @@ static void stratum_v2_enqueue_ext_job(GlobalState *GLOBAL_STATE, sv2_conn_t *co
         sv2_ext_job_free((sv2_ext_job_t *)old);
     }
 
+    job->work_source=work_difficulty_received(conn->work_source_pool,conn->work_source_session,(uint64_t)esp_timer_get_time());
     queue_enqueue(&GLOBAL_STATE->stratum_queue, job);
 }
 
@@ -534,6 +537,7 @@ static void stratum_v2_handle_set_new_prev_hash(GlobalState *GLOBAL_STATE, sv2_c
 
     ESP_LOGI(TAG, "New prev_hash: job_id=%lu, ntime=%lu, nbits=%08lx", job_id, min_ntime, nbits);
 
+    work_difficulty_forget_job(conn->work_source_pool,conn->work_source_session);
     GLOBAL_STATE->network_nonce_diff = (uint64_t) networkDifficulty(nbits);
     suffixString(GLOBAL_STATE->network_nonce_diff, GLOBAL_STATE->network_diff_string, DIFF_STRING_SIZE, 0);
 
@@ -622,6 +626,7 @@ void stratum_v2_task(void *pvParameters)
 
     // Determine channel type before setting up queue free function
     bool use_fallback_init = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback;
+    work_difficulty_select(use_fallback_init?1:0);
     sv2_channel_type_t channel_type = sv2_select_channel_type(GLOBAL_STATE, use_fallback_init);
 
     // Set V2-specific free function for the work queue
@@ -748,6 +753,8 @@ void stratum_v2_task(void *pvParameters)
 
         // Reset connection state
         memset(conn, 0, sizeof(*conn));
+        conn->work_source_pool=use_fallback?1:0;
+        conn->work_source_session=work_difficulty_connect(conn->work_source_pool);
         GLOBAL_STATE->sv2_conn = conn;
         stratum_v2_update_pending_shares(GLOBAL_STATE);
 
