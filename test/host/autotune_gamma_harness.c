@@ -160,9 +160,30 @@ static void expect_error(const char *body,const char *error) {
 }
 static httpd_req_t configure_request(fwt_config config) {
     cJSON *json=cJSON_CreateObject();assert(json&&cJSON_AddStringToObject(json,"action","configure"));
-    assert(cJSON_AddItemToObject(json,"config",config_json(&config)));
+    assert(cJSON_AddItemToObject(json,"config",config_json(&config,false)));
     char *body=cJSON_PrintUnformatted(json);assert(body);
     httpd_req_t req=tune_request(true,body);free(body);cJSON_Delete(json);return req;
+}
+static httpd_req_t configure_clock_request(fwt_config config,bool advanced,int warning) {
+    cJSON *json=cJSON_CreateObject();assert(json&&cJSON_AddStringToObject(json,"action","configure"));
+    assert(cJSON_AddItemToObject(json,"config",config_json(&config,advanced)));
+    if(warning) {
+        if(warning==3) assert(cJSON_AddNumberToObject(json,"advancedClockWarningAccepted",1));
+        else assert(cJSON_AddBoolToObject(json,"advancedClockWarningAccepted",warning!=2));
+        assert(cJSON_AddNumberToObject(json,"advancedClockWarningVersion",warning==4?2:1));
+    }
+    char *body=cJSON_PrintUnformatted(json);assert(body);
+    httpd_req_t req=tune_request(true,body);free(body);cJSON_Delete(json);return req;
+}
+static void manual_clock(float frequency) {
+    nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY,frequency);drain_auth_write();
+    gs.POWER_MANAGEMENT_MODULE.frequency_value=frequency;
+    gs.POWER_MANAGEMENT_MODULE.actual_frequency=frequency;
+    host_now+=TUNE_POLL_US;observe();
+}
+static void advanced_start(void) {
+    httpd_req_t req=tune_request(true,"{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":true}");
+    assert(req.code==200&&tuner.core.owns&&tuner.backup_available);
 }
 static void *wire_writer(void *unused) {
     (void)unused;uint8_t bytes[12]={0};
@@ -196,7 +217,133 @@ static void *wire_revoker(void *fault) {
 }
 int main(int argc,char **argv) {
     assert(argc==2);init();const char *name=argv[1];
-    if(!strcmp(name,"recovery-running-denied")) {
+    if(!strcmp(name,"advanced-migration")) {
+        fwt_config config=tuner.core.config;
+        cJSON *record=bound_json(),*legacy=config_json(&config,false);assert(record&&legacy);
+        cJSON_DeleteItemFromObjectCaseSensitive(legacy,"advancedClockOverride");
+        assert(cJSON_AddItemToObject(record,"config",legacy));
+        assert(write_record("config",record)==ESP_OK);cJSON_Delete(record);
+        unsigned before=writes;reboot_runtime();
+        assert(writes==before&&tuner.storage_ok&&!tuner.advanced_clock_override&&!tuner.core.owns);
+        assert(tuner.core.limits.maxFrequencyMHz==1200&&tuner.core.config.maxFrequencyMHz==625.125);
+        cJSON *json=report();assert(json);
+        const cJSON *saved=cJSON_GetObjectItemCaseSensitive(json,"config");
+        assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(saved,"advancedClockOverride")));
+        const cJSON *limits=cJSON_GetObjectItemCaseSensitive(json,"limits");
+        assert(cJSON_GetObjectItemCaseSensitive(limits,"maxFrequencyMHz")->valuedouble==690);
+        assert(cJSON_GetObjectItemCaseSensitive(limits,"advancedMaxFrequencyMHz")->valuedouble==1200);
+        cJSON_Delete(json);
+        manual_clock(750);reboot_runtime();
+        assert(!tuner.advanced_clock_override&&gs.POWER_MANAGEMENT_MODULE.frequency_value==750);
+        /* Existing valid saved configuration is retained, not silently raised. */
+        assert(tuner.core.config.maxFrequencyMHz==625.125);
+        find(2,"config")->ns=99;reboot_runtime();
+        assert(tuner.core.config.maxFrequencyMHz==690&&gs.POWER_MANAGEMENT_MODULE.frequency_value==750);
+        assert(!tuner.core.owns&&!tuner.backup_available&&!point_changes);
+    } else if(!strcmp(name,"advanced-consent")) {
+        fwt_config config=tuner.core.config;config.maxFrequencyMHz=800;
+        unsigned before=writes;
+        httpd_req_t req=configure_clock_request(config,false,0);assert(req.code!=200);
+        req=configure_clock_request(config,true,0);assert(req.code!=200&&strstr(req.reply,"advanced-clock-warning-required"));
+        for(int warning=2;warning<=4;++warning) assert(configure_clock_request(config,true,warning).code!=200);
+        assert(writes==before&&!tuner.advanced_clock_override);
+        assert(configure_clock_request(config,true,1).code==200&&tuner.advanced_clock_override);
+        const Entry *saved=find(2,"config");assert(saved&&strstr((char *)saved->bytes,"\"advancedClockOverride\":true"));
+        before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","advanced-clock-acceptance-required");
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":false}","advanced-clock-acceptance-required");
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":1}","waiver-required");
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":false,\"waiverVersion\":1,\"advancedClockAccepted\":true}","waiver-required");
+        assert(writes==before&&!tuner.backup_available&&!tuner.core.owns);
+        advanced_start();assert(tuner.advanced_clock_override);
+        autotune_gamma_interrupt("manual-control");host_now+=TUNE_POLL_US;observe();
+        reboot_runtime();assert(tuner.storage_ok&&tuner.advanced_clock_override&&!tuner.core.owns);
+        host_now+=TUNE_POLL_US;observe();before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","advanced-clock-acceptance-required");
+        assert(writes==before&&!tuner.core.owns);advanced_start();
+    } else if(!strcmp(name,"advanced-strict")) {
+        fwt_config config=tuner.core.config;unsigned before=writes;
+        for(unsigned variant=0;variant<6;++variant) {
+            cJSON *json=cJSON_CreateObject(),*options=config_json(&config,false);assert(json&&options);
+            assert(cJSON_AddStringToObject(json,"action","configure")&&cJSON_AddItemToObject(json,"config",options));
+            if(variant==0) assert(cJSON_ReplaceItemInObjectCaseSensitive(options,"advancedClockOverride",cJSON_CreateNumber(1)));
+            if(variant==1) assert(cJSON_AddBoolToObject(options,"advancedClockOverride",true));
+            if(variant==2) assert(cJSON_AddBoolToObject(options,"unknownClockOverride",true));
+            if(variant==3) assert(cJSON_AddBoolToObject(json,"advancedClockWarningAccepted",true));
+            if(variant==4) assert(cJSON_AddNumberToObject(json,"advancedClockWarningVersion",1));
+            if(variant==5) {
+                assert(cJSON_AddBoolToObject(json,"advancedClockWarningAccepted",false));
+                assert(cJSON_AddNumberToObject(json,"advancedClockWarningVersion",2));
+            }
+            char *body=cJSON_PrintUnformatted(json);assert(body);
+            assert(tune_request(true,body).code!=200);free(body);cJSON_Delete(json);
+        }
+        assert(writes==before&&!tuner.advanced_clock_override&&!tuner.core.owns);
+        assert(configure_clock_request(config,false,2).code==200);
+        cJSON *legacy=cJSON_CreateObject(),*options=config_json(&config,false);assert(legacy&&options);
+        cJSON_DeleteItemFromObjectCaseSensitive(options,"advancedClockOverride");
+        assert(cJSON_AddStringToObject(legacy,"action","configure")&&cJSON_AddItemToObject(legacy,"config",options));
+        char *body=cJSON_PrintUnformatted(legacy);assert(body);
+        assert(tune_request(true,body).code==200);free(body);cJSON_Delete(legacy);
+        assert(strstr((char *)find(2,"config")->bytes,"\"advancedClockOverride\":false"));
+    } else if(!strcmp(name,"advanced-pll-candidates")) {
+        manual_clock(996.25f);reboot_runtime();host_now+=TUNE_POLL_US;observe();
+        fwt_config config=tuner.core.config;config.priority=FWT_PERFORMANCE;config.maxFrequencyMHz=1197.5;config.maxPowerW=40;
+        assert(configure_clock_request(config,true,1).code==200);advanced_start();
+        assert(tuner.core.frequencySupported==clock_command_valid);
+        fwt_controller unchecked=tuner.core;unchecked.frequencySupported=NULL;
+        const unsigned before=writes,reads=sensor_reads;
+        fwt_input input=tuner.input;input.powerW=18;
+        fwt_request hypothetical=fwt_next_candidate(&unchecked,&input,host_now);
+        assert(hypothetical.kind==FWT_REQUEST_APPLY&&hypothetical.point.frequencyMHz==1002.5);
+        fwt_request checked=fwt_next_candidate(&tuner.core,&input,host_now);
+        assert(checked.kind==FWT_REQUEST_APPLY&&checked.point.frequencyMHz==996.25&&checked.point.coreVoltageMv==1168);
+        assert(tuner.core.state==FWT_APPLYING&&tuner.core.owns&&tuner.core.roundExperiments==1);
+        assert(writes==before&&sensor_reads==reads&&!point_changes&&!physical_uart_frames);
+    } else if(!strcmp(name,"advanced-active-policy")) {
+        start();fwt_config config=tuner.core.config;config.maxFrequencyMHz=800;
+        unsigned before=writes;
+        assert(configure_clock_request(config,true,0).code!=200&&writes==before&&!tuner.advanced_clock_override);
+        assert(configure_clock_request(config,true,1).code==200&&tuner.core.owns&&tuner.advanced_clock_override);
+        config.maxFrequencyMHz=690;
+        assert(configure_clock_request(config,false,2).code==200&&tuner.core.owns&&!tuner.advanced_clock_override);
+        config.maxFrequencyMHz=1200.25;before=writes;
+        assert(configure_clock_request(config,true,1).code!=200&&writes==before&&!tuner.advanced_clock_override);
+        config.maxFrequencyMHz=800;fail_commit=true;
+        assert(configure_clock_request(config,true,1).code!=200&&!tuner.advanced_clock_override&&tuner.core.config.maxFrequencyMHz==690);
+        fail_commit=false;reboot_runtime();assert(!tuner.advanced_clock_override&&tuner.core.config.maxFrequencyMHz==690);
+    } else if(!strcmp(name,"advanced-backup-restore")) {
+        manual_clock(750);reboot_runtime();host_now+=TUNE_POLL_US;observe();unsigned before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","advanced-clock-override-required");
+        assert(writes==before&&!tuner.backup_available&&gs.POWER_MANAGEMENT_MODULE.frequency_value==750);
+        fwt_config config=tuner.core.config;config.maxFrequencyMHz=800;
+        assert(configure_clock_request(config,true,1).code==200);advanced_start();
+        Entry *backup=find(2,"backup");assert(backup);char *original=strdup((char *)backup->bytes);assert(original);
+        assert(tuner.backup[0].value.f==750);
+        config.maxFrequencyMHz=690;before=writes;
+        assert(configure_clock_request(config,false,0).code!=200&&writes==before&&tuner.advanced_clock_override);
+        /* A probe is RAM-only: simulate its applied lower clock, then require
+         * Disable to command the original 750 rather than merely matching NVS. */
+        gs.POWER_MANAGEMENT_MODULE.frequency_value=650;gs.POWER_MANAGEMENT_MODULE.actual_frequency=650;
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        for(unsigned i=0;i<12&&tuner.restore_pending;++i) step(true);
+        assert(tuner.backup_restored&&!tuner.core.owns&&gs.POWER_MANAGEMENT_MODULE.frequency_value==750&&point_changes>0);
+        assert(configure_clock_request(config,false,0).code==200&&!tuner.advanced_clock_override);
+        reboot_runtime();assert(tuner.storage_ok&&tuner.backup_available&&!tuner.advanced_clock_override&&!tuner.core.owns);
+        assert(!strcmp((char *)find(2,"backup")->bytes,original));free(original);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        for(unsigned i=0;i<12&&tuner.restore_pending;++i) step(true);
+        assert(tuner.backup_restored&&gs.POWER_MANAGEMENT_MODULE.frequency_value==750&&!tuner.core.owns);
+    } else if(!strcmp(name,"advanced-stale-manual")) {
+        unsigned before=writes;
+        nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY,750);drain_auth_write();before=writes;
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","manual-settings-not-applied");
+        assert(writes==before&&!tuner.backup_available&&!tuner.core.owns);
+        gs.POWER_MANAGEMENT_MODULE.frequency_value=750;gs.POWER_MANAGEMENT_MODULE.actual_frequency=750;
+        host_now+=TUNE_POLL_US;observe();
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":true}","advanced-clock-override-required");
+        assert(writes==before&&!tuner.backup_available&&!tuner.core.owns);
+    } else if(!strcmp(name,"recovery-running-denied")) {
         start();unsigned before=writes;
         expect_error("{\"action\":\"restore-and-resume\"}","recovery-requires-confirmed-asic-off");
         assert(writes==before && !host_resume_requests && !tuner.recovery_requested);
@@ -389,7 +536,9 @@ int main(int argc,char **argv) {
         const cJSON *limits=cJSON_GetObjectItemCaseSensitive(schema,"limits");
         const char *limit_keys[]={"minFrequencyMHz","maxFrequencyMHz","minVoltageMv","maxVoltageMv",
             "maxAsicTempC","maxVrmTempC","maxPowerW","frequencyStepMHz","voltageStepMv"};
-        assert(cJSON_GetArraySize(limits)==9);
+        assert(cJSON_GetArraySize(limits)==10);
+        assert(cJSON_GetObjectItemCaseSensitive(limits,"maxFrequencyMHz")->valuedouble==690);
+        assert(cJSON_GetObjectItemCaseSensitive(limits,"advancedMaxFrequencyMHz")->valuedouble==1200);
         for(unsigned i=0;i<9;++i) {const cJSON *value=cJSON_GetObjectItemCaseSensitive(limits,limit_keys[i]);assert(cJSON_IsNumber(value)&&value->valuedouble>0);}
         cJSON_Delete(schema);
         for(unsigned i=0;i<10;++i) {httpd_req_t req=tune_request(false,NULL);assert(req.code==200&&!strstr(req.reply,"fixture-pass")&&!strstr(req.reply,"020000000001"));}
@@ -572,6 +721,15 @@ int main(int argc,char **argv) {
         assert(!tuner.core.owns&&!tuner.backup_available);fail_commit=false;start();
     } else if(!strcmp(name,"backup-binding")) {
         start();Entry *backup=find(2,"backup");assert(backup);
+        cJSON *low=cJSON_ParseWithLength((const char *)backup->bytes,backup->size);assert(low);
+        cJSON *settings=cJSON_GetObjectItemCaseSensitive(low,"settings");assert(settings);
+        cJSON *frequency=cJSON_GetObjectItemCaseSensitive(settings,"frequencyMHz");assert(frequency);
+        cJSON_SetNumberValue(frequency,50);
+        const unsigned before=writes;
+        assert(clock_command_valid(50)); /* Emergency encoding remains legal. */
+        assert(!parse_backup(low)); /* It is not an admissible original tune. */
+        assert(writes==before&&tuner.backup_available);
+        cJSON_Delete(low);
         char *board=strstr((char *)backup->bytes,"601");assert(board);board[2]='2';
         reboot_runtime();assert(!tuner.backup_available&&!tuner.storage_ok&&!tuner.core.owns);
         expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","storage-or-restore-unavailable");

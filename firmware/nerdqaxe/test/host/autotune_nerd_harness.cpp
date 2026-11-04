@@ -23,7 +23,7 @@ static void step() {
 }
 static void boot() {
     using namespace FiveTratumAutotune;
-    initialized=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
+    initialized=false;advancedClockOverride=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
     controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";recoveryStartupGuardFailure=nullptr;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
@@ -35,9 +35,18 @@ static void boot() {
 }
 static void candidate(double frequency,double voltage) {
     using namespace FiveTratumAutotune;
+    controller.config.minFrequencyMHz=std::min(controller.config.minFrequencyMHz,frequency);controller.config.maxFrequencyMHz=std::max(controller.config.maxFrequencyMHz,frequency);
     controller.owns=true;controller.active=true;controller.awaitingApply=true;controller.pending={frequency,voltage};
     target={frequency,voltage};pending=true;voltageMatches=0;transitionStarted=hostNow;
 }
+static JsonDocument advancedConfiguration(bool enabled,double maximum,bool warning=true) {
+    JsonDocument body;body["action"]="configure";body["config"].set(snapshot()["config"]);
+    body["config"]["advancedClockOverride"]=enabled;body["config"]["minFrequencyMHz"]=100;body["config"]["maxFrequencyMHz"]=maximum;
+    if(enabled&&warning){body["advancedClockWarningAccepted"]=true;body["advancedClockWarningVersion"]=1;}
+    return body;
+}
+static JsonDocument sendDocument(JsonDocument &body){std::string text;serializeJson(body,text);return response(text.c_str());}
+static JsonDocument advancedStart(){return response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":true}");}
 static uint64_t wireEpoch=0;
 static bool wirePermission(){return Config::tuningMutationRevision()==wireEpoch;}
 int main(int argc,char **argv) {
@@ -58,6 +67,60 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario.rfind("advanced-",0)==0) {
+        using namespace FiveTratumAutotune;
+        hostBoard.standardFrequency=800;
+        assert(snapshot()["config"]["advancedClockOverride"].is<bool>()&&!advancedClockOverride);
+        if(scenario=="advanced-metadata") {
+            for(int standard:{800,1000,850}) {hostBoard.standardFrequency=standard;auto d=snapshot();assert(d["limits"]["maxFrequencyMHz"]==standard&&d["limits"]["advancedMaxFrequencyMHz"]==1200&&controller.limits.maxFrequencyMHz==1200);}
+            assert(controller.frequencySupported==clockFrequencySupported);
+            for(unsigned mhz=100;mhz<=1200;++mhz)assert(clockFrequencySupported(mhz));
+            assert(!clockFrequencySupported(1201)&&!clockFrequencySupported(99)&&!clockFrequencySupported(1197.5)&&!clockFrequencySupported(NAN));return 0;
+        }
+        if(scenario=="advanced-legacy") {
+            auto body=advancedConfiguration(false,600);body["config"].remove("advancedClockOverride");assert(sendDocument(body)["ok"]==true);
+            JsonDocument legacy;legacy.set(body["config"]);std::string text;serializeJson(legacy,text);nvstore["fwtune/options"]=text;advancedClockOverride=true;boot();
+            assert(!advancedClockOverride&&snapshot()["config"].size()==10&&snapshot()["config"]["advancedClockOverride"]==false&&!controller.active);
+            advancedClockOverride=true;initialized=false;bootOptions.set(legacy);optionsStatus=BlobStatus::Present;initialize(&hostBoard);assert(!advancedClockOverride);return 0;
+        }
+        if(scenario=="advanced-warning") {
+            auto denied=advancedConfiguration(true,900,false);const unsigned before=hostNvsCalls;assert(sendDocument(denied)["error"]=="advanced-clock-warning-required"&&hostNvsCalls==before);
+            denied["advancedClockWarningAccepted"]=false;denied["advancedClockWarningVersion"]=1;assert(sendDocument(denied)["error"]=="advanced-clock-warning-required");
+            denied["advancedClockWarningAccepted"]=true;denied["advancedClockWarningVersion"]=2;assert(sendDocument(denied)["error"]=="advanced-clock-warning-required");
+            auto normal=advancedConfiguration(false,900);assert(sendDocument(normal)["error"]=="advanced-clock-override-required");
+            normal["config"]["maxFrequencyMHz"]=800;normal["advancedClockWarningAccepted"]=false;normal["advancedClockWarningVersion"]=1;assert(sendDocument(normal)["ok"]==true&&!advancedClockOverride);
+            assert(advancedStart()["ok"]==true&&!advancedClockOverride);return 0;
+        }
+        if(scenario=="advanced-storage") {
+            const auto old=snapshot()["config"]["maxFrequencyMHz"].as<double>();auto b=advancedConfiguration(true,900);storageFail=true;
+            assert(sendDocument(b)["error"]=="storage-unavailable"&&!advancedClockOverride&&controller.config.maxFrequencyMHz==old);storageFail=false;
+            verifyFail=true;assert(sendDocument(b)["error"]=="storage-unavailable"&&!advancedClockOverride&&controller.config.maxFrequencyMHz==old);return 0;
+        }
+        if(scenario=="advanced-original") {
+            Config::cfgSetU16("asicfrequency",900);hostBoard.frequency=900;POWER_MANAGEMENT_MODULE.appliedFrequency=900;boot();
+            assert(snapshot()["config"]["maxFrequencyMHz"]==800&&hostBoard.frequency==900);
+            assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="advanced-clock-override-required");
+        }
+        auto b=advancedConfiguration(true,900);assert(sendDocument(b)["ok"]==true&&advancedClockOverride);
+        JsonDocument saved;assert(deserializeJson(saved,nvstore["fwtune/options"])==DeserializationError::Ok&&saved.size()==10&&saved["advancedClockOverride"]==true);
+        if(scenario=="advanced-persist") {boot();assert(advancedClockOverride&&!controller.active&&!controller.owns&&snapshot()["config"]["advancedClockOverride"]==true);}
+        assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="advanced-clock-acceptance-required");
+        assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":false}")["error"]=="advanced-clock-acceptance-required");
+        assert(advancedStart()["ok"]==true);const auto original=nvstore["fwtune/baseline"];
+        if(scenario=="advanced-original") {
+            assert(response("{\"action\":\"stop\"}")["ok"]==true);for(int n=0;n<10;++n){step();}assert(snapshot()["backup"]["restored"]==true&&hostBoard.frequency==900);
+            auto off=advancedConfiguration(false,800);assert(sendDocument(off)["ok"]==true&&!advancedClockOverride&&hostBoard.frequency==900&&POWER_MANAGEMENT_MODULE.appliedFrequency==900);
+            hostBoard.loadSettings();assert(hostBoard.frequency==800);boot();assert(snapshot()["backup"]["available"]==true&&!advancedClockOverride);
+            assert(response("{\"action\":\"stop\"}")["ok"]==true);for(int n=0;n<12;++n){step();}
+            assert(snapshot()["backup"]["restored"]==true&&hostBoard.frequency==900&&POWER_MANAGEMENT_MODULE.appliedFrequency==900&&!advancedClockOverride&&nvstore["fwtune/baseline"]==original);return 0;
+        }
+        candidate(900,1150);assert(tuningFrequencyAllowed(900)&&!tuningFrequencyAllowed(1201));
+        for(int n=0;n<5;++n){step();}assert(POWER_MANAGEMENT_MODULE.appliedFrequency==900&&Config::cfgGetU16("asicfrequency",600)==600);
+        auto off=advancedConfiguration(false,800);const unsigned before=hostNvsCalls;assert(sendDocument(off)["error"]=="advanced-clock-override-required"&&hostNvsCalls==before);
+        if(scenario=="advanced-revoke") {Config::cfgSetU16("asicfrequency",650);const auto count=writes.size();assert(!POWER_MANAGEMENT_MODULE.commandTuningFrequency(900)&&writes.size()==count);step();assert(!controller.owns);return 0;}
+        assert(response("{\"action\":\"stop\"}")["ok"]==true);for(int n=0;n<12;++n){step();}
+        assert(snapshot()["backup"]["restored"]==true&&POWER_MANAGEMENT_MODULE.appliedFrequency==600&&nvstore["fwtune/baseline"]==original);return 0;
+    }
     if(scenario=="auto-errors-exhausted"||scenario=="auto-errors-exhausted-oct") {
         using namespace FiveTratumAutotune;
         start();const auto original=nvstore["fwtune/baseline"];chipErrorWork=25;

@@ -369,7 +369,20 @@ static void checkCaptureMetadata() {
 #endif
 }
 
+class ClockProbe final : public BM1370 {
+public:
+    using Asic::sendHashFrequency;
+    float actualClock() const {return m_actual_current_frequency;}
+};
 int main(int argc, char **argv) {
+    if(argc==2&&std::string(argv[1])=="pll-supported-grid") {
+        resetFixture();ClockProbe driver;
+        for(unsigned frequency=100;frequency<=1200;++frequency) {
+            assert(FiveTratumAutotune::clockFrequencySupported(frequency));
+            assert(driver.sendHashFrequency(frequency)&&std::fabs(driver.actualClock()-frequency)<=2);
+        }
+        std::cout<<"Actual Nerd PLL: all1101 integer targets100..1200MHz resolve within2MHz; experimental admission bound remains separate\n";return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "codec") { checkJobCodecAndUnsupported(); checkDiagnosticReceiver(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "capture-metadata") { checkCaptureMetadata(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "init-wire") {
@@ -464,6 +477,21 @@ int main(int argc, char **argv) {
             assert(POWER_MANAGEMENT_MODULE.m_vrTemp == 55); // Genuine first buck telemetry, not cold cached zero.
             assert(board.m_chipsDetected == static_cast<int>(expectedCount));
             if (oct) assert(buck.initializedPhases == (oct47 ? 4u : 6u) && buck.initializedCurrent == (oct47 ? 180u : 240u) && buck.initializedFaultCurrent == (oct47 ? 160 : 235));
+        }
+        if(test=="advanced-clock") {
+            const auto oldPackets=transmittedPackets;const auto oldVoltageCommands=buck.voltages.size();
+            assert(!POWER_MANAGEMENT_MODULE.commandTuningFrequency(900)&&transmittedPackets==oldPackets);
+            hostTuningFrequencyPermission=true;
+            const auto generation=workGeneration();
+            assert(POWER_MANAGEMENT_MODULE.commandTuningFrequency(900)&&POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency==900&&miningWritesAllowed()&&workGeneration()>generation);
+            assert(POWER_MANAGEMENT_MODULE.commandTuningFrequency(1200)&&POWER_MANAGEMENT_MODULE.m_appliedAsicFrequency==1200&&miningWritesAllowed());
+            assert(buck.voltages.size()==oldVoltageCommands&&board.m_asicVoltageMillis==savedVoltage&&board.m_asicFrequency==savedFrequency);
+            const auto after=transmittedPackets;
+            assert(!POWER_MANAGEMENT_MODULE.commandTuningFrequency(1201)&&!board.setTuningFrequency(1201)&&transmittedPackets==after);
+            hostTuningFrequencyPermission=false;assert(!POWER_MANAGEMENT_MODULE.commandTuningFrequency(900)&&transmittedPackets==after);
+            hostTuningFrequencyPermission=true;SYSTEM_MODULE.error=Board::Error::TEMP_FAULT;
+            assert(!POWER_MANAGEMENT_MODULE.commandTuningFrequency(900)&&transmittedPackets==after&&SYSTEM_MODULE.error==Board::Error::TEMP_FAULT);
+            std::cout<<"Actual PM/backend/Board/PLL advanced clock path: warning lease,900/1200,range,revoke,fault,no-voltage-write PASS\n";return 0;
         }
         if (test == "resume") {
             const uint64_t oldEpoch = workGeneration();

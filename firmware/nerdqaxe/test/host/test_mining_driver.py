@@ -23,6 +23,7 @@ SOURCE_FILES = (
     "components/bm1397/include/mining_utils.h", "components/bm1397/mining.cpp",
     "components/bm1397/bm1370_protocol.cpp", "components/bm1397/include/bm1370_protocol.h",
     "components/bm1397/include/bm1370_capture.h", "components/bm1397/include/bm1370_capture_runtime.h",
+    "main/autotune/clock_policy.h", "main/boards/board.cpp",
     "main/boards/nerdqaxeplus.cpp", "main/boards/nerdqaxeplus2.cpp",
     "main/tasks/asic_jobs.h", "main/tasks/create_jobs_task.cpp",
     "main/tasks/power_management_task.cpp", "main/tasks/power_management_task.h", "main/tasks/mining_control.cpp",
@@ -93,6 +94,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
                       "void NerdQaxePlus::LDO_enable(", "void NerdQaxePlus::LDO_disable(",
                       "void NerdQaxePlus::VREG_enable(", "void NerdQaxePlus::VREG_disable("):
         board_methods += method(board, signature)
+    board_methods += method((ROOT/"main/boards/board.cpp").read_text(), "bool Board::setTuningFrequency(")
     board_methods += method(second, "bool NerdQaxePlus2::initAsics(") + method(second, "bool NerdQaxePlus2::setVoltage(")
     (path / "board.cpp").write_text(board_methods)
     jobs = (ROOT / "main/tasks/asic_jobs.h").read_text()
@@ -105,7 +107,8 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
                       "bool PowerManagementTask::checkCoreVoltageChanged(",
                       "bool PowerManagementTask::checkAsicFrequencyChanged(",
                       "void PowerManagementTask::checkVrFrequencyChanged(",
-                      "void PowerManagementTask::applyAsicSettings("):
+                      "void PowerManagementTask::applyAsicSettings(",
+                      "bool PowerManagementTask::commandTuningFrequency("):
         power_methods += method(power, signature)
     (path / "protection.cpp").write_text(power_methods)
     control = (ROOT / "main/tasks/mining_control.cpp").read_text()
@@ -121,7 +124,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     binary = path / "driver-test"
     compile_command = [shutil.which("clang++") or shutil.which("g++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-Wno-sign-compare", "-Wno-vla-cxx-extension", "-Wno-unused-const-variable",
-                    "-pthread", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+                    "-pthread", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer",
                     "-I", str(path), "-I", str(ROOT / "test/host"), "-I", str(COMPONENT / "include"),
                     "-I", str(ROOT / "components/arduinojson"),
                     "-I", str(ROOT / "main"), "-I", str(ROOT / "main/tasks"), *generated, str(COMPONENT / "crc.cpp"),
@@ -132,7 +135,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
     subprocess.run(compile_command + ["-DFIVETRATUM_BM1370_DIAGNOSTIC_DRIVER=0",
         "-DFIVETRATUM_BM1370_CAPTURE=0", "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    power_cases = ("cold-standard", "cold-rev7", "wrong-chip-count", "voltage-mismatch", "voltage-nan",
+    power_cases = ("cold-standard", "cold-rev7", "advanced-clock", "wrong-chip-count", "voltage-mismatch", "voltage-nan",
                  "resume", "pause-during-ramp", "invalid-vr", "no-workers", "no-job-ack", "job-timer-create-failed", "job-timer-start-failed",
                  "thermal-latch", "baud-failed", "live-ramp", "live-ramp-pause", "live-ramp-uart-failure", "live-ramp-thermal",
                  "settings-down", "settings-up", "settings-down-pll-failure", "settings-down-pause", "settings-up-voltage-failure")
@@ -147,6 +150,7 @@ with tempfile.TemporaryDirectory(prefix="5tratum-mining-driver-") as directory:
         for case in oct_cases:
             subprocess.run([str(binary), profile + "-" + case], check=True)
 
+    subprocess.run([str(binary), "pll-supported-grid"],check=True)
     # Keep default legacy RX unchanged; exercise the new decoder only in an
     # explicit diagnostic binary with the same flag in every translation unit.
     subprocess.run([str(binary), "codec"], check=True)

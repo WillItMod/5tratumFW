@@ -33,6 +33,7 @@ class Backend final : public ControlHardware {
     const char *m_startError = "ASIC initialization failed; restart required";
 public:
     uint16_t targetFrequency = 0;
+    bool tuningFrequency=false;
     ControlInputs inputs() override {
         return {requestedPaused(), runtimeReady.load() && jobWorkerReady.load(),
             POWER_MANAGEMENT_MODULE.isShutdown() || !controlledBoard || controlledBoard->isShutdown() ||
@@ -117,7 +118,7 @@ public:
         Asic *asic = controlledBoard->getAsicDriver();
         if (!asic) return false;
         asic->setRecoveryGuard(guard, this);
-        const bool updated = controlledBoard->setAsicFrequency(targetFrequency);
+        const bool updated = tuningFrequency ? controlledBoard->setTuningFrequency(targetFrequency) : controlledBoard->setAsicFrequency(targetFrequency);
         asic->setRecoveryGuard(nullptr, nullptr);
         return updated && asic->transportOkay() && guard(this);
     }
@@ -154,8 +155,15 @@ bool miningWritesAllowed() {
 }
 bool applyFrequency(uint16_t frequency) {
     if (!controlSupported()) return false;
-    backend.targetFrequency = frequency;
+    backend.targetFrequency = frequency;backend.tuningFrequency=false;
     return powerState.reconfigure(backend);
+}
+bool applyTuningFrequency(uint16_t frequency) {
+    if(!controlSupported() || !FiveTratumAutotune::tuningFrequencyAllowed(frequency)) return false;
+    backend.targetFrequency=frequency;backend.tuningFrequency=true;
+    const bool result=powerState.reconfigure(backend);
+    backend.tuningFrequency=false;
+    return result;
 }
 uint64_t workGeneration() { return gate.generation(); }
 OperationGate &operationGate() { return gate; }

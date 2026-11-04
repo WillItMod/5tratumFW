@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta14**, **NerdQAxe++ Beta11** and **NerdOctAxe Gamma Beta9**. Gamma includes its matching web interface in `esp-miner.bin`, with a separate optional WWW. QAxe and OctAxe still require both matching application and web images; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [fast-error software qualification](validation-autotune-fast-errors-20261104.md). The previous Gamma13/QA10/Oct8 [release record](validation-autotune-release-20261103.md) retains its earlier physical scope; it does not qualify the new fast guard or newer images.
+The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta14**, **NerdQAxe++ Beta11** and **NerdOctAxe Gamma Beta9**. These release candidates add faster ASIC-error rejection and a separate, default-off advanced clock override; final new packages are pending publication. Neither feature has physical qualification on these new images. Gamma includes its matching web interface in `esp-miner.bin`, with a separate optional WWW. QAxe and OctAxe still require both matching application and web images; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [fast-error software qualification](validation-autotune-fast-errors-20261104.md). The previous Gamma13/QA10/Oct8 [release record](validation-autotune-release-20261103.md) retains its earlier physical scope; it does not qualify the new fast guard or newer images.
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -102,6 +102,51 @@ estimate. It is not measured wall power or a guaranteed PSU input-power limit.
 Use the reported source and independently known supply/cooling capability when
 choosing a power ceiling. These candidates do not promise a universal safe
 overclock or a particular efficiency improvement.
+
+### Advanced clock override
+
+Gamma Beta14, NerdQAxe++ Beta11 and NerdOctAxe Gamma Beta9 include an explicit
+advanced clock override as an experimental release feature. These new packages
+are pending publication after their final checks; no physical override or
+new-release installation is claimed. The page shows the
+standard maximum reported by the detected profile: 690MHz for Gamma, 800MHz for
+the standard Nerd profile, or 1,000MHz for the recognized QAxe rev7 profile.
+The additional **1,200MHz experimental project ceiling** is a software boundary,
+not a hardware rating, safe operating frequency or guarantee of stability or
+achievable hashrate.
+
+The advanced warning checkbox starts unticked. Existing higher manual settings
+or an original backup do not imply permission to enable it. A saved enabled
+mode is identified separately; reopening the page does not accept the warning
+for you. Read and explicitly acknowledge the warning, choose your maximum clock,
+and select **Save options**. Checking the box alone neither writes settings nor
+starts tuning. Save is confirmed by reading the miner's configuration back.
+The ordinary per-run disclaimer is still required before **Start tuning**, and
+the page must have your explicit advanced acknowledgement for an advanced run.
+
+Unsupported frequencies can cause instability, overheating, hardware damage,
+interrupted mining or financial loss. The existing tuning disclaimer and its
+limitation of responsibility still apply. The override changes only the
+permitted clock search range: voltage, reported power, ASIC and VRM temperature,
+sensor, fan and fault constraints remain authoritative. The chosen maximum is a
+search ceiling, not an immediate clock command or a preset result.
+
+When disabling the override, first review the maximum against the standard
+profile limit. If an active run is above that limit, its bounds still have to
+include the confirmed current point; lower that point through the existing
+controls or explicitly disable and restore before saving incompatible bounds.
+For an idle miner with a higher manual clock, saving the disabled permission
+and standard-range options does not change that live clock. A later Start is
+blocked until the current point is included with explicit advanced permission
+or lowered manually. The **Set override to disabled** control changes local
+intent and still needs an explicit Save. Original higher-clock backups remain
+available for protected restoration independently of tuning permission. An old or mismatched report
+without valid override metadata does not unlock advanced clocks; use a matching
+application and web interface. A legacy nine-field tuning-options record reads
+with the override disabled. New options save the explicit boolean atomically
+with the rest of the configuration; older firmware may not read that new format.
+The original backup format is unchanged. Disable tuning, verify restoration and
+review downgrade compatibility before returning to older firmware.
 
 ## Enable, waiver and original backup
 

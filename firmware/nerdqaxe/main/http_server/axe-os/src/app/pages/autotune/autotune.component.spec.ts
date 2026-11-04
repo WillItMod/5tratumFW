@@ -474,4 +474,131 @@ describe('Dynamic tuning controls', () => {
     expect(service.command).not.toHaveBeenCalled();expect(service.authorize).not.toHaveBeenCalled();
   });
 
+  function advancedFixture(count=4,standard=800,enabled=false): void {
+    component.ngOnDestroy();report=fixture(count);report.config.advancedClockOverride=enabled;
+    report.limits.maxFrequencyMHz=standard;report.limits.advancedMaxFrequencyMHz=1200;
+    component=new AutotuneComponent(service as any);component.load();
+  }
+  it('offers only the reported advanced range and keeps warning acceptance local across Gamma, QAxe, rev7 and OctAxe', () => {
+    for (const [count,standard] of [[1,690],[4,800],[4,1000],[8,800]]) {
+      advancedFixture(count,standard);
+      expect(component.advancedClockAvailable).toBeTrue();expect(component.advancedClockWarningAccepted).toBeFalse();
+      expect(component.maximumClockMHz).toBe(standard);expect(component.report!.config.advancedClockOverride).toBeFalse();
+      component.setAdvancedClockAcknowledgement(true);
+      expect(component.maximumClockMHz).toBe(1200);expect(component.edit!.advancedClockOverride).toBeTrue();
+      expect(component.report!.config.advancedClockOverride).toBeFalse();expect(component.hasUnsavedChanges).toBeTrue();
+      expect(component.waiverAccepted).toBeFalse();expect(component.canStart).toBeFalse();
+    }
+    expect(service.command).not.toHaveBeenCalled();expect(service.authorize).not.toHaveBeenCalled();
+  });
+  it('saves the advanced permission with explicit warning fields and confirms it before a separately consented Start', fakeAsync(() => {
+    advancedFixture();component.setAdvancedClockAcknowledgement(true);component.edit!.maxFrequencyMHz=1000;
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);
+    const saved=service.command.calls.mostRecent().args[0];
+    expect(Object.keys(saved).sort()).toEqual(['action','advancedClockWarningAccepted','advancedClockWarningVersion','config']);
+    expect(saved.advancedClockWarningAccepted).toBeTrue();expect(saved.advancedClockWarningVersion).toBe(1);
+    expect(Object.keys(saved.config).length).toBe(10);expect(saved.config.advancedClockOverride).toBeTrue();
+    expect(component.report!.config.maxFrequencyMHz).toBe(1000);expect(component.hasUnsavedChanges).toBeFalse();
+    expect(component.advancedClockWarningAccepted).toBeTrue();expect(component.canStart).toBeFalse();expect(report.status.active).toBeFalse();
+    acceptedStart();component.waiverAccepted=true;component.start();tick(0);
+    expect(service.command.calls.mostRecent().args[0]).toEqual({action:'start',waiverAccepted:true,waiverVersion:1,advancedClockAccepted:true});
+    expect(component.waiverAccepted).toBeFalse();expect(component.advancedClockWarningAccepted).toBeFalse();
+    expect(service.command.calls.count()).toBe(2);
+  }));
+  it('does not infer fresh advanced consent from an already enabled saved mode or a higher original point', () => {
+    advancedFixture(1,690,true);report.config.maxFrequencyMHz=1000;report.status.current={frequencyMHz:750,coreVoltageMv:1150};
+    report.backup={available:true,restored:false,frequencyMHz:750,coreVoltageMv:1150};component.load();
+    component.waiverAccepted=true;component.start();expect(service.command).not.toHaveBeenCalled();
+    expect(component.advancedClockWarningAccepted).toBeFalse();expect(component.validationError).toContain('explicitly accept');
+    component.setAdvancedClockAcknowledgement(true);expect(component.waiverAccepted).toBeFalse();expect(component.canStart).toBeFalse();
+    component.waiverAccepted=true;expect(component.canStart).toBeTrue();expect(component.canRestore).toBeTrue();
+    report.limits.advancedMaxFrequencyMHz=1100;component.load();
+    expect(component.advancedClockWarningAccepted).toBeFalse();expect(component.canStart).toBeFalse();
+  });
+  it('uses the canonical false flag without advanced warning fields and retains the normal Start contract', fakeAsync(() => {
+    advancedFixture();component.edit!.priority='performance';
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);const saved=service.command.calls.mostRecent().args[0];
+    expect(Object.keys(saved).sort()).toEqual(['action','config']);expect(saved.config.advancedClockOverride).toBeFalse();
+    expect(Object.keys(saved.config).length).toBe(10);
+    acceptedStart();component.waiverAccepted=true;component.start();tick(0);
+    expect(service.command.calls.mostRecent().args[0]).toEqual({action:'start',waiverAccepted:true,waiverVersion:1});
+  }));
+  it('keeps legacy false edits in the nine-key payload and never unlocks an advanced range from a model name or current point', fakeAsync(() => {
+    component.edit!.advancedClockOverride=false;component.edit!.priority='performance';
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);const saved=service.command.calls.mostRecent().args[0];
+    expect(Object.keys(saved.config).length).toBe(9);expect(saved.config.advancedClockOverride).toBeUndefined();
+    expect(component.advancedClockAvailable).toBeFalse();expect(component.maximumClockMHz).toBe(report.limits.maxFrequencyMHz);
+    component.setAdvancedClockAcknowledgement(true);expect(component.advancedClockWarningAccepted).toBeFalse();
+    report.status.current={frequencyMHz:1100,coreVoltageMv:1150};report.backup={available:true,restored:false,frequencyMHz:1100,coreVoltageMv:1150};component.load();
+    component.waiverAccepted=true;expect(component.canStart).toBeFalse();expect(component.canRestore).toBeTrue();
+  }));
+  it('fails closed on partial or malformed advanced metadata while preserving an original backup above the standard cap', () => {
+    for (const change of [
+      (value:AutotuneReport)=>delete value.limits.advancedMaxFrequencyMHz,
+      (value:AutotuneReport)=>delete value.config.advancedClockOverride,
+      (value:AutotuneReport)=>value.limits.advancedMaxFrequencyMHz=NaN,
+      (value:AutotuneReport)=>value.limits.advancedMaxFrequencyMHz=Infinity,
+      (value:AutotuneReport)=>value.limits.advancedMaxFrequencyMHz=799,
+      (value:AutotuneReport)=>(value.config as any).advancedClockOverride='true'
+    ]) {
+      advancedFixture();change(report);report.backup={available:true,restored:false,frequencyMHz:1100,coreVoltageMv:1150};component.load();
+      component.waiverAccepted=true;expect(component.advancedClockAvailable).toBeFalse();expect(component.optionsUsable).toBeFalse();
+      expect(component.canSave).toBeFalse();expect(component.canStart).toBeFalse();expect(component.canRestore).toBeTrue();
+      component.setAdvancedClockAcknowledgement(true);expect(service.command).not.toHaveBeenCalled();
+    }
+  });
+  it('retains the experimental boundary and all independent electrical, thermal and actuator-unit limits', () => {
+    advancedFixture();component.setAdvancedClockAcknowledgement(true);component.edit!.maxFrequencyMHz=1201;
+    expect(component.validationError).toContain('experimental project maximum');component.edit!.maxFrequencyMHz=1200;
+    expect(component.validationError).toBe('');
+    const valid=structuredClone(component.edit!);
+    for (const [field,value] of [['maxAsicTempC',71],['maxVrmTempC',96],['maxPowerW',301],['maxVoltageMv',1500]] as const) {
+      component.edit={...valid,[field]:value};expect(component.validationError).not.toBe('');component.save();
+    }
+    component.edit={...valid,maxFrequencyMHz:900.5};
+    if(component.wholeMHz)expect(component.validationError).toContain('whole MHz');else expect(component.validationError).toBe('');
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('requires an owned high point to be lowered or restored before disabling the advanced permission', fakeAsync(() => {
+    advancedFixture(4,800,true);report.config.maxFrequencyMHz=1000;report.status.current={frequencyMHz:900,coreVoltageMv:1150};
+    report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';report.backup={available:true,restored:false,frequencyMHz:1100,coreVoltageMv:1150};component.load();
+    component.setAdvancedClockAcknowledgement(false);expect(component.edit!.advancedClockOverride).toBeFalse();
+    expect(component.validationError).toContain('disable the override');component.edit!.maxFrequencyMHz=800;
+    expect(component.validationError).toContain('include the current');expect(component.canSave).toBeFalse();expect(component.canRestore).toBeTrue();
+    expect(service.command).not.toHaveBeenCalled();report.status.current.frequencyMHz=700;component.load();
+    expect(component.validationError).toBe('');
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);const saved=service.command.calls.mostRecent().args[0];
+    expect(saved.config.advancedClockOverride).toBeFalse();expect(saved.advancedClockWarningAccepted).toBeUndefined();
+    expect(component.report!.backup.frequencyMHz).toBe(1100);
+  }));
+  it('allows idle override disable without touching a higher manual point and blocks only the later Start', fakeAsync(() => {
+    advancedFixture(1,690,true);report.config.maxFrequencyMHz=1000;report.status.current={frequencyMHz:750,coreVoltageMv:1150};
+    report.backup={available:true,restored:false,frequencyMHz:750,coreVoltageMv:1150};component.load();
+    component.setAdvancedClockAcknowledgement(false);component.edit!.maxFrequencyMHz=690;
+    expect(component.validationError).toBe('');expect(component.canSave).toBeTrue();
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);component.waiverAccepted=true;
+    expect(component.report!.status.current!.frequencyMHz).toBe(750);expect(component.report!.backup.frequencyMHz).toBe(750);
+    expect(component.canStart).toBeFalse();expect(component.startExplanation).toContain('enable the advanced override');
+    expect(component.canRestore).toBeTrue();expect(service.command.calls.count()).toBe(1);
+  }));
+  it('does not confirm a saved advanced mode when readback drops its flag and never retries the mutation', fakeAsync(() => {
+    advancedFixture();report.backup={available:true,restored:false,frequencyMHz:1100,coreVoltageMv:1150};component.load();
+    component.setAdvancedClockAcknowledgement(true);component.edit!.maxFrequencyMHz=1000;
+    component.save();tick(30001);
+    expect(service.command.calls.count()).toBe(1);expect(component.message).toBe('');expect(component.actionError).toContain('could not be confirmed');
+    expect(component.advancedClockWarningAccepted).toBeFalse();expect(component.canRestore).toBeTrue();
+  }));
+  it('explains backend advanced-clock rejection without retrying or preserving an accepted warning', fakeAsync(() => {
+    advancedFixture();component.setAdvancedClockAcknowledgement(true);component.edit!.maxFrequencyMHz=1000;
+    service.command.and.returnValue(throwError(()=>({error:{error:'advanced-clock-warning-required'}})));
+    component.save();tick(0);expect(component.actionError).toContain('explicit advanced clock warning');
+    expect(component.actionError).toContain('No repeat request');expect(component.advancedClockWarningAccepted).toBeFalse();
+    tick(10000);expect(service.command.calls.count()).toBe(1);
+  }));
+
 });

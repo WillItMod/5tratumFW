@@ -1,6 +1,8 @@
 #pragma once
 #include "autotune/write_gate.h"
-namespace FiveTratumAutotune { inline bool ownsSettings() { return false; } inline bool transitionAllowed() { return true; } inline bool transitionHealthy() { return true; } }
+#include "autotune/clock_policy.h"
+inline bool hostTuningFrequencyPermission=false;
+namespace FiveTratumAutotune { inline bool tuningFrequencyAllowed(uint16_t frequency) {return hostTuningFrequencyPermission && clockFrequencySupported(frequency);} inline bool ownsSettings() { return false; } inline bool transitionAllowed() { return true; } inline bool transitionHealthy() { return true; } }
 
 #include <algorithm>
 #include <array>
@@ -83,6 +85,7 @@ public:
     virtual bool supportsMiningPowerControl() const = 0;
     virtual float getVout() = 0;
     virtual bool setAsicFrequency(float frequency) = 0;
+    bool setTuningFrequency(uint16_t frequency);
     Asic *getAsics() { return getAsicDriver(); }
     unsigned getAsicJobIntervalMs() { return 200; }
 };
@@ -173,6 +176,7 @@ public:
     bool checkAsicFrequencyChanged();
     void checkVrFrequencyChanged();
     void applyAsicSettings();
+    bool commandTuningFrequency(uint16_t frequency);
 };
 struct HostHashrate { unsigned resets = 0; void resetAfterPowerCycle() { ++resets; } };
 extern HostSystem SYSTEM_MODULE;

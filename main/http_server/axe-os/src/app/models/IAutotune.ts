@@ -2,6 +2,8 @@ export type TuningPriority = 'efficiency' | 'balanced' | 'performance';
 export interface AutotuneConfig {
   priority: TuningPriority;
   continuous: boolean;
+  /** Explicitly saved experimental clock permission; absent on legacy reports. */
+  advancedClockOverride?: boolean;
   maxAsicTempC: number;
   maxVrmTempC: number;
   minFrequencyMHz: number;
@@ -13,6 +15,8 @@ export interface AutotuneConfig {
 export interface AutotunePoint { frequencyMHz: number; coreVoltageMv: number; }
 export interface AutotuneLimits {
   minFrequencyMHz: number; maxFrequencyMHz: number;
+  /** Experimental project ceiling, not a hardware or safe operating rating. */
+  advancedMaxFrequencyMHz?: number;
   minVoltageMv: number; maxVoltageMv: number;
   maxAsicTempC: number; maxVrmTempC: number; maxPowerW: number;
   frequencyStepMHz: number; voltageStepMv: number;

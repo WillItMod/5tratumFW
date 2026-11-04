@@ -1,8 +1,8 @@
-# NerdQAxe++ Beta11: experimental faster ASIC-error rejection
+# NerdQAxe++ Beta11: experimental error rejection and advanced clock override
 
 `5tratumFW-qa-0.1.0-beta.11` · tag `qaxe-v0.1.0-beta.11` · build source: see this release's `manifest.json`.
 
-For **NERDQAXEPLUS2 / NerdQAxe++ with four BM1370 ASICs only**. This new experimental BETA retains NerdQAxe++ Beta10's adaptive-tuning features and adds earlier rejection of unstable trial settings. It is a new version, not a replacement of the previous release's files. The upstream base remains shufps v1.1.1-rc1.
+For **NERDQAXEPLUS2 / NerdQAxe++ with four BM1370 ASICs only**. This new experimental BETA retains NerdQAxe++ Beta10's adaptive-tuning features and adds earlier rejection of unstable trial settings plus an explicit advanced clock override. It is a new version, not a replacement of the previous release's files. The upstream base remains shufps v1.1.1-rc1.
 
 Tuning remains **off until explicitly started**. Every Start requires saved compatible options, an unticked per-run risk acknowledgement and a verified immutable original-settings backup. Boot and OTA never restart tuning automatically, including when Continuous On was saved.
 
@@ -14,13 +14,27 @@ Tuning remains **off until explicitly started**. Every Start requires saved comp
 
 The release also includes its manifest and corresponding source. No factory, replacement-NVS or partition-table image is published. Files from different hardware families are not interchangeable.
 
-## What changed
+## Advanced clock override
+
+All three families add **Advanced clock override**, stored as the explicit boolean `advancedClockOverride`. It defaults off. The warning checkbox starts unticked, including after reloading a saved enabled configuration. Read and acknowledge it, choose a compatible maximum, then select **Save options** and wait for configuration readback. Checking the box alone does not write to the miner or start tuning. Starting an advanced run also requires the separate ordinary per-run waiver and an explicit advanced acknowledgement for that Start.
+
+The additional **1,200 MHz experimental project ceiling** is an engineering software boundary, not a hardware rating, safe frequency or promised result. Raising the saved maximum only permits a wider measured search; it does not command an immediate jump to that clock. The page still reports the detected profile's standard maximum. Existing voltage, power, ASIC/VRM temperature, sensor, fan and hardware-fault constraints remain authoritative. This changes the whole miner's clock range, not individual ASIC clocks.
+
+Neither an old report nor an existing higher manual clock implies consent. Reports without valid override metadata leave the advanced controls locked; legacy saved tuning options read with the override disabled. If an idle miner is already running a higher manual point, saving disabled permission does not change that live clock. Start remains blocked until you explicitly acknowledge and save an advanced range that includes the current point, or lower it through the existing manual controls. An active run cannot save bounds that exclude its confirmed current point.
+
+The immutable original backup is independent of this permission and its format is unchanged. A verified original point such as 750 MHz on Gamma or 900 MHz on Nerd remains available to the existing protected restoration path even when the tuning override is disabled; those examples do not establish safe operating ratings or grant tuning consent. Restoration still requires its normal storage, protection and live-readback checks. Later tuning runs never replace that original backup.
+
+The option is saved atomically with the existing tuning configuration. The legacy nine-field record is accepted with `advancedClockOverride: false`; the new canonical record includes a real boolean. This is not a promise that older firmware can read the new tuning-options format. Disable tuning, verify original restoration and review exact settings/journal compatibility before a manual downgrade. No original-backup format migration is introduced.
+
+PLL support is checked before sending a requested setting to the ASIC driver. Unsupported clock points are skipped without emitting invalid PLL frames. The fast-error rejection, stable-point return and guarded recovery below remain in force. **No physical qualification of the advanced override or this new release is claimed.**
+
+## Faster ASIC-error rejection
 
 The tuner can now reject an unstable baseline or trial before the full performance comparison finishes. It uses fresh, distinct hardware-counter intervals captured after the current point was confirmed; repeated page refreshes supply no extra evidence.
 
 | ASIC-error evidence | Response |
 | --- | --- |
-| At least3% board errors or at least 5% on any required ASIC | Reject the first qualifying fresh interval, after excluding the possible old 15-second counter interval |
+| At least 3% board errors or at least 5% on any required ASIC | Reject the first qualifying fresh interval, after excluding the possible old 15-second counter interval |
 | Above 0.5% board errors or above 1% on any required ASIC | Reject after at least three consecutive fresh intervals spanning at least 10 seconds, after the same guard |
 | Clean or invalid interval, or a gap longer than 15 seconds | Reset the consecutive-error sequence; stale or duplicate readings cannot advance it |
 
@@ -50,6 +64,6 @@ For tuning, save the objective and compatible limits, starting with **60°C ASIC
 
 ## Qualification
 
-The fast-error implementation at source `f848a3825a6abbac1785389abb8043195ddf82d0` has offline controller, runtime/API, UI and target-build checks recorded in [fast-error software validation](../validation-autotune-fast-errors-20261104.md). Those private builds used the previous version markers and are not replacement release packages. The new version's manifest and checksums identify its exact build/source and images; the earlier physical observations in [3 November validation](../validation-autotune-release-20261103.md) remain limited to their own images.
+The fast-error implementation at source `f848a3825a6abbac1785389abb8043195ddf82d0` has offline controller, runtime/API, UI and target-build checks recorded in [fast-error software validation](../validation-autotune-fast-errors-20261104.md). That record predates the advanced clock override. Those private builds used the previous version markers and are not replacement release packages; they do not qualify the new override. The new version's manifest and checksums identify its exact build/source and images; the earlier physical observations in [3 November validation](../validation-autotune-release-20261103.md) remain limited to their own images.
 
-**No physical fast-error test or installation of this new release is claimed.** Software simulation and target compilation do not establish thermal stability, a hashrate/efficiency gain or every electrical fault. The test QAxe PCB revision remains unidentified. Standard 320×170 stays the default; the saved 480×320 RGB/BGR larger-panel paths remain physically unqualified. These files are not for QAxe+, OctAxe or other board variants. Existing hardware protection remains active and is not bypassed by tuning. Earlier evidence and release assets remain unchanged.
+**No physical fast-error or advanced-override test, or installation of this new release, is claimed.** Software simulation and target compilation do not establish thermal stability, a hashrate/efficiency gain or every electrical fault. The test QAxe PCB revision remains unidentified. Standard 320×170 stays the default; the saved 480×320 RGB/BGR larger-panel paths remain physically unqualified. These files are not for QAxe+, OctAxe or other board variants. Existing hardware protection remains active and is not bypassed by tuning. Earlier evidence and release assets remain unchanged.

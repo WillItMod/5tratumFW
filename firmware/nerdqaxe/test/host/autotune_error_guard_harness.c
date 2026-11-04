@@ -352,6 +352,38 @@ static void bounded_failed_point_memory_exhausts_safely(void) {
  assert(count==17); /* Sixteen stored exact pairs, then a fail-closed seventeenth. */
 }
 
+static bool command_supported(double frequency) {
+ return fabs(frequency-506.25)>0.001&&fabs(frequency-475)>0.001;
+}
+static void command_resolution_preflight(void) {
+ fwt_config config=options();config.priority=FWT_PERFORMANCE;
+ fixture f=begin(config);
+ fwt_cancel(&f.core,"test-new-run");f.core.frequencySupported=command_supported;
+ assert(fwt_start(&f.core,&f.input,f.now));
+ assert(f.core.frequencySupported==command_supported);
+ /* The first clock-up probe is unencodable. It must be skipped without
+  * requesting a frame or failing an otherwise healthy tuning session. */
+ const fwt_request trial=measured_first_trial(&f);
+ assert(trial.point.frequencyMHz==500&&trial.point.coreVoltageMv==1155);
+ assert(f.core.owns&&f.core.experiments==1);
+
+ f=begin(config);f.core.frequencySupported=command_supported;
+ f.input.asicTempC=config.maxAsicTempC;
+ const fwt_request backoff=fwt_tick(&f.core,&f.input,f.now);
+ assert(backoff.kind==FWT_REQUEST_APPLY&&backoff.point.frequencyMHz==468.75);
+ assert(command_supported(backoff.point.frequencyMHz));
+
+ f=begin(config);fwt_cancel(&f.core,"test-new-run");
+ f.core.frequencySupported=command_supported;
+ f.input.current.frequencyMHz=506.25;
+ assert(!fwt_start(&f.core,&f.input,f.now)&&!f.core.owns);
+ f.input.current.frequencyMHz=500;
+ assert(fwt_start(&f.core,&f.input,f.now));
+ const fwt_point unsupported={506.25,1150};
+ assert(fwt_apply(&f.core,unsupported,f.now,"test-defense").kind==FWT_REQUEST_PAUSE);
+ assert(!f.core.owns&&!strcmp(f.core.reason,"candidate-frequency-unavailable"));
+}
+
 int main(void) {
  severe_boundaries_and_counter_flush();
  ordinary_streak_and_unique_intervals();
@@ -363,6 +395,7 @@ int main(void) {
  failed_point_exclusion_survives_rounds_and_edits();
  corrections_do_not_return_to_failed_points();
  bounded_failed_point_memory_exhausts_safely();
+ command_resolution_preflight();
  puts("Actual shared controller: early ASIC-error boundaries/streaks, counter flush, stable rollback, protection priority, full windows and bounded run exclusions passed");
  return 0;
 }

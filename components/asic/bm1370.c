@@ -199,7 +199,11 @@ float BM1370_send_hash_frequency(float target_freq)
     uint8_t fb_divider, refdiv, postdiv1, postdiv2;
     float frequency;
 
-    pll_get_parameters(target_freq, 160, 239, &fb_divider, &refdiv, &postdiv1, &postdiv2, &frequency);
+    if (!pll_get_parameters_checked(target_freq, 160, 239,
+                                    &fb_divider, &refdiv, &postdiv1, &postdiv2, &frequency)) {
+        ESP_LOGE(TAG, "Rejecting unsupported PLL frequency request: %g MHz", target_freq);
+        return 0;
+    }
     
     uint8_t vdo_scale = (fb_divider * FREQ_MULT / refdiv >= 2400) ? 0x50 : 0x40;
     uint8_t postdiv = (((postdiv1 - 1) & 0xf) << 4) | ((postdiv2 - 1) & 0xf);

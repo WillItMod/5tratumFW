@@ -147,6 +147,8 @@ public:
     uint32_t getInitialASICDifficulty();
 
     virtual bool setAsicFrequency(float f);
+    bool setTuningFrequency(uint16_t frequency);
+    bool restoreOriginalTuningFrequency(uint16_t frequency);
     bool validateFrequency(float frequency);
     bool validateVoltage(float core_voltage);
 

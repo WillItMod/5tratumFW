@@ -12,7 +12,8 @@ void notifyJobWorkerReady(bool ready);
 void updateControl(); // Power-task owner, while holding its recursive hardware mutex.
 bool writeControlReport(JsonDocument &report);
 bool miningWritesAllowed();
-bool applyFrequency(uint16_t frequency); // Qualified power-task owner, hardware mutex held.
+bool applyFrequency(uint16_t frequency);
+bool applyTuningFrequency(uint16_t frequency); // Qualified power-task owner, hardware mutex held.
 uint64_t workGeneration();
 OperationGate &operationGate();
 using MiningOperation = OperationLease;

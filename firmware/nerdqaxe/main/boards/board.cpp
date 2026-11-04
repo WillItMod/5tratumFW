@@ -3,6 +3,9 @@
 #include "freertos/task.h"
 
 #include "board.h"
+#include "autotune/runtime.h"
+#include "autotune/clock_policy.h"
+#include "autotune/write_gate.h"
 #include "nvs_config.h"
 #include "esp_log.h"
 #include "w5500.h"
@@ -167,6 +170,18 @@ bool Board::setAsicFrequency(float frequency) {
     }
 
     return m_asics->setAsicFrequency(frequency);
+}
+
+bool Board::setTuningFrequency(uint16_t frequency) {
+    auto *driver=getAsicDriver();
+    if(!driver || !FiveTratumAutotune::clockFrequencySupported(frequency) || !FiveTratumAutotune::tuningFrequencyAllowed(frequency)) return false;
+    return driver->setAsicFrequency(frequency);
+}
+bool Board::restoreOriginalTuningFrequency(uint16_t frequency) {
+    FiveTratumAutotune::WriteGuard wire;
+    if(!FiveTratumAutotune::clockFrequencySupported(frequency) || !FiveTratumAutotune::originalFrequencyRestoreAllowed(frequency)) return false;
+    m_asicFrequency=frequency;
+    return true;
 }
 
 // set and get version rolling frequency

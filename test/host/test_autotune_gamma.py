@@ -42,6 +42,7 @@ class GammaAutotuneTests(unittest.TestCase):
             '-I',str(ROOT/'main/http_server'),'-I',str(ROOT/'components/asic/include'),
             '-include',str(HOST/'autotune_gamma_stubs.h'),str(ROOT/'main/nvs_config.c'),
             str(ROOT/'main/device_config.c'),str(ROOT/'main/http_server/operating_profiles.c'),
+            str(ROOT/'components/asic/pll.c'),
             str(HOST/'autotune_gamma_harness.c'),str(directory/'cJSON.c'),'-pthread','-lm','-o',str(cls.binary)]
         result=subprocess.run(command,capture_output=True,text=True)
         if result.returncode: raise RuntimeError(result.stderr)
@@ -51,6 +52,13 @@ class GammaAutotuneTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr or result.stdout)
         self.assertEqual(result.stdout.strip(),'PASS')
     def test_waiver_required_before_backup_or_ownership(self): self.run_case('waiver')
+    def test_legacy_clock_config_migrates_without_boot_writes_or_changing_manual_clock(self): self.run_case('advanced-migration')
+    def test_advanced_clock_warning_and_separate_per_run_consent_are_server_enforced(self): self.run_case('advanced-consent')
+    def test_clock_policy_rejects_unknown_duplicate_wrong_type_or_partial_fields(self): self.run_case('advanced-strict')
+    def test_production_driver_preflight_skips_pll_holes_without_fault_or_io(self): self.run_case('advanced-pll-candidates')
+    def test_active_policy_changes_and_commit_failure_preserve_current_owner_and_limits(self): self.run_case('advanced-active-policy')
+    def test_original_750_clock_backup_survives_policy_disable_reboot_and_restore(self): self.run_case('advanced-backup-restore')
+    def test_stale_manual_clock_cannot_bypass_advanced_policy_or_become_a_backup(self): self.run_case('advanced-stale-manual')
     def test_default_60_70_ceilings_preserve_explicit_saved_user_limits(self): self.run_case('conservative-defaults')
     def test_get_is_read_only_and_authorization_precedes_body(self): self.run_case('read-only')
     def test_passive_activity_is_nonblocking_read_only_without_observer_renewal(self): self.run_case('passive-activity')

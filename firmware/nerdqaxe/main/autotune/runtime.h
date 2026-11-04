@@ -13,6 +13,9 @@ void tick();
 bool ownsSettings();
 // Short nonlocking guard for a power-owner PLL/PMBus transition.
 bool transitionAllowed();
+// Power-owner-only admission; does not acquire the tuner mutex or read hardware.
+bool tuningFrequencyAllowed(uint16_t frequency);
+bool originalFrequencyRestoreAllowed(uint16_t frequency);
 // Power owner only; strict acquisition outside the one-frame write gate.
 bool transitionHealthy();
 // Immediate revocation, including while the HTTP OTA owner holds the power lock.

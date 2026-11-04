@@ -400,9 +400,9 @@ void PowerManagementTask::task()
 bool PowerManagementTask::commandTuningFrequency(uint16_t frequency) {
     if (!m_board || m_shutdown || !FiveTratumMining::controlSupported() ||
         !FiveTratumMining::miningWritesAllowed() || !refreshProtectionForMining() ||
-        !m_board->validateFrequency(frequency)) return false;
+        !FiveTratumAutotune::tuningFrequencyAllowed(frequency)) return false;
     if (frequency == m_appliedAsicFrequency) return true;
-    if (!FiveTratumMining::applyFrequency(frequency)) return false;
+    if (!FiveTratumMining::applyTuningFrequency(frequency)) return false;
     m_appliedAsicFrequency = frequency;
     return true;
 }

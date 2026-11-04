@@ -73,6 +73,8 @@ typedef struct {
  double stablePower;
  unsigned failedCount, errorSamples;
  uint64_t errorEpochUs, errorSampleId, errorCapturedAtUs, errorStartedUs;
+ /* Optional pure driver preflight. This never commands hardware or I/O. */
+ bool (*frequencySupported)(double frequencyMHz);
 } fwt_controller;
 
 static inline bool fwt_config_valid(const fwt_config *cfg,const fwt_limits *limits);
@@ -114,6 +116,9 @@ static inline bool fwt_point_equal(fwt_point a,fwt_point b) {
 static inline bool fwt_point_failed(const fwt_controller *c,fwt_point p) {
  for(unsigned n=0;n<c->failedCount;++n) if(fwt_point_equal(c->failedPoints[n],p)) return true;
  return false;
+}
+static inline bool fwt_point_commandable(const fwt_controller *c,fwt_point p) {
+ return !c->frequencySupported||c->frequencySupported(p.frequencyMHz);
 }
 static inline void fwt_error_streak_reset(fwt_controller *c) {
  c->errorSamples=0;c->errorStartedUs=0;
@@ -225,9 +230,12 @@ static inline bool fwt_start(fwt_controller *c,const fwt_input *i,uint64_t now) 
  if(c->owns||c->runId==UINT32_MAX||!fwt_config_valid(&c->config,&c->limits)||
     !fwt_input_valid(i,now)||!i->miningActive||i->fault||!fwt_config_contains(&c->config,i->current)) return false;
  if(i->current.frequencyMHz<c->limits.minFrequencyMHz||i->current.frequencyMHz>c->limits.maxFrequencyMHz||
-    i->current.coreVoltageMv<c->limits.minVoltageMv||i->current.coreVoltageMv>c->limits.maxVoltageMv) return false;
+    i->current.coreVoltageMv<c->limits.minVoltageMv||i->current.coreVoltageMv>c->limits.maxVoltageMv||
+    !fwt_point_commandable(c,i->current)) return false;
  const uint32_t id=c->runId+1;const fwt_limits l=c->limits;const fwt_config cfg=c->config;
+ bool (*frequencySupported)(double)=c->frequencySupported;
  fwt_init(c,&l,&cfg);c->runId=id;c->active=true;c->owns=true;
+ c->frequencySupported=frequencySupported;
  c->baseline=c->current=i->current;c->baselineAvailable=true;
  c->generation=i->generation;c->lastNowUs=now;c->stateSinceUs=now;
  c->errorEpochUs=now;
@@ -252,6 +260,7 @@ static inline bool fwt_point_allowed(const fwt_controller *c,fwt_point p) {
 }
 static inline fwt_request fwt_apply(fwt_controller *c,fwt_point p,uint64_t now,const char *reason) {
  if(!fwt_point_allowed(c,p)) return fwt_pause(c,"candidate-outside-limits");
+ if(!fwt_point_commandable(c,p)) return fwt_pause(c,"candidate-frequency-unavailable");
  if(fwt_point_failed(c,p)) return fwt_pause(c,"error-recovery-exhausted");
  fwt_request r=fwt_none();r.kind=FWT_REQUEST_APPLY;r.point=p;
  c->pending=p;c->awaitingApply=true;c->state=FWT_APPLYING;c->stateSinceUs=now;
@@ -296,13 +305,14 @@ static inline fwt_request fwt_backoff(fwt_controller *c,const fwt_input *i,uint6
  p.frequencyMHz=fwt_clamp(p.frequencyMHz-steps*c->limits.frequencyStepMHz,
   c->config.minFrequencyMHz,c->config.maxFrequencyMHz);
  p.coreVoltageMv=fwt_clamp(p.coreVoltageMv,c->config.minVoltageMv,c->config.maxVoltageMv);
- /* At most the bounded number of rejected points can obstruct this descent. */
- for(unsigned n=0;n<=FWT_ERROR_POINT_CAPACITY&&fwt_point_failed(c,p);++n) {
+ /* Skip error-rejected points and PLL rounding holes, in a bounded descent. */
+ for(unsigned n=0;n<=2*FWT_ERROR_POINT_CAPACITY+2&&
+     (fwt_point_failed(c,p)||!fwt_point_commandable(c,p));++n) {
   const double next=fmax(c->config.minFrequencyMHz,p.frequencyMHz-c->limits.frequencyStepMHz);
   if(next>=p.frequencyMHz) return fwt_pause(c,"error-recovery-exhausted");
   p.frequencyMHz=next;
  }
- if(fwt_point_failed(c,p)) return fwt_pause(c,"error-recovery-exhausted");
+ if(fwt_point_failed(c,p)||!fwt_point_commandable(c,p)) return fwt_pause(c,"error-recovery-exhausted");
  if(fwt_point_equal(p,c->current)) {
   /* The current point failed this run's constraints, not necessarily the
    * silicon. Retain the actual initiating cause without inventing a mean. */
@@ -337,7 +347,7 @@ static inline bool fwt_reject_error_point(fwt_controller *c) {
  c->failedPoints[c->failedCount++]=c->current;return true;
 }
 static inline bool fwt_can_return_stable(const fwt_controller *c,const fwt_input *i) {
- if(!c->stableAvailable||!fwt_point_allowed(c,c->stable)||fwt_point_failed(c,c->stable)||
+ if(!c->stableAvailable||!fwt_point_allowed(c,c->stable)||!fwt_point_commandable(c,c->stable)||fwt_point_failed(c,c->stable)||
     fwt_point_equal(c->stable,c->current)||!fwt_positive(c->stablePower)||c->stablePower>=c->config.maxPowerW) return false;
  const bool frequencyChanged=fabs(c->stable.frequencyMHz-c->current.frequencyMHz)>=0.01;
  const bool voltageChanged=fabs(c->stable.coreVoltageMv-c->current.coreVoltageMv)>=0.01;
@@ -404,7 +414,7 @@ static inline fwt_request fwt_next_candidate(fwt_controller *c,const fwt_input *
    p.frequencyMHz+=c->limits.frequencyStepMHz;
   }
   if(direction==3) {if(!fwt_can_raise_voltage(c,i)) continue;p.coreVoltageMv+=c->limits.voltageStepMv;}
-  if(!fwt_point_allowed(c,p)||fwt_point_equal(p,c->current)||fwt_point_failed(c,p)) continue;
+  if(!fwt_point_allowed(c,p)||!fwt_point_commandable(c,p)||fwt_point_equal(p,c->current)||fwt_point_failed(c,p)) continue;
   c->trialOrigin=c->current;c->trial=true;c->recovering=false;
   ++c->experiments;++c->roundExperiments;
   return fwt_apply(c,p,now,"evaluating-nearby-operating-point");

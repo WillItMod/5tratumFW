@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "core.h"
+#include "clock_policy.h"
 #include "write_gate.h"
 #include "storage_context.h"
 #include "presentation.h"
@@ -41,6 +42,7 @@ fwt_input observed{};
 uint64_t lastOwnerTickUs=0;
 TuningSensors sensors{};
 bool initialized = false, optionsError = false, backupAvailable = false, backupRestored = false;
+bool advancedClockOverride=false;
 enum class BlobStatus { Unloaded, Missing, Present, Invalid, ReadFailure };
 bool storagePrepared=false,powerInitialized=false,baselineLoadError=false;
 BlobStatus optionsStatus=BlobStatus::Unloaded,baselineStatus=BlobStatus::Unloaded;
@@ -86,7 +88,7 @@ fwt_limits hardwareLimits(Board *board) {
     fwt_limits limits{};
     if (!exactFamily(board)) return limits;
     limits.minFrequencyMHz = 100;
-    limits.maxFrequencyMHz = board->getAbsMaxAsicFrequency();
+    limits.maxFrequencyMHz = advancedClockMaxMHz;
     limits.minVoltageMv = board->getAbsMinAsicVoltageMillis() > 0 ? board->getAbsMinAsicVoltageMillis() : 1005;
     limits.maxVoltageMv = board->getAbsMaxAsicVoltageMillis();
     const double asicProtection = POWER_MANAGEMENT_MODULE.getFanController().getOverheatTemp(0);
@@ -99,7 +101,8 @@ fwt_limits hardwareLimits(Board *board) {
     limits.voltageStepMv = 5;
     return limits;
 }
-void writeConfig(JsonObject out, const fwt_config &config) {
+void writeConfig(JsonObject out, const fwt_config &config,bool advanced) {
+    out["advancedClockOverride"]=advanced;
     out["priority"] = fwt_priority_name(config.priority); out["continuous"] = config.continuous;
     out["minFrequencyMHz"] = config.minFrequencyMHz; out["maxFrequencyMHz"] = config.maxFrequencyMHz;
     out["minVoltageMv"] = config.minVoltageMv; out["maxVoltageMv"] = config.maxVoltageMv;
@@ -110,8 +113,11 @@ bool numeric(JsonObjectConst object, const char *key, double &out) {
     if (value.is<bool>() || !value.is<double>()) return false;
     out = value.as<double>(); return std::isfinite(out);
 }
-bool parseConfig(JsonObjectConst object, fwt_config &config) {
-    if (object.size() != 9 || !object["priority"].is<const char *>() || !object["continuous"].is<bool>()) return false;
+bool parseConfig(JsonObjectConst object, fwt_config &config,bool &advanced) {
+    advanced=false;
+    if(object.size()==10) {if(!object["advancedClockOverride"].is<bool>()) return false;advanced=object["advancedClockOverride"].as<bool>();}
+    else if(object.size()!=9 || !object["advancedClockOverride"].isNull()) return false;
+    if ( !object["priority"].is<const char *>() || !object["continuous"].is<bool>()) return false;
     const char *priority = object["priority"];
     if (!strcmp(priority, "efficiency")) config.priority = FWT_EFFICIENCY;
     else if (!strcmp(priority, "balanced")) config.priority = FWT_BALANCED;
@@ -188,7 +194,7 @@ bool validEffectiveSettings(Board *board, JsonObjectConst values) {
     if (!board || !Config::validTuningSettings(values)) return false;
     const double frequency=values[NVS_CONFIG_ASIC_FREQ].as<unsigned>();
     const double voltage=values[NVS_CONFIG_ASIC_VOLTAGE].as<unsigned>();
-    if (frequency<100 || frequency>board->getAbsMaxAsicFrequency() || voltage<controller.limits.minVoltageMv || voltage>board->getAbsMaxAsicVoltageMillis()) return false;
+    if (frequency<100 || frequency>advancedClockMaxMHz || !clockFrequencySupported(static_cast<uint16_t>(frequency)) || voltage<controller.limits.minVoltageMv || voltage>board->getAbsMaxAsicVoltageMillis()) return false;
     for (const char *key : {NVS_CONFIG_INVERT_FAN_POLARITY,NVS_CONFIG_AUTO_FAN_POLARITY,NVS_CONFIG_FAN_PWM_POLARITY,NVS_CONFIG_FAN_PID_USE_MAX}) if (values[key].as<unsigned>()>1) return false;
     for (const char *key : {NVS_CONFIG_FAN_SPEED,NVS_CONFIG_FAN1_SPEED}) if (values[key].as<unsigned>()>100) return false;
     const unsigned first=values[NVS_CONFIG_AUTO_FAN_SPEED],second=values[NVS_CONFIG_FAN1_MODE];
@@ -221,9 +227,10 @@ bool backupMatches(Board *board, JsonDocument &document) {
 void initialize(Board *board) {
     if (initialized || !storagePrepared || !powerInitialized || !exactFamily(board)) return;
     const fwt_limits limits = hardwareLimits(board);
+    advancedClockOverride=false;
     fwt_config config{};
     config.priority = FWT_BALANCED; config.continuous = false;
-    config.maxFrequencyMHz = board->getAsicFrequency();
+    config.maxFrequencyMHz = std::min(board->getAsicFrequency(),board->getAbsMaxAsicFrequency());
     config.minFrequencyMHz = std::max(limits.minFrequencyMHz, config.maxFrequencyMHz * 0.7);
     config.minFrequencyMHz = std::ceil(config.minFrequencyMHz);
     config.maxVoltageMv = board->getAsicVoltageMillis();
@@ -233,11 +240,13 @@ void initialize(Board *board) {
     config.maxPowerW = limits.maxPowerW;
     optionsError=optionsStatus==BlobStatus::Invalid || optionsStatus==BlobStatus::ReadFailure;
     if (optionsStatus==BlobStatus::Present) {
-        fwt_config proposed{};
-        if (!parseConfig(bootOptions.as<JsonObjectConst>(),proposed) || !fwt_config_valid(&proposed,&limits)) optionsError=true;
-        else config=proposed;
+        fwt_config proposed{};bool advanced=false;
+        if (!parseConfig(bootOptions.as<JsonObjectConst>(),proposed,advanced) || !fwt_config_valid(&proposed,&limits) ||
+            (!advanced && proposed.maxFrequencyMHz>board->getAbsMaxAsicFrequency())) optionsError=true;
+        else {config=proposed;advancedClockOverride=advanced;}
     }
     fwt_init(&controller,&limits,&config);
+    controller.frequencySupported=clockFrequencySupported;
     baselineLoadError=baselineStatus==BlobStatus::Invalid || baselineStatus==BlobStatus::ReadFailure;
     if (baselineLoadError) {adapterReason="Original tuning backup is unreadable";}
     else if (baselineStatus==BlobStatus::Present) {
@@ -456,6 +465,7 @@ void restoreWorkerLoop(void *) {
         }
         if (!recordWorkerBudget()) continue;
         board->loadSettings();
+        if(!board->restoreOriginalTuningFrequency(static_cast<uint16_t>(target.frequencyMHz))) {blockRestore("Original frequency restore was not authorized");continue;}
         if (!revisionCurrent()) {restoring=false;fwt_cancel(&controller,"Manual settings took ownership during restore");continue;}
         if (!board->restoreTuningFanPolarity(board->isInvertFanPolarityEnabled(),revisionCurrent)) {
             blockRestore("Original fan polarity restore interrupted; retry restore");continue;
@@ -550,6 +560,24 @@ void powerReady() {
     Guard guard;powerInitialized=true;initialize(SYSTEM_MODULE.getBoard());
 }
 bool transitionAllowed() { return !firmwareUpdates.load() && !permanentFreeze.load() && ((!pending && !restoring) || revisionCurrent()); }
+// These leaf guards may run under the short wire fence: never consult Config,
+// acquire the tuner mutex, read NVS or poll a sensor here. Hardware identity and
+// CAN eligibility were bound before ownership; manual intent revokes its epoch.
+static bool frequencyHardwareReady(Board *board) {
+    return initialized && board && FiveTratumMining::controlSupported() &&
+        !POWER_MANAGEMENT_MODULE.isShutdown() && !board->isShutdown() && SYSTEM_MODULE.getBoardError()==Board::Error::NONE;
+}
+bool originalFrequencyRestoreAllowed(uint16_t frequency) {
+    return frequencyHardwareReady(SYSTEM_MODULE.getBoard()) && restoring && backupAvailable && revisionCurrent() &&
+        clockFrequencySupported(frequency) && frequency==target.frequencyMHz && frequency==backup["frequencyMHz"].as<uint16_t>();
+}
+bool tuningFrequencyAllowed(uint16_t frequency) {
+    if(originalFrequencyRestoreAllowed(frequency)) return true;
+    Board *board=SYSTEM_MODULE.getBoard();
+    return frequencyHardwareReady(board) && pending && controller.owns && revisionCurrent() && clockFrequencySupported(frequency) &&
+        frequency==target.frequencyMHz && frequency>=controller.config.minFrequencyMHz && frequency<=controller.config.maxFrequencyMHz &&
+        (frequency<=board->getAbsMaxAsicFrequency() || advancedClockOverride);
+}
 bool transitionHealthy() {
     if (!transitionAllowed()) return false;
     if(preserveRecoveryFaults()) {
@@ -749,10 +777,11 @@ bool report(JsonDocument &document) {
     hardware["asicSensor"] = board ? board->tuningAsicSensorLabel() : "Unavailable ASIC temperature source";
     hardware["vrmSensor"] = board ? board->tuningVrmSensorLabel() : "Unavailable VRM temperature source";
     hardware["powerSource"] = sensors.measuredInputPower ? "Measured regulator input power; not wall power" : "Converter output-derived power estimate; not wall power";
-    writeConfig(document["config"].to<JsonObject>(),controller.config);
+    writeConfig(document["config"].to<JsonObject>(),controller.config,advancedClockOverride);
     auto limits = document["limits"].to<JsonObject>();
     const auto &l=controller.limits;
-    limits["minFrequencyMHz"]=l.minFrequencyMHz; limits["maxFrequencyMHz"]=l.maxFrequencyMHz;
+    limits["minFrequencyMHz"]=l.minFrequencyMHz; limits["maxFrequencyMHz"]=board?board->getAbsMaxAsicFrequency():0;
+    limits["advancedMaxFrequencyMHz"]=advancedClockMaxMHz;
     limits["minVoltageMv"]=l.minVoltageMv; limits["maxVoltageMv"]=l.maxVoltageMv;
     limits["maxAsicTempC"]=l.maxAsicTempC; limits["maxVrmTempC"]=l.maxVrmTempC; limits["maxPowerW"]=l.maxPowerW;
     limits["frequencyStepMHz"]=l.frequencyStepMHz; limits["voltageStepMv"]=l.voltageStepMv;
@@ -810,25 +839,37 @@ const char *command(JsonObjectConst input) {
     const char *action=input["action"];
     if (!strcmp(action,"configure")) {
         if (pending || restoring || controller.awaitingApply) return "transition-in-progress";
-        fwt_config next{};
-        if (input.size()!=2 || !parseConfig(input["config"].as<JsonObjectConst>(),next) || !fwt_config_valid(&next,&controller.limits)) return "invalid-config";
+        fwt_config next{};bool nextAdvanced=false;
+        if ((input.size()!=2 && input.size()!=4) || !parseConfig(input["config"].as<JsonObjectConst>(),next,nextAdvanced) || !fwt_config_valid(&next,&controller.limits)) return "invalid-config";
+        const bool warningFields=input.size()==4 && input["advancedClockWarningAccepted"].is<bool>() &&
+            input["advancedClockWarningVersion"].is<int>() && input["advancedClockWarningVersion"].as<int>()==1;
+        if(input.size()==4 && !warningFields) return nextAdvanced?"advanced-clock-warning-required":"invalid-config";
+        if(nextAdvanced && (!warningFields || !input["advancedClockWarningAccepted"].as<bool>())) return "advanced-clock-warning-required";
+        if(!nextAdvanced && next.maxFrequencyMHz>board->getAbsMaxAsicFrequency()) return "advanced-clock-override-required";
+        if(!nextAdvanced && controller.owns && controller.current.frequencyMHz>board->getAbsMaxAsicFrequency()) return "advanced-clock-override-required";
+        if(!clockFrequencySupported(static_cast<uint16_t>(next.minFrequencyMHz)) || !clockFrequencySupported(static_cast<uint16_t>(next.maxFrequencyMHz))) return "invalid-config";
         if (controller.owns && (controller.current.frequencyMHz<next.minFrequencyMHz || controller.current.frequencyMHz>next.maxFrequencyMHz ||
             controller.current.coreVoltageMv<next.minVoltageMv || controller.current.coreVoltageMv>next.maxVoltageMv)) return "current-point-outside-bounds";
         fwt_controller proposed=controller;
         if (!fwt_configure(&proposed,&next)) return "current-point-outside-bounds";
-        JsonDocument saved;writeConfig(saved.to<JsonObject>(),next);
+        JsonDocument saved;writeConfig(saved.to<JsonObject>(),next,nextAdvanced);
         if (!writeVerified("options",saved)) return "storage-unavailable";
-        controller=proposed;
+        controller=proposed;advancedClockOverride=nextAdvanced;
         optionsError=false;optionsStatus=BlobStatus::Present;
         if (!baselineLoadError) adapterReason=nullptr;
         return nullptr;
     }
     if (!strcmp(action,"start")) {
-        if (input.size()!=3 || !input["waiverAccepted"].is<bool>() || !input["waiverAccepted"].as<bool>() ||
+        if ((input.size()!=3 && input.size()!=4) || !input["waiverAccepted"].is<bool>() || !input["waiverAccepted"].as<bool>() ||
             !input["waiverVersion"].is<int>() || input["waiverVersion"].as<int>()!=waiverVersion) return "waiver-required";
+        if(advancedClockOverride) {
+            if(input.size()!=4 || !input["advancedClockAccepted"].is<bool>() || !input["advancedClockAccepted"].as<bool>()) return "advanced-clock-acceptance-required";
+        } else if(input.size()==4 && !input["advancedClockAccepted"].is<bool>()) return "invalid-request";
         if (optionsError || baselineLoadError || restoring || pending || controller.owns || firmwareUpdates.load() || permanentFreeze.load()) return "tuner-not-ready";
         controller.limits = hardwareLimits(board);
         if (!fwt_config_valid(&controller.config,&controller.limits)) return "limits-changed-reconfigure";
+        if(!advancedClockOverride && (controller.config.maxFrequencyMHz>board->getAbsMaxAsicFrequency() ||
+            board->getAsicFrequency()>board->getAbsMaxAsicFrequency())) return "advanced-clock-override-required";
         const uint64_t before=Config::tuningMutationRevision();
         acquire(board); const uint64_t now=esp_timer_get_time();
         if (!observed.valid || !observed.miningActive || observed.fault || !observed.fanOk ||

@@ -1,6 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 #include "autotune/core.h"
+#include "autotune/clock_policy.h"
 #include "autotune/events.h"
 #include "autotune/recovery_guard.h"
 #include "autotune/display_snapshot.h"
@@ -76,7 +77,7 @@ int nvs_set_blob(nvs_handle_t handle,const char *key,const void *data,size_t len
     staged[handles[handle]+"/"+key]=std::string(static_cast<const char *>(data),length);
     return ESP_OK;
 }
-namespace FiveTratumAutotune {void externalHandoff(const char *);}
+namespace FiveTratumAutotune {void externalHandoff(const char *);bool tuningFrequencyAllowed(uint16_t);bool originalFrequencyRestoreAllowed(uint16_t);}
 int nvs_commit(nvs_handle_t){assert(hostInternalStack);++hostNvsCalls;if(storageFail)return ESP_FAIL;hostNow+=storageDelayUs;for(auto &entry:staged)nvstore[entry.first]=entry.second;staged.clear();if(revokeDuringBackup)FiveTratumAutotune::externalHandoff("Manual control during backup");return ESP_OK;}
 using TaskHandle_t=void *;
 static void (*workerFunction)(void *)=nullptr;
@@ -144,13 +145,13 @@ struct TuningSensors {float asicTempC=0,vrmTempC=0,powerW=0,vin=0,coreVoltageMv=
 class Board {
 public:
  enum Error {NONE,VOUT_FAULT,TEMP_FAULT};
- int count=4,frequency=600,voltage=1150;bool fanPolarity=false;PidSettings pid[2];
+ int count=4,frequency=600,voltage=1150,standardFrequency=850;bool fanPolarity=false;PidSettings pid[2];
  const char *getDeviceModel(){return count==4?"NerdQAxe++":"NerdOCTAXE-γ";}
  const char *tuningAsicSensorLabel() const{return "Shared calibrated TMP1075";}
  const char *tuningVrmSensorLabel(){return "Hottest VRM sensor";}
  const char *getAsicModel(){return "BM1370";}
  int getAsicCount(){return count;}bool isCanSlave(){return false;}bool isInitialized(){return !paused;}bool isBuckInitialized(){return !paused;}bool isShutdown(){return false;}
- int getAbsMaxAsicFrequency(){return 850;}int getAbsMinAsicVoltageMillis(){return 1005;}int getAbsMaxAsicVoltageMillis(){return 1400;}
+ int getAbsMaxAsicFrequency(){return standardFrequency;}int getAbsMinAsicVoltageMillis(){return 1005;}int getAbsMaxAsicVoltageMillis(){return 1400;}
  int getAsicFrequency(){return frequency;}int getAsicVoltageMillis(){return voltage;}float getMaxPin(){return 300;}float getMinVin(){return 11;}float getMaxVin(){return 13;}
  struct Asics {int getSmallCoreCount(){return 2040;}} asics;
  Asics *getAsics(){return &asics;}
@@ -160,7 +161,8 @@ public:
  bool readTuningFan(int,uint16_t &rpm){rpm=fanReadFail?0:1800;return !fanReadFail;}
  bool refreshTuningTemperatures(){return true;}
  PidSettings *getPidSettings(int ch){return &pid[ch];}
- void loadSettings(){frequency=Config::cfgGetU16("asicfrequency",600);voltage=Config::cfgGetU16("asicvoltage",1150);fanPolarity=Config::cfgGetU16("pwmfanpol",0);for(int i=0;i<2;++i){pid[i].targetTemp=Config::cfgGetU16(i?"fan1_pid_temp":"pid_temp",55);}}
+ bool restoreOriginalTuningFrequency(uint16_t);
+ void loadSettings(){frequency=std::min<int>(Config::cfgGetU16("asicfrequency",600),standardFrequency);voltage=Config::cfgGetU16("asicvoltage",1150);fanPolarity=Config::cfgGetU16("pwmfanpol",0);for(int i=0;i<2;++i){pid[i].targetTemp=Config::cfgGetU16(i?"fan1_pid_temp":"pid_temp",55);}}
  bool readTuningSensors(TuningSensors &);
  bool isRecoveryPowerOff(){return paused&&offGpioGood;}
  bool readRecoverySensors(TuningSensors &out){++hostSensorReads;out={};if(offSensorFail)return false;out.asicTempC=asicDegrees;out.vrmTempC=vrmDegrees;out.vin=12;out.capturedAtUs=hostNow-1000;return true;}
@@ -170,13 +172,16 @@ struct FanController {
  uint16_t getOverheatTemp(int ch){return Config::cfgGetU16(ch?"fan1_overheat":"overheat_temp",ch?105:75);}
  void loadSettings(){}
 };
+namespace FiveTratumMining {bool applyTuningFrequency(uint16_t);}
 class PowerManagementTask {
 public:
  uint16_t appliedFrequency=600,appliedVoltage=1150;FanController fan;
+ Board *m_board=&hostBoard;bool m_shutdown=false;uint16_t &m_appliedAsicFrequency=appliedFrequency;
+ bool refreshProtectionForMining(){return true;}
  uint16_t getAppliedTuningFrequency(){return appliedFrequency;}uint16_t getAppliedTuningVoltage(){return appliedVoltage;}
  bool isShutdown(){return false;}uint16_t getFanRPM(int){return 1800;}FanController &getFanController(){return fan;}
  void lock(){}void unlock(){}
- bool commandTuningFrequency(uint16_t value){writes.push_back("clock:"+std::to_string(value));appliedFrequency=value;++hostGeneration;return !paused;}
+ bool commandTuningFrequency(uint16_t);
  bool commandTuningVoltage(uint16_t value){writes.push_back("voltage:"+std::to_string(value));if(voltageFail)return false;appliedVoltage=value;return !paused;}
 };
 static PowerManagementTask POWER_MANAGEMENT_MODULE;
@@ -190,6 +195,7 @@ static HostSystem SYSTEM_MODULE;
 struct Stratum {bool isAnyConnected(){return true;}};
 static Stratum manager;static Stratum *STRATUM_MANAGER=&manager;
 namespace FiveTratumMining {
+bool applyTuningFrequency(uint16_t value){if(!FiveTratumAutotune::tuningFrequencyAllowed(value))return false;writes.push_back("clock:"+std::to_string(value));POWER_MANAGEMENT_MODULE.appliedFrequency=value;++hostGeneration;return !paused;}
 bool controlSupported(){return true;}bool miningWritesAllowed(){return !paused&&miningGateOpen;}uint64_t workGeneration(){return hostGeneration;}
 bool manualOverride(bool value){++hostPolicyRevision;paused=value;return true;}
 bool requestedPaused(){return paused;}

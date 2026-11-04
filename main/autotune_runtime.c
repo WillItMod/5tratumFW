@@ -15,6 +15,7 @@
 #include "nvs.h"
 #include "serial.h"
 #include "driver/uart.h"
+#include "pll.h"
 #include <stdatomic.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -25,6 +26,9 @@
 #define TUNE_POLL_US UINT64_C(2000000)
 #define TUNE_FRESH_US UINT64_C(15000000)
 #define BACKUP_FIELDS 6
+#define TUNE_STANDARD_MAX_MHZ 690.0
+/* Project experimental request ceiling, not a manufacturer/safe clock rating. */
+#define TUNE_ADVANCED_MAX_MHZ 1200.0
 static const NvsConfigKey backup_keys[BACKUP_FIELDS] = {NVS_CONFIG_ASIC_FREQUENCY,
     NVS_CONFIG_ASIC_VOLTAGE, NVS_CONFIG_AUTO_FAN_SPEED, NVS_CONFIG_MANUAL_FAN_SPEED,
     NVS_CONFIG_MIN_FAN_SPEED, NVS_CONFIG_TEMP_TARGET};
@@ -40,6 +44,7 @@ typedef struct {
     bool rail_wait, rail_commanded;
     bool recovery_requested;
     bool recovery_automatic, automatic_recovery_attempted;
+    bool advanced_clock_override;
     RecoveryPhase recovery_phase;
     const char *recovery_reason;
     uint32_t recovery_schedule_revision;
@@ -158,10 +163,18 @@ static bool number(const cJSON *object, const char *name, double *value) {
     *value = item->valuedouble;
     return true;
 }
-static bool parse_config(const cJSON *object, fwt_config *config) {
+static bool clock_command_valid(double frequency) {
+    uint8_t fb, ref, p1, p2;
+    float actual;
+    return isfinite(frequency) && frequency <= TUNE_ADVANCED_MAX_MHZ &&
+        pll_get_parameters_checked((float)frequency,160,239,&fb,&ref,&p1,&p2,&actual);
+}
+static bool parse_config(const cJSON *object, fwt_config *config, bool *advanced) {
     const char *const names[] = {"priority", "continuous", "minFrequencyMHz", "maxFrequencyMHz",
-        "minVoltageMv", "maxVoltageMv", "maxAsicTempC", "maxVrmTempC", "maxPowerW"};
-    if (!exact_fields(object, names, 9)) return false;
+        "minVoltageMv", "maxVoltageMv", "maxAsicTempC", "maxVrmTempC", "maxPowerW", "advancedClockOverride"};
+    const cJSON *override = cJSON_GetObjectItemCaseSensitive(object,"advancedClockOverride");
+    if (!exact_fields(object, names, override ? 10 : 9) || (override && !cJSON_IsBool(override))) return false;
+    *advanced = override && cJSON_IsTrue(override);
     memset(config, 0, sizeof(*config));
     const cJSON *priority = cJSON_GetObjectItemCaseSensitive(object, "priority");
     const cJSON *continuous = cJSON_GetObjectItemCaseSensitive(object, "continuous");
@@ -176,10 +189,11 @@ static bool parse_config(const cJSON *object, fwt_config *config) {
         number(object,"minVoltageMv",&config->minVoltageMv) && number(object,"maxVoltageMv",&config->maxVoltageMv) &&
         number(object,"maxAsicTempC",&config->maxAsicTempC) && number(object,"maxVrmTempC",&config->maxVrmTempC) &&
         number(object,"maxPowerW",&config->maxPowerW) &&
+        config->maxFrequencyMHz <= (*advanced ? TUNE_ADVANCED_MAX_MHZ : TUNE_STANDARD_MAX_MHZ) &&
         floor(config->minVoltageMv) == config->minVoltageMv && floor(config->maxVoltageMv) == config->maxVoltageMv &&
         fwt_config_valid(config,&tuner.core.limits);
 }
-static cJSON *config_json(const fwt_config *config) {
+static cJSON *config_json(const fwt_config *config, bool advanced) {
     cJSON *result = cJSON_CreateObject();
     if (!result) return NULL;
     if (!cJSON_AddStringToObject(result,"priority",fwt_priority_name(config->priority)) ||
@@ -190,7 +204,8 @@ static cJSON *config_json(const fwt_config *config) {
         !cJSON_AddNumberToObject(result,"maxVoltageMv",config->maxVoltageMv) ||
         !cJSON_AddNumberToObject(result,"maxAsicTempC",config->maxAsicTempC) ||
         !cJSON_AddNumberToObject(result,"maxVrmTempC",config->maxVrmTempC) ||
-        !cJSON_AddNumberToObject(result,"maxPowerW",config->maxPowerW)) {cJSON_Delete(result); return NULL;}
+        !cJSON_AddNumberToObject(result,"maxPowerW",config->maxPowerW) ||
+        !cJSON_AddBoolToObject(result,"advancedClockOverride",advanced)) {cJSON_Delete(result); return NULL;}
     return result;
 }
 static bool binding_valid(const cJSON *json) {
@@ -273,7 +288,9 @@ static bool parse_backup(const cJSON *json) {
             double value;
             if (!number(fields,backup_names[i],&value)) return false;
             if (i == 0) {
-                if (value < tuner.core.limits.minFrequencyMHz || value > tuner.core.limits.maxFrequencyMHz) return false;
+                /* The immutable original remains restorable independently of
+                 * the user's current automatic clock policy. */
+                if (value < tuner.core.limits.minFrequencyMHz || !clock_command_valid(value)) return false;
                 values[i].type = TYPE_FLOAT; values[i].value.f = value;
             } else {
                 const double minimum = i == 1 ? tuner.core.limits.minVoltageMv : i == 5 ? 35 : 0;
@@ -350,11 +367,11 @@ void autotune_gamma_init(GlobalState *state) {
     }
     uint16_t mv = state ? nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE) : 1150;
     double mhz = state ? nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY) : 525;
-    const fwt_limits limits = {.minFrequencyMHz=400,.maxFrequencyMHz=690,
+    const fwt_limits limits = {.minFrequencyMHz=400,.maxFrequencyMHz=TUNE_ADVANCED_MAX_MHZ,
         .minVoltageMv=1000,.maxVoltageMv=1250,.maxAsicTempC=70,.maxVrmTempC=95,
         .maxPowerW=40,.frequencyStepMHz=6.25,.voltageStepMv=5};
     const fwt_config config = {.priority=FWT_BALANCED,.continuous=false,
-        .minFrequencyMHz=400,.maxFrequencyMHz=mhz,.minVoltageMv=1000,.maxVoltageMv=mv,
+        .minFrequencyMHz=400,.maxFrequencyMHz=fmin(mhz,TUNE_STANDARD_MAX_MHZ),.minVoltageMv=1000,.maxVoltageMv=mv,
         .maxAsicTempC=60,.maxVrmTempC=70,.maxPowerW=state ? state->DEVICE_CONFIG.power_consumption_target : 22};
     fwt_init(&tuner.core,&limits,&config);
     if (tuner.supported) {
@@ -364,7 +381,7 @@ void autotune_gamma_init(GlobalState *state) {
             fwt_config stored;
             const char *const keys[]={"schemaVersion","mac","board","config"};
             tuner.storage_ok = exact_fields(record,keys,4) && binding_valid(record) &&
-                parse_config(cJSON_GetObjectItemCaseSensitive(record,"config"),&stored);
+                parse_config(cJSON_GetObjectItemCaseSensitive(record,"config"),&stored,&tuner.advanced_clock_override);
             if (tuner.storage_ok) fwt_init(&tuner.core,&limits,&stored);
         } else if (err != ESP_ERR_NVS_NOT_FOUND) tuner.storage_ok = false;
         cJSON_Delete(record); record = NULL;
@@ -373,6 +390,7 @@ void autotune_gamma_init(GlobalState *state) {
         else if (err != ESP_ERR_NVS_NOT_FOUND) tuner.storage_ok = false;
         cJSON_Delete(record);
     }
+    tuner.core.frequencySupported=clock_command_valid;
     pthread_mutex_unlock(&tuner_mutex);
 }
 
@@ -1015,7 +1033,7 @@ static cJSON *report(void) {
     cJSON *status = cJSON_AddObjectToObject(root,"status");
     cJSON *backup = cJSON_AddObjectToObject(root,"backup");
     cJSON *diagnostic = cJSON_AddObjectToObject(root,"diagnostics");
-    cJSON *config = config_json(&tuner.core.config);
+    cJSON *config = config_json(&tuner.core.config,tuner.advanced_clock_override);
     if (!hardware || !limits || !guidance || !status || !backup || !diagnostic || !config) {cJSON_Delete(config); goto failed;}
     if (!cJSON_AddItemToObject(root,"config",config)) {cJSON_Delete(config); goto failed;}
 #define STR(o,k,v) do {if(!cJSON_AddStringToObject((o),(k),(v))) goto failed;} while(0)
@@ -1028,7 +1046,8 @@ static cJSON *report(void) {
     STR(hardware,"vrmSensor","TPS546 internal regulator die");
     STR(hardware,"powerSource","Estimated device power: measured Vout x Iout + 5 W; not wall power");
     NUM(limits,"minFrequencyMHz",tuner.core.limits.minFrequencyMHz);
-    NUM(limits,"maxFrequencyMHz",tuner.core.limits.maxFrequencyMHz);
+    NUM(limits,"maxFrequencyMHz",TUNE_STANDARD_MAX_MHZ);
+    NUM(limits,"advancedMaxFrequencyMHz",TUNE_ADVANCED_MAX_MHZ);
     NUM(limits,"minVoltageMv",tuner.core.limits.minVoltageMv);
     NUM(limits,"maxVoltageMv",tuner.core.limits.maxVoltageMv);
     NUM(limits,"maxAsicTempC",tuner.core.limits.maxAsicTempC);
@@ -1038,7 +1057,7 @@ static cJSON *report(void) {
     NUM(limits,"voltageStepMv",tuner.core.limits.voltageStepMv);
     STR(guidance,"asic","Recommended/default tuning ceiling: 60 C. Above 60 C needs caution; above 65 C is strongly discouraged. Higher configurable limits are not recommended operating targets or certified junction temperatures. Existing 75 C firmware protection remains active.");
     STR(guidance,"vrm","Recommended/default tuning ceiling: 70 C. Above 70 C needs caution; 80 C and higher is strongly discouraged. Protection cutoffs are not recommended operating targets. The TPS546 die-sensor setting can be raised up to the allowed 95 C limit; that limit is not a recommendation. Existing 105 C firmware protection and regulator faults remain authoritative.");
-    STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Frequency and voltage upper bounds initially match your saved settings; raising them is an explicit experimental choice. PLL frequency is computed from commands, not measured clock readback.");
+    STR(guidance,"power","Power is an output-derived estimate including a fixed 5 W allowance. It cannot certify PSU, cable or wall-power headroom. Initial clock bounds are capped at the standard software ceiling; advanced clocks require separate explicit consent. The experimental 1200 MHz request ceiling is not a safe operating rating. Voltage, thermal, power and fault safeguards remain active. PLL frequency is computed from commands, not measured clock readback.");
     BOOL(guidance,"experimental",true);
     STR(status,"state",tuner.restore_pending || tuner.recovery_requested ? "restoring" : fwt_state_name(tuner.core.state));
     STR(status,"reason",presentation_reason(now));
@@ -1139,31 +1158,52 @@ static const char *handle_action(const cJSON *json) {
     pthread_mutex_lock(&tuner_mutex);
     if (!tuner.supported) {error="unsupported-hardware"; goto done;}
     if (!strcmp(action->valuestring,"configure")) {
-        const char *const names[] = {"action","config"};
+        const char *const names[] = {"action","config","advancedClockWarningAccepted","advancedClockWarningVersion"};
         fwt_config config;
+        bool advanced = false;
+        const cJSON *warning = cJSON_GetObjectItemCaseSensitive(json,"advancedClockWarningAccepted");
+        const cJSON *warning_version = cJSON_GetObjectItemCaseSensitive(json,"advancedClockWarningVersion");
+        double version = 0;
         if (tuner.core.awaitingApply || tuner.confirming || tuner.restore_pending || tuner.recovery_requested) {
             error="transition-in-progress"; goto done;
         }
-        if (!exact_fields(json,names,2) || !parse_config(cJSON_GetObjectItemCaseSensitive(json,"config"),&config)) {
+        if (!exact_fields(json,names,(warning || warning_version) ? 4 : 2) ||
+            !parse_config(cJSON_GetObjectItemCaseSensitive(json,"config"),&config,&advanced) ||
+            ((warning || warning_version) && (!cJSON_IsBool(warning) ||
+                !number(json,"advancedClockWarningVersion",&version) || version != 1))) {
             error="invalid-configuration"; goto done;
+        }
+        if (advanced && !cJSON_IsTrue(warning)) {error="advanced-clock-warning-required"; goto done;}
+        if (!advanced && tuner.core.owns && tuner.input.current.frequencyMHz > TUNE_STANDARD_MAX_MHZ) {
+            error="advanced-clock-override-required"; goto done;
         }
         fwt_controller candidate=tuner.core;
         if (!fwt_configure(&candidate,&config)) {error="invalid-configuration"; goto done;}
-        cJSON *record = bound_json(); cJSON *settings = config_json(&config);
+        cJSON *record = bound_json(); cJSON *settings = config_json(&config,advanced);
         if (!record || !settings) {cJSON_Delete(record); cJSON_Delete(settings); error="allocation-failed"; goto done;}
         if (!cJSON_AddItemToObject(record,"config",settings)) {
             cJSON_Delete(record); cJSON_Delete(settings); error="allocation-failed"; goto done;
         }
         if (write_record("config",record) != ESP_OK) error="storage-unavailable";
-        else tuner.core=candidate;
+        else {tuner.core=candidate;tuner.advanced_clock_override=advanced;}
         cJSON_Delete(record);
         if (!error) {tuner.storage_ok=true; tuner.override_reason=NULL;}
     } else if (!strcmp(action->valuestring,"start")) {
-        const char *const names[] = {"action","waiverAccepted","waiverVersion"};
+        const char *const names[] = {"action","waiverAccepted","waiverVersion","advancedClockAccepted"};
         const cJSON *waiver = cJSON_GetObjectItemCaseSensitive(json,"waiverAccepted");
+        const cJSON *advanced_accepted = cJSON_GetObjectItemCaseSensitive(json,"advancedClockAccepted");
         double version = 0;
-        if (!exact_fields(json,names,3) || !cJSON_IsTrue(waiver) || !number(json,"waiverVersion",&version) || version != 1) {
+        if (!exact_fields(json,names,advanced_accepted ? 4 : 3) || !cJSON_IsTrue(waiver) ||
+            !number(json,"waiverVersion",&version) || version != 1 ||
+            (advanced_accepted && !cJSON_IsBool(advanced_accepted))) {
             error="waiver-required"; goto done;
+        }
+        if (tuner.advanced_clock_override && !cJSON_IsTrue(advanced_accepted)) {
+            error="advanced-clock-acceptance-required"; goto done;
+        }
+        if (!tuner.advanced_clock_override &&
+            (tuner.input.current.frequencyMHz > TUNE_STANDARD_MAX_MHZ || tuner.core.config.maxFrequencyMHz > TUNE_STANDARD_MAX_MHZ)) {
+            error="advanced-clock-override-required"; goto done;
         }
         const uint64_t now = esp_timer_get_time();
         tuner.observer_until = now+TUNE_FRESH_US;

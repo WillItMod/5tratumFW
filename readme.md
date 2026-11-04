@@ -1,10 +1,12 @@
 # 5tratumFW: choose your device
 
-**Adaptive tuning BETA:** Gamma **Beta14**, NerdQAxe++ **Beta11** and NerdOctAxe Gamma **Beta9** add the [Tuning page](docs/autotuning.md), explicit per-run waiver and verified original-settings backup/restore. They now reject error-prone trials sooner while keeping the full successful measurement unchanged. Choose the model-specific files below. [Fast-error software validation](docs/validation-autotune-fast-errors-20261104.md) is separate from the [earlier release hardware evidence](docs/validation-autotune-release-20261103.md); no physical fast-guard or new-release installation is claimed.
+**Adaptive tuning BETA:** Gamma **Beta14**, NerdQAxe++ **Beta11** and NerdOctAxe Gamma **Beta9** add the [Tuning page](docs/autotuning.md), explicit per-run waiver and verified original-settings backup/restore. They now reject error-prone trials sooner while keeping the full successful measurement unchanged, and add a separately acknowledged advanced clock override. Choose the model-specific files below. [Fast-error software validation](docs/validation-autotune-fast-errors-20261104.md) is separate from the [earlier release hardware evidence](docs/validation-autotune-release-20261103.md); no physical fast-guard, advanced-override or new-release installation is claimed.
 
 **[Download firmware: Gamma, QAxe or OctAxe](DOWNLOADS.md)**
 
 5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** The firmware families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
+
+**Advanced clock override stays off by default.** Its warning checkbox starts unticked, requires an explicit Save, and does not replace the separate per-run waiver or advanced Start acknowledgement. The **1,200 MHz project ceiling is not a safe hardware rating** and does not command an immediate clock jump. Temperature, voltage, power, fan and fault protections remain active. Existing higher manual clocks and original backups do not imply consent. Whole-miner PLL preflight skips unsupported points; the original protected backup/restore stays independent and unchanged. [Read the advanced guidance](docs/autotuning.md) before enabling it. No physical override qualification is claimed.
 
 **Gamma Beta14 supports single-file OTA:** `esp-miner.bin` includes its complete matching web interface. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery. QAxe and OctAxe still require both their application and matching WWW images. See [single-file updates](docs/single-file-updates.md).
 

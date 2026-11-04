@@ -17,6 +17,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   actionError = '';
   message = '';
   waiverAccepted = false;
+  advancedClockWarningAccepted = false;
   viewMode: 'live' | 'options' = 'options';
   private viewInitialized = false;
   readonly wholeMHz = true;
@@ -81,7 +82,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   private config(value: AutotuneConfig): AutotuneConfig {
     return {priority:value.priority,continuous:value.continuous,maxAsicTempC:value.maxAsicTempC,maxVrmTempC:value.maxVrmTempC,
       minFrequencyMHz:value.minFrequencyMHz,maxFrequencyMHz:value.maxFrequencyMHz,minVoltageMv:value.minVoltageMv,
-      maxVoltageMv:value.maxVoltageMv,maxPowerW:value.maxPowerW};
+      maxVoltageMv:value.maxVoltageMv,maxPowerW:value.maxPowerW,
+      ...(this.advancedClockAvailable ? {advancedClockOverride:value.advancedClockOverride === true} : {})};
   }
   private finite(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value); }
   private pointValid(value: AutotunePoint | null): boolean {
@@ -89,6 +91,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   private validConfig(value: AutotuneConfig): boolean {
     return !!value && ['efficiency','balanced','performance'].includes(value.priority) && typeof value.continuous === 'boolean'
+      && (value.advancedClockOverride === undefined || typeof value.advancedClockOverride === 'boolean')
       && [value.maxAsicTempC,value.maxVrmTempC,value.minFrequencyMHz,value.maxFrequencyMHz,value.minVoltageMv,value.maxVoltageMv,value.maxPowerW].every(number => this.finite(number) && number > 0)
       && value.minFrequencyMHz <= value.maxFrequencyMHz && value.minVoltageMv <= value.maxVoltageMv;
   }
@@ -113,11 +116,40 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get optionsUsable(): boolean {
     const report = this.report; const limits = report?.limits;
-    return !!report && report.supported && this.validConfig(report.config) && this.unitsValid(report.config) && !!limits
+    return !!report && report.supported && this.clockMetadataValid() && this.validConfig(report.config) && this.unitsValid(report.config) && !!limits
       && report.guidance?.experimental === true && [report.guidance.asic,report.guidance.vrm,report.guidance.power].every(value => typeof value === 'string')
       && [1,4,8].includes(report.hardware.asicCount)
       && [limits.minFrequencyMHz,limits.maxFrequencyMHz,limits.minVoltageMv,limits.maxVoltageMv,limits.maxAsicTempC,limits.maxVrmTempC,limits.maxPowerW,limits.frequencyStepMHz,limits.voltageStepMv].every(value => this.finite(value) && value > 0)
       && limits.minFrequencyMHz <= limits.maxFrequencyMHz && limits.minVoltageMv <= limits.maxVoltageMv;
+  }
+  get advancedClockAvailable(): boolean {
+    const report=this.report, limits=report?.limits;
+    return !!report && typeof report.config?.advancedClockOverride==='boolean' && !!limits
+      && this.finite(limits.maxFrequencyMHz) && limits.maxFrequencyMHz>0
+      && this.finite(limits.advancedMaxFrequencyMHz) && limits.advancedMaxFrequencyMHz>=limits.maxFrequencyMHz;
+  }
+  private clockMetadataValid(): boolean {
+    const report=this.report;
+    return !!report && (report.config?.advancedClockOverride===undefined && report.limits?.advancedMaxFrequencyMHz===undefined
+      || this.advancedClockAvailable);
+  }
+  get maximumClockMHz(): number {
+    const limits=this.report?.limits;
+    return this.advancedClockAvailable && this.edit?.advancedClockOverride===true && this.advancedClockWarningAccepted
+      ? limits!.advancedMaxFrequencyMHz! : limits?.maxFrequencyMHz || 0;
+  }
+  setAdvancedClockAcknowledgement(accepted: boolean): void {
+    if (!this.advancedClockAvailable || !this.edit || !this.isFresh || this.optionsLocked) return;
+    this.advancedClockWarningAccepted=accepted===true;
+    this.edit.advancedClockOverride=accepted===true;
+    this.waiverAccepted=false;
+  }
+  private clockWarningChanged(previous: AutotuneReport, next: AutotuneReport): boolean {
+    return previous.hardware.model!==next.hardware.model || previous.hardware.asicCount!==next.hardware.asicCount
+      || previous.limits?.maxFrequencyMHz!==next.limits?.maxFrequencyMHz
+      || previous.limits?.advancedMaxFrequencyMHz!==next.limits?.advancedMaxFrequencyMHz
+      || previous.config?.advancedClockOverride!==next.config?.advancedClockOverride
+      || previous.config?.maxFrequencyMHz!==next.config?.maxFrequencyMHz;
   }
   private validTelemetry(telemetry: AutotuneTelemetry | undefined): boolean {
     return !!telemetry && telemetry.valid === true && typeof telemetry.fanOk === 'boolean' && typeof telemetry.miningActive === 'boolean' && typeof telemetry.fault === 'boolean'
@@ -127,6 +159,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   private accept(report: AutotuneReport, requestedAt: number): boolean {
     if (!this.validReport(report)) { this.historyGap = true; this.readError = 'This application returned an unrecognised tuning report. Install its matching application and web interface.'; return false; }
     const dirty = this.hasUnsavedChanges;
+    if (this.report && this.clockWarningChanged(this.report,report) && this.pendingAction!=='configure') this.advancedClockWarningAccepted=false;
     this.report = report;
     this.requestedAt = requestedAt;
     this.readError = '';
@@ -158,13 +191,31 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (value && this.wholeMHz && (!Number.isInteger(value.minFrequencyMHz) || !Number.isInteger(value.maxFrequencyMHz))) return 'Use whole MHz for this miner’s clock bounds.';
     if (value && (!Number.isInteger(value.minVoltageMv) || !Number.isInteger(value.maxVoltageMv))) return 'Use whole millivolts for core-voltage bounds.';
     if (!value || !limits || !this.validConfig(value)) return 'Enter valid positive limits and choose a tuning priority.';
-    if (value.minFrequencyMHz < limits.minFrequencyMHz || value.maxFrequencyMHz > limits.maxFrequencyMHz) return 'Clock limits must stay inside the hardware limits shown below.';
+    if (value.advancedClockOverride===true && (!this.advancedClockAvailable || !this.advancedClockWarningAccepted)) return 'Read and explicitly accept the advanced clock warning before saving or starting with the override.';
+    if (value.minFrequencyMHz < limits.minFrequencyMHz) return 'The minimum clock is below the reported lower limit.';
+    if (value.maxFrequencyMHz > this.maximumClockMHz) return value.advancedClockOverride===true
+      ? 'The requested clock ceiling exceeds the experimental project maximum shown below.'
+      : this.report?.config.advancedClockOverride===true
+        ? 'To disable the override, lower the maximum to the standard profile limit. An active point above that limit must first be lowered or restored.'
+        : this.advancedClockAvailable ? 'A ceiling above the standard profile limit requires the explicit advanced clock warning acknowledgement.'
+          : 'Clock limits must stay inside the reported limits. Advanced override requires a matching updated application and web interface.';
     if (value.minVoltageMv < limits.minVoltageMv || value.maxVoltageMv > limits.maxVoltageMv) return 'Voltage limits must stay inside the hardware limits shown below.';
     const current=this.report?.status.current;
     if(this.isEngaged && current && this.pointValid(current) && (value.minFrequencyMHz>current.frequencyMHz || value.maxFrequencyMHz<current.frequencyMHz || value.minVoltageMv>current.coreVoltageMv || value.maxVoltageMv<current.coreVoltageMv)) return `While this tune owns the settings, clock and voltage bounds must include the current reported point: ${this.pointText(current)}.`;
     if (value.maxAsicTempC > limits.maxAsicTempC || value.maxVrmTempC > limits.maxVrmTempC) return 'Temperature ceilings must stay below the protected hardware limits shown below.';
     if (value.maxPowerW > limits.maxPowerW) return 'The power ceiling exceeds this hardware limit.';
     return '';
+  }
+  get startPointError(): string {
+    if (!this.optionsUsable) return '';
+    const report=this.report!, current=report.status.current, config=report.config;
+    if (!current || !this.pointValid(current)) return 'The current clock and voltage must be available before Start.';
+    if (config.advancedClockOverride!==true && current.frequencyMHz>report.limits.maxFrequencyMHz) return this.advancedClockAvailable
+      ? 'The current clock is above the standard profile limit. Explicitly enable the advanced override and include this point in your bounds, or lower it through manual controls before Start.'
+      : 'The current clock is above the reported profile limit. A matching updated application and web interface are required for advanced override; otherwise lower the current point before Start.';
+    return current.frequencyMHz<config.minFrequencyMHz || current.frequencyMHz>config.maxFrequencyMHz
+      || current.coreVoltageMv<config.minVoltageMv || current.coreVoltageMv>config.maxVoltageMv
+      ? `Saved clock and voltage bounds must include the current point before Start: ${this.pointText(current)}.` : '';
   }
   get isEngaged(): boolean {return this.report?.status.active===true || this.report?.status.ownsSettings===true;}
   get optionsLocked(): boolean {return this.busy || this.isEngaged && ['applying','restoring'].includes(this.report?.status.state||'');}
@@ -184,6 +235,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if(!this.optionsUsable)return 'Valid options and hardware limits are required before starting.';
     if(this.hasUnsavedChanges)return 'Save these options before starting a new tune.';
     if(this.validationError)return this.validationError;
+    if(this.startPointError)return this.startPointError;
     if(!this.telemetryFresh||!this.report!.status.telemetry.fanOk||!this.report!.status.telemetry.miningActive)return 'Starting requires fresh sensors and ASIC counters, working cooling, and active mining.';
     return this.waiverAccepted?'Ready to start a new tune.':'Accept the disclaimer below to enable Start for this new run.';
   }
@@ -196,7 +248,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const report = this.report;
     return !!report && !this.busy && !this.loading && this.isFresh && this.optionsUsable && !report.status.active
       && !['faulted','restoring','applying'].includes(report.status.state) && !report.status.ownsSettings && !this.hasUnsavedChanges
-      && !this.validationError && this.telemetryFresh && report.status.telemetry.fanOk === true
+      && !this.validationError && !this.startPointError && this.telemetryFresh && report.status.telemetry.fanOk === true
       && report.status.telemetry.miningActive === true && report.status.telemetry.fault === false && this.waiverAccepted;
   }
   get canRestore(): boolean { return !this.busy && !this.loading && (this.report?.backup?.available === true || this.report?.status.ownsSettings === true || this.startUnconfirmed); }
@@ -529,14 +581,20 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   save(): void {
     if (!this.canSave) return;
     const payload = this.config(this.edit!);
-    this.execute({action:'configure',config:payload}, report => JSON.stringify(this.config(report.config)) === JSON.stringify(payload),
+    const body: Record<string,unknown>={action:'configure',config:payload};
+    if (payload.advancedClockOverride===true) {body['advancedClockWarningAccepted']=true;body['advancedClockWarningVersion']=1;}
+    this.execute(body, report => JSON.stringify(this.config(report.config)) === JSON.stringify(payload),
       this.isEngaged?'Changes saved for this tune. The controller will apply its safety checks and remeasure when required.':'Tuning options saved. Accept the waiver and Start when ready.');
   }
   start(): void {
     if (!this.canStart) return;
     const previousRun = this.report!.status.runId;
+    const body: Record<string,unknown>={action:'start',waiverAccepted:true,waiverVersion:1};
+    const advanced=this.report!.config.advancedClockOverride===true;
+    if (advanced) {body['advancedClockAccepted']=true;this.advancedClockWarningAccepted=false;}
     this.waiverAccepted = false;
-    this.execute({action:'start',waiverAccepted:true,waiverVersion:1}, report => report.status.active && report.status.runId > previousRun,
+    this.execute(body, report => report.status.active && report.status.runId > previousRun
+      && (!advanced || this.advancedClockAvailable && report.config.advancedClockOverride===true),
       'Tuning started on the miner. You can close this page; the miner runs the controller.');
   }
   restore(): void {
@@ -586,7 +644,15 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         if (body['action'] === 'configure') { this.edit = this.config(report.config); this.baseline = JSON.stringify(this.edit); }
         this.message = success;
       },
-      error: error => { this.actionError = error?.message==='recovery-blocked' ? this.recoveryText : 'The request could not be confirmed. Refresh status and check the miner before trying again. No repeat request was sent.'; },
+      error: error => {
+        this.advancedClockWarningAccepted=false;
+        const explanation=({'advanced-clock-warning-required':'The miner requires the explicit advanced clock warning before saving this override.',
+          'advanced-clock-acceptance-required':'The miner requires the advanced clock acknowledgement for this Start.',
+          'advanced-clock-override-required':'The current clock is above the standard profile limit. Explicitly enable the advanced override or lower or restore the current point before tuning.'} as Record<string,string>)[error?.error?.error];
+        this.actionError = error?.message==='recovery-blocked' ? this.recoveryText : explanation
+          ? `${explanation} Refresh status before choosing another action. No repeat request was sent.`
+          : 'The request could not be confirmed. Refresh status and check the miner before trying again. No repeat request was sent.';
+      },
     });
   }
   private backupMatches(report: AutotuneReport): boolean {
