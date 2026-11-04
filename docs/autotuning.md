@@ -1,6 +1,6 @@
-# Adaptive tuning — experimental BETA
+# Adaptive tuning: experimental BETA
 
-The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta13**, **NerdQAxe++ Beta10** and **NerdOctAxe Gamma Beta8**. Use each family's matched application and web image; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [exact-source qualification](validation-autotune-release-20261103.md). Publication does not expand the physical test scope.
+The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta14**, **NerdQAxe++ Beta11** and **NerdOctAxe Gamma Beta9**. Gamma includes its matching web interface in `esp-miner.bin`, with a separate optional WWW. QAxe and OctAxe still require both matching application and web images; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [fast-error software qualification](validation-autotune-fast-errors-20261104.md). The previous Gamma13/QA10/Oct8 [release record](validation-autotune-release-20261103.md) retains its earlier physical scope; it does not qualify the new fast guard or newer images.
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -15,9 +15,9 @@ activity banner and restore action stay visible when switching views.
 
 | Priority | Goal |
 | --- | --- |
-| Level 1 — Standard Glazed | Favour useful work per reported watt and lower heat. |
-| Level 2 — Jam Filled | Balance useful hashrate, efficiency and thermal headroom. |
-| Level 3 — Cream Filled, Cherry on Top | Favour sustained useful hashrate within the same protection limits. |
+| Level 1: Standard Glazed | Favour useful work per reported watt and lower heat. |
+| Level 2: Jam Filled | Balance useful hashrate, efficiency and thermal headroom. |
+| Level 3: Cream Filled, Cherry on Top | Favour sustained useful hashrate within the same protection limits. |
 
 These change the optimisation objective, not a preset clock/voltage pair.
 All priorities obey the same hardware and user constraints.
@@ -228,8 +228,9 @@ more than the observed noise margin, with a minimum 0.2% score margin. A rejecte
 probe returns to the better measured point when there is sufficient headroom.
 No improvement is a valid result; the starting settings can remain the best.
 
-Board errors above 0.5% or worst-chip errors above 1% trigger the bounded error
-recovery policy after a full evaluation window. While holding or observing a
+Completed evaluation windows above 0.5% board errors or 1% worst-chip errors
+trigger bounded error recovery. The independent early check below can reject
+an unstable baseline or trial sooner. While holding or observing a
 result, a fresh error reading above either threshold instead triggers an
 immediate clock backoff; it does not wait for another full window. During
 full-window error recovery, an additional 5mV is considered only with
@@ -240,21 +241,27 @@ step); they are load reduction, not an optimisation probe. These are
 experimental engineering policies, not manufacturer-certified error or safety
 limits. Searches are local and bounded, not a guaranteed global optimum.
 
-### Unpublished candidate: earlier rejection of unstable trials
+### Earlier rejection of unstable trials
 
-The next candidate adds a separate fast error check while measuring a baseline
-or testing a trial. This policy is under qualification; it does not describe
-new behaviour in the published releases named above. The full settling and
-performance-measurement periods remain unchanged. An early rejection cannot
-establish a performance gain or replace a completed comparison window.
-See the [candidate validation record](validation-autotune-fast-errors-20261104.md)
-for the exact software checks and physical qualification limits.
+Gamma Beta14, NerdQAxe++ Beta11 and NerdOctAxe Gamma Beta9 add a separate fast
+error check while measuring a baseline or testing a trial. The full settling
+and performance-measurement periods remain unchanged: after a confirmed
+application, 30 seconds of settling plus the 15-second counter exclusion and
+60-second observation give a minimum 105 seconds, with at least eight accepted
+distinct samples. Early rejection cannot establish a performance gain or replace
+a completed comparison window. See the [offline fast-error validation record](validation-autotune-fast-errors-20261104.md)
+for the implementation checks and physical limits. That historical record uses
+the previous version markers for private compilation; the new releases use
+unique versions and do not replace those older public files. No physical
+fast-guard or new-release installation is claimed.
 
 Only fresh, distinct hardware-counter intervals belonging to the current
 point’s evaluation count. The possible old 15-second counter interval is
 excluded before this check can judge a trial. Repeated browser reads and stale
 values are not additional evidence. Managed changes reset counters and restart
-the guard; a monotonic-clock regression stops the controller. After
+the guard; a monotonic-clock regression stops the controller. The earliest qualifying timings are 15 seconds for severe errors or 25 seconds
+for persistent ordinary errors from Start or confirmed application. These are
+software evidence timings, not physical response guarantees. After
 that guard, a severe reading of at least 3% board errors or 5% on any required
 ASIC rejects the point without waiting for its full measurement window. Lower
 errors above the normal 0.5% board or 1% worst-ASIC limit require at least
@@ -314,6 +321,6 @@ disable tuning, restore and verify the original settings, and review the exact
 journal compatibility rather than assuming an older image can read every later
 manual cooling change. Keep a unit-specific recovery backup.
 
-See the [design requirements](dynamic-autotuning-design.md), [primary-source research](dynamic-autotuning-research.md) and [final release validation](validation-autotune-release-20261103.md) for exact source, software checks, image pairs and separately scoped miner observations.
+See the [design requirements](dynamic-autotuning-design.md), [primary-source research](dynamic-autotuning-research.md) and [fast-error software validation](validation-autotune-fast-errors-20261104.md) for the current policy. The [previous release validation](validation-autotune-release-20261103.md) retains its exact image/source and separately scoped miner observations.
 
-The [3 November memory-repair history](validation-autotune-memory-20261103.md) records earlier failures, preserved-settings recovery and limited source `35719b8e` tests. The [final release validation](validation-autotune-release-20261103.md) records the later source and its separate software/physical evidence; Gamma 602, larger Nerd panels and W5500 hardware remain unqualified.
+The [3 November memory-repair history](validation-autotune-memory-20261103.md) records earlier failures, preserved-settings recovery and limited source `35719b8e` tests. The [3 November release validation](validation-autotune-release-20261103.md) records that previous release source and its separate software/physical evidence; Gamma 602, larger Nerd panels and W5500 hardware remain unqualified.

@@ -1,16 +1,18 @@
 # Single-file firmware updates
 
-Gamma Beta13 already supports the update structure used by [AxeOS 2.15.4](https://github.com/bitaxeorg/ESP-Miner/blob/v2.15.4/readme.md#unified-firmware--rollbacks): the normal ESP32-S3 application contains its matching web assets. Compressed assets retain their gzip flags and are served from the application after boot. This is not a concatenation of the application and SPIFFS images, a ZIP, or a merged factory flash image.
+Gamma Beta14 retains the update structure used by [AxeOS 2.15.4](https://github.com/bitaxeorg/ESP-Miner/blob/v2.15.4/readme.md#unified-firmware--rollbacks): the normal ESP32-S3 application contains its matching web assets. Compressed assets retain their gzip flags and are served from the application after boot. This is not a concatenation of the application and SPIFFS images, a ZIP, or a merged factory flash image.
 
 | Model | Normal manual update | Separate `www.bin` |
 | --- | --- | --- |
-| Gamma 601/602, Beta13 | `esp-miner.bin` contains application and matching web interface | Optional custom-WWW, compatibility and recovery copy |
-| NerdQAxe++, Beta10 | Application followed by the matching QAxe web image | Required |
-| NerdOctAxe Gamma, Beta8 | Application followed by the matching OctAxe web image | Required |
+| Gamma 601/602, Beta14 | `esp-miner.bin` contains application and matching web interface | Optional custom-WWW, compatibility and recovery copy |
+| NerdQAxe++, Beta11 | Application followed by the matching QAxe web image | Required |
+| NerdOctAxe Gamma, Beta9 | Application followed by the matching OctAxe web image | Required |
+
+Current [Gamma Beta14](releases/v0.1.0-beta.14.md), [QAxe Beta11](releases/qaxe-v0.1.0-beta.11.md) and [OctAxe Beta9](releases/octaxe-v0.1.0-beta.9.md) use unique release versions. Verify the current version's manifest and checksums for its exact files. The original Beta13 receipt below remains historical evidence for that unchanged file, not a checksum for Beta14. No new-release physical installation is claimed.
 
 The Nerd builds still serve their normal interface from SPIFFS. Combining their downloads into one file would require implementation and validation; joining the BINs or renaming a file does not add that support.
 
-## Verified Gamma Beta13 file
+## Earlier verified Gamma Beta13 file
 
 [Download the existing single-file Gamma application](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.13/esp-miner.bin).
 
