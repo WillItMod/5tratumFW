@@ -154,7 +154,7 @@ startup. Recovery is not complete until live settings, fans and mining state
 are verified. It never clears a hardware fault or bypasses normal startup
 protection. A manual power action or an update cancels a pending recovery.
 
-When an ordinary measured trial is rejected, the controller returns to its better measured point when headroom permits. If protective backoff exhausts the permitted clock range, or repeated error-correction windows are exhausted, the failed point is retained in the decision history. A clock-floor rejection records the initiating readings; error exhaustion records the actual completed window means, without inventing an improvement score. These two soft tuning failures can make one guarded automatic recovery attempt: pause and cool, validate protection and sensors, restore and independently verify the immutable pre-tune settings, then resume and verify normal mining with tuning off. Cooling admission requires the applicable temperature headroom; Gamma holds mining work until fresh powered ASIC/regulator/fan readings pass. Nerd applies the extra 5°C margin before startup and continues to enforce user ceilings during powered startup. A real hardware fault, invalid backup, missing telemetry, failed verification or newer manual/scheduled control blocks or cancels recovery. There is no automatic fault clearing, MCU reboot or repeated retry. The original point can differ from tighter tuning targets selected later; improve cooling or review the permitted range before another Start.
+When an ordinary measured trial is rejected, the controller returns to its better measured point when headroom permits. If protective backoff exhausts the permitted clock range, or bounded error-correction attempts are exhausted, the failed point is retained in the decision history. A clock-floor rejection records the initiating readings; error exhaustion records the available decision evidence, distinguishing completed window means from instantaneous readings without inventing an improvement score. These two soft tuning failures can make one guarded automatic recovery attempt: pause and cool, validate protection and sensors, restore and independently verify the immutable pre-tune settings, then resume and verify normal mining with tuning off. Cooling admission requires the applicable temperature headroom; Gamma holds mining work until fresh powered ASIC/regulator/fan readings pass. Nerd applies the extra 5°C margin before startup and continues to enforce user ceilings during powered startup. A real hardware fault, invalid backup, missing telemetry, failed verification or newer manual/scheduled control blocks or cancels recovery. There is no automatic fault clearing, MCU reboot or repeated retry. The original point can differ from tighter tuning targets selected later; improve cooling or review the permitted range before another Start.
 
 On Gamma 601/602, the ASIC temperature diode is unavailable while ASIC power is off. Recovery may power and initialize the ASIC with mining work held back until fresh powered sensor checks pass, then verify normal mining counters.
 
@@ -183,8 +183,8 @@ Live values and completed measurement means have different purposes. Any
 reference/best comparison is for the **current search round**. A later round
 can remeasure its reference as conditions change; that reference is not the
 immutable original-settings backup. Experiment counts reset for each round;
-the reported rejected-window count accumulates across the current run. Browser trend observations start when the
-page is opened, contain connection gaps and are not additional controller
+the reported rejection count accumulates across the current run. Browser trend
+observations start when the page is opened, contain connection gaps and are not additional controller
 samples. Reopening the page does not reconstruct a complete tuning history.
 
 The live overview includes useful **TH/s**, **J/TH**, ASIC and VRM temperatures,
@@ -239,6 +239,52 @@ be larger than a normal search step (approximately 5%, rounded to the clock
 step); they are load reduction, not an optimisation probe. These are
 experimental engineering policies, not manufacturer-certified error or safety
 limits. Searches are local and bounded, not a guaranteed global optimum.
+
+### Unpublished candidate: earlier rejection of unstable trials
+
+The next candidate adds a separate fast error check while measuring a baseline
+or testing a trial. This policy is under qualification; it does not describe
+new behaviour in the published releases named above. The full settling and
+performance-measurement periods remain unchanged. An early rejection cannot
+establish a performance gain or replace a completed comparison window.
+See the [candidate validation record](validation-autotune-fast-errors-20261104.md)
+for the exact software checks and physical qualification limits.
+
+Only fresh, distinct hardware-counter intervals belonging to the current
+point’s evaluation count. The possible old 15-second counter interval is
+excluded before this check can judge a trial. Repeated browser reads and stale
+values are not additional evidence. Managed changes reset counters and restart
+the guard; a monotonic-clock regression stops the controller. After
+that guard, a severe reading of at least 3% board errors or 5% on any required
+ASIC rejects the point without waiting for its full measurement window. Lower
+errors above the normal 0.5% board or 1% worst-ASIC limit require at least
+three consecutive fresh, distinct accepted samples spanning at least 10
+seconds before early rejection. A clean interval, invalid reading or gap
+longer than 15 seconds resets that sequence. While holding or observing an
+existing result, the current immediate clock backoff on one fresh error-limit
+breach remains in force; that response does not wait for the three-sample
+trial check.
+
+The controller first attempts to return to a measured stable point within the
+current bounds, with sufficient thermal and electrical headroom, and through a
+single clock or voltage change. That measured point is separate from the
+immutable original-settings backup. If it cannot safely return, the existing
+bounded correction and guarded recovery rules apply; an error reading cannot
+authorize an unsafe voltage increase.
+
+Error-rejected clock/voltage pairs are excluded from further experiments
+during the current run, including later rounds of continuous tuning. Up to 16
+exact error-rejected pairs are retained in RAM, not a permanent hardware
+blacklist. Starting a new run or restarting clears it; it does not prove a
+previously rejected setting is safe under new conditions. If another rejection
+cannot be recorded because the exclusion list is full, the controller stops
+proposing experiments and requests the existing guarded original-settings
+recovery rather than forgetting a failure and repeating it. If all
+nearby candidates were excluded, a verified stable point can be held; if no
+permitted bounded fallback is available, error recovery is exhausted. Decision
+readings at early rejection are reported separately from completed measurement
+means and improvement scores. The visible **Rejections this run** count
+includes completed-window rejections and early or held-point error rejections.
 
 ## Physical tuning display
 

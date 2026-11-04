@@ -66,12 +66,12 @@ int main(int argc,char **argv) {
         assert(SYSTEM_MODULE.error==Board::NONE&&!observed.fault);
         const auto *latest=fwt_history_latest(&history);assert(latest);const fwt_event failed=*latest;
         assert(failed.kind==FWT_EVENT_REJECTED&&failed.outcome==FWT_OUTCOME_FAILED);
-        assert(!strcmp(failed.reason,"error-recovery-exhausted")&&failed.hasMeasurement&&!failed.hasScore);
+        assert(!strcmp(failed.reason,"error-recovery-exhausted")&&failed.hasConditions&&!failed.hasMeasurement&&!failed.hasScore);
         assert(failed.hashRateGHs==1000*hostBoard.count&&failed.powerW==100&&failed.errorPercentage>2&&failed.worstErrorPercentage>2);
         auto before=snapshot();bool measured=false;
         for(auto event:before["status"]["events"].as<JsonArrayConst>())if(event["id"]==failed.id) {
             measured=event["kind"]=="rejected"&&event["outcome"]=="failed"&&event["reason"]=="error-recovery-exhausted"&&
-                event["measurement"]["errorPercentage"].as<double>()>2&&event["score"].isNull();
+                event["conditions"]["errorPercentage"].as<double>()>2&&event["measurement"].isNull()&&event["score"].isNull();
         }
         assert(measured);chipErrorWork=0;asicDegrees=50;vrmDegrees=60;
         for(unsigned count=0;count<40;++count)step();
@@ -206,11 +206,11 @@ int main(int argc,char **argv) {
                 if(event["kind"]=="baseline") {baseline=true;assert(event["measurement"]["hashRateGHs"].as<double>()>0&&event["measurement"]["powerW"]==100);}
                 if(event["kind"]=="adjustment"&&event["outcome"]=="applied")applied=true;
                 if((scenario=="events-accepted"&&event["kind"]=="accepted") || (scenario=="events-rejected"&&event["kind"]=="rejected") ||
-                   (scenario=="events-errors"&&event["kind"]=="errors") || (scenario=="events-failed"&&event["outcome"]=="failed")) {
+                   (scenario=="events-errors"&&event["kind"]=="rejected"&&event["reason"]=="early-error-limit") || (scenario=="events-failed"&&event["outcome"]=="failed")) {
                     found=true;
                     if(event["kind"]=="accepted")assert(event["score"].as<double>()>event["requiredScore"].as<double>());
-                    if(event["kind"]=="rejected")assert(event["score"].as<double>()<=event["requiredScore"].as<double>());
-                    if(event["kind"]=="errors")assert(event["measurement"]["worstErrorPercentage"].as<double>()>1);
+                    if(event["kind"]=="rejected"&&scenario!="events-errors")assert(event["score"].as<double>()<=event["requiredScore"].as<double>());
+                    if(scenario=="events-errors")assert(event["conditions"]["worstErrorPercentage"].as<double>()>1&&event["measurement"].isNull()&&event["score"].isNull());
                 }
             }
             if(found && (scenario!="events-accepted"||events.size()==8))break;

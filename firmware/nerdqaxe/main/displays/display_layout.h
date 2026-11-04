@@ -480,7 +480,7 @@ inline void updateTuning(const TuningWidgets &fields,
             view.search.phaseElapsedSeconds,view.search.minimumSeconds,view.search.samples,view.search.minimumSamples);
         lv_label_set_text(fields.progress,buffer);
     } else if(fresh && view.ownsSettings) {
-        std::snprintf(buffer,sizeof(buffer),"Trials %u/%u | rejected windows %" PRIu32,view.search.roundExperiments,
+        std::snprintf(buffer,sizeof(buffer),"Trials %u/%u | rejections %" PRIu32,view.search.roundExperiments,
             view.search.roundExperimentLimit,view.search.rejectedWindows);
         lv_label_set_text(fields.progress,buffer);
     } else lv_label_set_text(fields.progress,fresh?"Read only | Start in the web interface":"Live measurements unavailable");

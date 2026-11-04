@@ -329,7 +329,7 @@ int main(int argc,char **argv) {
         assert(!strcmp(tuner.core.reason,"error-recovery-exhausted") && !fault_stops && !gs.SYSTEM_MODULE.hardware_fault);
         const fwt_event rejected=*fwt_history_latest(&tuner.history);
         assert(rejected.kind==FWT_EVENT_REJECTED && rejected.outcome==FWT_OUTCOME_FAILED);
-        assert(!strcmp(rejected.reason,"error-recovery-exhausted") && rejected.hasMeasurement && !rejected.hasScore);
+        assert(!strcmp(rejected.reason,"error-recovery-exhausted") && rejected.hasConditions && !rejected.hasMeasurement && !rejected.hasScore);
         assert(rejected.errorPercentage==2 && rejected.worstErrorPercentage==2 && rejected.hashRateGHs>0 && rejected.powerW>0);
         autotune_gamma_interrupt("mining-paused-or-faulted");
         assert(tuner.core.state==FWT_FAULTED && !strcmp(tuner.core.reason,"error-recovery-exhausted"));

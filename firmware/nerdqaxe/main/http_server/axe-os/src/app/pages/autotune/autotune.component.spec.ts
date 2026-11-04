@@ -419,4 +419,59 @@ describe('Dynamic tuning controls', () => {
     expect(component.canRestoreAndResume).toBeFalse();expect(report.status.active).toBeFalse();expect(service.command).not.toHaveBeenCalled();
   });
 
+  it('labels early error rejection from instantaneous evidence without inventing a full-window result or a clock-floor failure', () => {
+    for (const count of [1,4,8]) {
+      report=fixture(count);report.status.active=true;report.status.ownsSettings=true;report.status.state='settling';report.status.eventCapacity=8;
+      for (const [index,reason] of ['early-error-limit','early-severe-error-limit'].entries()) {
+        report.status.reason=reason;
+        report.status.events=[event(index+1,{kind:'rejected',outcome:'failed',reason,measurement:null,conditions:{asicTempC:55,vrmTempC:48,powerW:80,hashRateGHs:4000,errorPercentage:3,worstErrorPercentage:5}})];
+        component.load();const decision=component.events.find(value=>value.reason===reason)!;
+        expect(component.activityText).toContain('Rejected this operating point early');
+        expect(component.eventTitle(decision)).toBe('Point rejected early');
+        expect(component.eventReason(decision)).toContain('full comparison window was not completed');
+        expect(component.eventReason(decision)).not.toContain('could not reduce load further');
+        expect(decision.measurement).toBeNull();expect(decision.score).toBeNull();expect(decision.requiredScore).toBeNull();
+        expect(decision.conditions!.worstErrorPercentage).toBe(5);
+      }
+    }
+    expect(service.command).not.toHaveBeenCalled();expect(service.authorize).not.toHaveBeenCalled();
+    now+=13000;expect(component.activityText).toContain('Waiting for a fresh report');
+  });
+  it('explains a full error-exclusion history and exhausted correction without claiming a hardware fault or sending recovery', () => {
+    report.status.state='faulted';report.status.reason='error-recovery-exhausted';report.status.active=false;report.status.ownsSettings=false;
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    report.status.eventCapacity=8;report.status.events=[event(1,{kind:'rejected',outcome:'failed',reason:'error-point-exclusion-full',measurement:null})];component.load();
+    const decision=component.events[0];expect(component.eventTitle(decision)).toBe('Error-rejection history full');
+    expect(component.eventReason(decision)).toContain('No further experiments');expect(component.eventReason(decision)).not.toContain('could not reduce load further');
+    expect(component.activityText).toContain('Bounded error correction has been exhausted');expect(component.activityText).toContain('can block it');
+    expect(component.canRestore).toBeTrue();expect(report.status.telemetry.fault).toBeFalse();expect(service.command).not.toHaveBeenCalled();
+    report.status.telemetry.fault=true;component.load();expect(component.activityText).toContain('active protection fault');
+  });
+  it('identifies completed-window, held-point and exhausted error rejections before the generic clock-floor explanation', () => {
+    const mean={hashRateGHs:4000,powerW:80,errorPercentage:.7,worstErrorPercentage:1.2};
+    const cases=[
+      {reason:'error-window-limit',title:'Point rejected by measured errors',text:'completed measurement window',measurement:mean},
+      {reason:'held-point-became-unstable',title:'Held point rejected by errors',text:'immediately reduces clock',measurement:null},
+      {reason:'error-recovery-exhausted',title:'Error correction exhausted',text:'Bounded error correction has been exhausted',measurement:mean}
+    ];
+    report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';report.status.eventCapacity=8;
+    for (const [index,value] of cases.entries()) {
+      report.status.reason=value.reason;report.status.events=[event(index+1,{kind:'rejected',outcome:'failed',reason:value.reason,measurement:value.measurement})];component.load();
+      const decision=component.events.find(entry=>entry.reason===value.reason)!;
+      expect(component.eventTitle(decision)).toBe(value.title);expect(component.eventReason(decision)).toContain(value.text);
+      expect(component.eventReason(decision)).not.toContain('could not reduce load further');expect(component.activityText).toContain(value.text);
+      expect(decision.measurement).toEqual(value.measurement);expect(decision.score).toBeNull();expect(decision.requiredScore).toBeNull();
+    }
+    expect(service.command).not.toHaveBeenCalled();expect(service.authorize).not.toHaveBeenCalled();
+  });
+  it('distinguishes a requested return to the measured stable point from original-backup restoration', () => {
+    report.status.state='applying';report.status.reason='restoring-last-stable-point';report.status.active=true;report.status.ownsSettings=true;
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    report.status.eventCapacity=8;report.status.events=[event(1,{reason:'restoring-last-stable-point',point:{frequencyMHz:515,coreVoltageMv:1150}})];component.load();
+    const decision=component.events[0];expect(component.activityText).toContain('measured stable point');expect(component.activityText).toContain('separate from restoring the original');
+    expect(component.eventOutcome(decision)).toContain('awaiting confirmation');expect(component.eventReason(decision)).toContain('temperature and power headroom');
+    expect(component.report!.backup.restored).toBeFalse();expect(component.report!.status.current!.frequencyMHz).toBe(525);
+    expect(service.command).not.toHaveBeenCalled();expect(service.authorize).not.toHaveBeenCalled();
+  });
+
 });

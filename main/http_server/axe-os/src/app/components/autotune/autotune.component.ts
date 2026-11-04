@@ -278,6 +278,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if (report.status.telemetry.fault === true) return 'The miner reports an active protection fault. Tuning cannot clear it or force settings through it; check the miner’s reason below.';
     if (this.limitReached) return this.limitStopText;
     if (!report.supported) return 'Automatic tuning is unavailable for this hardware or operating state. Restore remains available when the miner has a backup or owns settings.';
+    const errorDecision = this.errorDecisionText(report.status.reason);
+    if (errorDecision) return errorDecision;
     const reasons: Record<string,string> = {
       'temperature-limit-backoff':'Backing off because a saved temperature ceiling is close or exceeded. Safety can require a larger step than a normal experiment.',
       'power-limit-backoff':'Backing off because the reported power ceiling is close or exceeded. This is the miner’s power reading, not wall power.',
@@ -462,6 +464,11 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return this.events.length ? 'Newest first. Requests are updated in place when the miner reports applied or failed; a request alone is not confirmation.' : 'No controller decisions have been reported for this run yet.';
   }
   eventTitle(event: AutotuneEvent): string {
+    if (['early-error-limit','early-severe-error-limit'].includes(event.reason)) return 'Point rejected early';
+    if (event.reason==='error-point-exclusion-full') return 'Error-rejection history full';
+    if (event.reason==='error-window-limit') return 'Point rejected by measured errors';
+    if (event.reason==='held-point-became-unstable') return 'Held point rejected by errors';
+    if (event.reason==='error-recovery-exhausted') return 'Error correction exhausted';
     if(event.kind==='rejected' && event.outcome==='failed')return 'Point rejected by limits';
     return ({started:'Tuning started',baseline:'Round reference measured',accepted:'Measured point accepted',rejected:'Comparison rejected',retained:'Best point rechecked',errors:'ASIC error window',adjustment:'Operating-point adjustment'} as Record<string,string>)[event.kind] || 'Controller event';
   }
@@ -469,6 +476,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return ({requested:'Requested · awaiting confirmation',applied:'Applied · miner confirmed',failed:'Failed · check the reason',measured:'Measured'} as Record<string,string>)[event.outcome] || `Reported outcome: ${event.outcome}`;
   }
   eventReason(event: AutotuneEvent): string {
+    const errorDecision = this.errorDecisionText(event.reason);
+    if (errorDecision) return errorDecision;
     if(event.kind==='rejected' && event.outcome==='failed')return `The controller could not reduce load further within its then-active limits (${event.reason.replace(/[-_]/g,' ')}). This point was rejected under those constraints, not marked as permanently defective.`;
     return ({'measuring-starting-point':'The run started at this operating point.',
       'round-reference-measured':'A valid measurement window established this round’s reference.',
@@ -485,6 +494,17 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       'rollback-lacks-headroom':'Backing off because returning to the measured best would lack headroom.',
       'new-user-limits':'Adjusting to newly saved user limits.',
       'held-point-became-unstable':'The held point no longer meets the error or stability checks.'} as Record<string,string>)[event.reason] || `Miner reason: ${event.reason.replace(/[-_]/g,' ')}`;
+  }
+  private errorDecisionText(reason: string): string | null {
+    return ({
+      'early-error-limit':'Rejected this operating point early after three consecutive fresh counter intervals spanning at least 10 seconds exceeded the ASIC error limits. Its full comparison window was not completed; no performance gain was accepted.',
+      'early-severe-error-limit':'Rejected this operating point early because a fresh counter interval from the current evaluation reported severe ASIC errors. Its full comparison window was not completed; no performance gain was accepted.',
+      'error-window-limit':'The completed measurement window exceeded the ASIC error limits. This point was rejected; the controller uses a measured stable point or bounded correction within its current headroom.',
+      'held-point-became-unstable':'A fresh error reading shows that the held or monitored point is unstable. The controller immediately reduces clock; it does not wait for three error intervals or another full measurement window.',
+      'restoring-last-stable-point':'Returning to a measured stable point within the current bounds and temperature and power headroom. This is separate from restoring the original pre-tuning backup.',
+      'error-point-exclusion-full':'The current run has filled its error-rejection history. No further experiments can be proposed; bounded correction or guarded original-settings recovery must complete before another run.',
+      'error-recovery-exhausted':'Bounded error correction has been exhausted. The miner can make one guarded original-settings recovery attempt with tuning off. Faults, unsafe conditions or newer manual control can block it; check the recovery status.'
+    } as Record<string,string>)[reason] || null;
   }
   eventHasChange(event: AutotuneEvent): boolean { return !!event.from && (Math.abs(event.from.frequencyMHz-event.point.frequencyMHz)>.001 || Math.abs(event.from.coreVoltageMv-event.point.coreVoltageMv)>.001); }
   eventChange(event: AutotuneEvent): string {

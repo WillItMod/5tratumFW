@@ -99,7 +99,10 @@ int main(void) {
   fwt_init(&unstable,&limits,&config);assert(fwt_start(&unstable,&input,now));
   for(unsigned n=0;n<1000 && unstable.owns;++n) {
    now+=5*FWT_SECOND;input=sample(now,point,generation);
-   input.errorPercentage=input.worstErrorPercentage=2;
+   /* An isolated worst-chip spike fails the full window without satisfying
+    * the separate consecutive-interval early-rejection rule. */
+   input.errorPercentage=0;
+   input.worstErrorPercentage=unstable.samples==1?2:0;
    request=fwt_tick(&unstable,&input,now);fwt_history_capture(&unstableHistory,&unstable);
    if(request.kind==FWT_REQUEST_APPLY) {point=request.point;++generation;fwt_applied(&unstable,true,now);}
   }
@@ -107,7 +110,7 @@ int main(void) {
   const fwt_event *failed=fwt_history_latest(&unstableHistory);
   assert(failed && failed->kind==FWT_EVENT_REJECTED && failed->outcome==FWT_OUTCOME_FAILED);
   assert(failed->hasMeasurement && !failed->hasScore && !failed->hasConditions && fwt_point_equal(failed->point,point));
-  assert(failed->hashRateGHs==1000 && failed->powerW==20 && failed->errorPercentage==2 && failed->worstErrorPercentage==2);
+  assert(failed->hashRateGHs==1000 && failed->powerW==20 && failed->errorPercentage==0 && failed->worstErrorPercentage==2);
  }
  printf("PASS: measured decisions, requested/applied/failed identity, bounded history, read-only capture, new-run reset; event=%zu history=%zu controller=%zu bytes\n",sizeof(fwt_event),sizeof(fwt_history),sizeof(fwt_controller));
  return 0;
