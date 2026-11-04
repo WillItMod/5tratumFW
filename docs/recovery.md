@@ -4,6 +4,8 @@ Begin with the least invasive repair. Keep the miner's power stable and preserve
 
 ## The web interface is blank or incomplete
 
+Gamma Beta13 includes its matching web interface inside `esp-miner.bin`. It normally serves that embedded interface after a firmware change. The separate `www.bin` remains available for custom-WWW and compatibility workflows. If an older custom interface is selected, open `/recovery` and choose **Disable Custom Web UI** to return to the embedded interface; the recovery page reports the restart. The WWW upload steps below apply when deliberately repairing the separate web partition.
+
 1. Try a full browser reload to discard cached assets. Verify you are opening the miner's configured network address.
 2. If the application still responds, open the built-in **5tratumFW BETA Recovery** page at `/recovery`. This page is embedded in the application and does not depend on the WWW filesystem. An older installed application can still display its earlier recovery title.
 3. Upload the exact `www.bin` from the same 5tratumFW release as the installed app. Wait for the HTTP response; the embedded page advises allowing 60 seconds and avoiding restart before a response. Do not disconnect power during the write.

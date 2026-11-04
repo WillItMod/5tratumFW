@@ -1,14 +1,16 @@
 # Download 5tratumFW
 
-Choose by the actual miner model. These are **experimental BETA prereleases**. Use both BIN files from the same row; their shared `www.bin` name does not make them interchangeable.
+Choose by the actual miner model. These are **experimental BETA prereleases**. **Gamma Beta13 supports a normal single-file update:** its `esp-miner.bin` includes the matching web interface. **QAxe and OctAxe still require both their application and matching `www.bin`.** Files from different families are not interchangeable.
 
-| Your miner | Current release | Download both files | Installation |
+| Your miner | Current release | Downloads | Installation |
 | --- | --- | --- | --- |
-| **Bitaxe Gamma 601 / 602** | [Beta13 — experimental](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.13) | [Firmware BIN](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.13/esp-miner.bin) · [Web BIN](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.13/www.bin) | [Gamma guide](docs/installation.md) |
+| **Bitaxe Gamma 601 / 602** | [Beta13 experimental](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.13) | [Single-file firmware + web UI](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.13/esp-miner.bin) · [Optional separate WWW](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.13/www.bin) | [Gamma guide](docs/installation.md) |
 | **NerdQAxe++** · BM1370 ×4 | [Beta10 — experimental](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.10) | [Firmware BIN](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.10/esp-miner-NerdQAxe%2B%2B.bin) · [Web BIN](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.10/www.bin) | [QAxe guide](firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
 | **NerdOctAxe Gamma** · BM1370 ×8 | [Beta8 — experimental](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.8) | [Firmware BIN](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.8/esp-miner-NerdOCTAXE-Gamma.bin) · [Web BIN](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.8/www.bin) | [OctAxe guide](firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 
 Each release includes its manifest, checksums and corresponding source. Gamma retains the ESP-Miner v2.15.4 base; both Nerd families retain shufps v1.1.1-rc1. See [exact source and qualification](docs/validation-autotune-release-20261103.md). These versions add the [opt-in adaptive tuner](docs/autotuning.md), not an automatic overclock on installation.
+
+[Single-file format and migration details](docs/single-file-updates.md) explain the embedded Gamma interface, optional WWW image and third-party updater limits. The original Beta13 application already contains this interface; no binary or release number has been replaced.
 
 ## Update through 5tratumOS
 
@@ -23,6 +25,8 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
 The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
+
+The existing 0.8.50 updater continues its paired verification process for Gamma too. Gamma's manual single-file route does not change that OS workflow.
 
 If an update reports **settings-verification-unavailable**, update 5tratumOS first, reload and check again. If it still fails, leave the miner running and report the OS version, miner model and installed firmware version. Do not erase settings or bypass the verification.
 
@@ -49,7 +53,9 @@ Full guidance, sensor limits, backup behaviour and qualification limits are in [
 
 ## Manual update and screen selection
 
-For a manual update, verify checksums, upload the correct family's **application first**, wait for its restart, then upload **that same release's WWW** and reload. Follow the model guide's restart and readback steps. These are OTA images, without replacement NVS, factory settings or partition tables. Keep enabled authentication. Stock conversion uses the separate model guide.
+For a manual **Gamma Beta13** update on a compatible layout, verify the checksum and upload **`esp-miner.bin`** through the firmware uploader. It includes the matching web interface, selected after restart. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery workflows.
+
+For **QAxe or OctAxe**, upload the correct family's **application first**, wait for its restart, then upload **that same release's WWW** and reload. Follow the model guide's restart and readback steps. These are OTA images, without replacement NVS, factory settings or partition tables. Keep enabled authentication. Stock conversion uses the separate model guide.
 
 Nerd defaults remain **Standard 320×170**. For a supported larger assembly, use **Miner controls → Display → Screen**, select **3.5-inch 480×320 RGB** or **BGR**, **Save this section**, then **Restart device**. The profile changes size, offset and mirror orientation together; rotation is separate. The physical panel/controller still needs its own qualification. OctAxe's 480×320 geometry remains an accepted working assumption, not proof of a vendor/controller match.
 

@@ -12,13 +12,15 @@ Use the paired files from the same 5tratumFW release or verified local build:
 
 | File | Destination | What it changes |
 | --- | --- | --- |
-| `esp-miner.bin` | **Updates → Miner firmware** | ESP32-S3 application, mining logic, power control, APIs, and OLED interface. The device restarts after a successful update. |
-| `www.bin` | **Updates → Web interface** | The web interface in the `www` SPIFFS partition. It does not install application logic. The browser reloads after success. |
+| `esp-miner.bin` | **Updates → Miner firmware** | Complete ESP32-S3 application with its matching embedded web interface, mining logic, power control, APIs and OLED interface. This is the normal single-file Gamma update. The device restarts after success. |
+| `www.bin` | **Updates → Web interface** | Optional separate copy of the matching web interface for custom-WWW, compatibility or recovery use. It does not install application logic. |
 | Source archive, manifest, checksums | Your computer | Build inputs and provenance; never upload these to either update control. |
 
 The upload controls require the exact filenames above. Keep the files inside their versioned release directory so files from different releases do not get mixed. `esp-miner.bin` is an application OTA image, not a factory image. Do not upload a merged/factory BIN to either control. `www.bin` is the generated **3 MiB partition image** for the standard layout, even when its compressed web assets occupy much less space. Do not replace it with a ZIP, an asset directory, or a smaller raw payload.
 
-Both images are needed to install a complete release when its application and web interface have changed. An app-only update leaves the installed web interface in place; a WWW-only update leaves the installed application in place. Temporary version mismatch can make controls unavailable or incomplete.
+Gamma Beta13 already follows the AxeOS single-file format: the matching web assets are compiled into `esp-miner.bin`. Firmware migration disables an older custom-WWW selection, so the new application normally serves its own embedded interface. An application update leaves the separate WWW partition's bytes untouched; those bytes are not required for normal embedded-interface operation. A WWW-only update still leaves the application unchanged. QAxe and OctAxe use different builds and still need their separate application/WWW pairs.
+
+See [single-file updates](single-file-updates.md) for the verified format and migration limits. This does not establish that an unknown third-party updater, including Harlo, accepts the application or retains a compatible partition layout and board identity.
 
 ## Before uploading
 
@@ -44,15 +46,18 @@ The OS installs both matching images and verifies the resulting pair and saved s
 
 Complete the Gamma paired update over Wi-Fi. Ethernet is not enabled by the update; use the [adapter instructions](gamma-ethernet.md) separately. Read [Tuning](autotuning.md) for opt-in setup, waiver and restore controls.
 
-## Upload the paired release
+## Upload the Gamma application
 
 Follow any order stated in the release notes. Otherwise:
 
 1. Open the miner's **Updates** page and choose the release's `esp-miner.bin` under **Miner firmware**. Keep power connected until the upload completes and the device restarts.
 2. Reconnect to the miner and confirm it reports the intended application version. Inspect any boot/storage errors before continuing.
-3. Choose the matching `www.bin` under **Web interface**. Keep power connected and wait for the success response and browser reload.
-4. Restart the device once after the web upload, then reconnect. The application reads the web version at boot, so its mismatch warning can persist until this restart even after a successful WWW upload. Reload the page fully if old assets remain cached. Confirm the application and web versions match; check the exact configured clock, voltage, fans, pools, and network settings against your record.
-5. Confirm fresh telemetry, the selected pool route, and mining behavior expected from the current schedule or manual pause. A paused miner may legitimately show no new shares. After resuming, check accepted shares and pool-side worker activity separately.
+3. Fully reload the page to load the embedded interface. Confirm the intended application and served web version; check the exact configured clock, voltage, fans, pools and network settings against your record.
+4. Confirm fresh telemetry, the selected pool route, and mining behavior expected from the current schedule or manual pause. A paused miner may legitimately show no new shares. After resuming, check accepted shares and pool-side worker activity separately.
+
+### Optional separate web image
+
+If you deliberately use the separate custom-WWW interface or need its recovery workflow, upload the same release's `www.bin` under **Web interface** and wait for the success response. That enables the separate matching interface. Follow the reported restart requirement, fully reload, and verify the served version and original settings. Do not upload an older or another family's WWW image over the matching embedded interface. The embedded `/recovery` page provides **Disable Custom Web UI** to return to the application's own interface.
 
 The **5tratumFW releases → Check releases** control opens the WillItMod/5tratumFW GitHub release channel, including BETA prereleases. Read the compatibility, release notes and validation record before selecting files. Obtain the paired images from that channel or build this repository yourself.
 

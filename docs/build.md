@@ -1,10 +1,12 @@
 # Build and validate 5tratumFW BETA
 
+Current Gamma Beta13 includes the full web interface in `esp-miner.bin`. The build also retains a matching separate WWW image. See [single-file updates](single-file-updates.md) and [Beta13 validation](validation-autotune-release-20261103.md). The earlier build records below remain limited to their original images.
+
 The previous Gamma Beta10 pair was compiled from clean source `1645747dfc46a83c52e27c567d43be3f0b53a035`. It passed 172 browser tests, all 14 host entry points, 36 native OLED/lifecycle views, target and exact package checks. QAxe Beta8 and OctAxe Beta5 were compiled separately from `1a34b24100e1238e331d8145a70f6b08f85f943d`. All six final GitHub checks passed at `09edf4d5`; the exact published local pairs completed short supervised updates, settings/mining, pause/resume and same-point schedule checks on the four owned miners. The owner confirmed all screens and fans normal. See [the dated record](validation-aligned-20261028.md) for exact scope, hashes and the honest local Gamma SDK/toolchain receipt. The older [Beta9 record](validation-beta9.md) applies only to that earlier pair.
 
-The current public Gamma Beta11 **EXPERIMENTAL BETA** pair was compiled from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. It passed 192 browser tests, 18 host entry points, 36 native OLED/lifecycle views, target compilation and paired-package checks. See [Beta11 validation](validation-gamma-ethernet.md) for exact host/toolchain receipts and limits. Beta11 has not been installed on a miner; its original W5500 driver is off by default, and physical LAN/Ethernet-only OTA remain unqualified. Later publication-documentation commits do not relabel the compiled pair or source archive.
+The earlier Gamma Beta11 **EXPERIMENTAL BETA** pair was compiled from clean source `e73cbc69b815b3f7e0a3a5af9266f605bb95a33b`. It passed 192 browser tests, 18 host entry points, 36 native OLED/lifecycle views, target compilation and paired-package checks. See [Beta11 validation](validation-gamma-ethernet.md) for exact host/toolchain receipts and limits. Beta11 has not been installed on a miner; its original W5500 driver is off by default, and physical LAN/Ethernet-only OTA remain unqualified. Later publication-documentation commits do not relabel the compiled pair or source archive.
 
-The Gamma source version is **`5tratumFW-0.1.0-beta.11`**. Application and WWW use the same `version.txt` marker. Keep versions unique and within the ESP application descriptor's 31-byte limit. Releases remain **prerelease/BETA**. [Beta7 validation](validation-beta7.md) retains the earlier pair's evidence.
+The Gamma source version is **`5tratumFW-0.1.0-beta.13`**. Application and WWW use the same `version.txt` marker. Keep versions unique and within the ESP application descriptor's 31-byte limit. Releases remain **prerelease/BETA**. [Beta7 validation](validation-beta7.md) retains the earlier pair's evidence.
 
 These instructions produce paired OTA images for **Bitaxe Gamma PCB revisions 601 and 602 only**. A successful compile does not establish compatibility with another board or prove operation on a physical miner. See [compatibility](compatibility.md) and [installation](installation.md) for the hardware and upgrade requirements.
 
@@ -45,13 +47,13 @@ Run the build from a clean source checkout rather than reusing an older `build/`
 
 ## Outputs
 
-When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.11/`:
+When the build and verification complete, the package is written under `artifacts/5tratumFW-0.1.0-beta.13/`:
 
 | File | Purpose |
 | --- | --- |
-| `esp-miner.bin` | Application-only OTA image; use the firmware/app BIN uploader. |
-| `www.bin` | Complete WWW/SPIFFS image; use the web/WWW BIN uploader. |
-| `5tratumFW-0.1.0-beta.11-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
+| `esp-miner.bin` | Application with its complete matching embedded web interface; the normal single-file Gamma OTA image. |
+| `www.bin` | Optional separate matching WWW/SPIFFS image for custom-WWW, compatibility or recovery. |
+| `5tratumFW-0.1.0-beta.13-source.zip` | Corresponding source, license notices, pinned submodule source and generated build configuration. |
 | `manifest.json` | Product version, upstream baseline, supported board identities, toolchain, image sizes and SHA-256 hashes. |
 | `SHA256SUMS` | Checksums for the images, source archive and web budget report. |
 | `web-budget.json` | Measurement of the compressed files actually placed in the WWW partition. |

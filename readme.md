@@ -6,9 +6,11 @@
 
 5tratumFW has separate firmware image families. **Choose by the actual model and PCB/ASIC information; application and WWW images are not interchangeable between families.** The firmware families retain their upstream GPLv3 licensing and saved device settings during compatible OTA updates.
 
+**Gamma Beta13 supports single-file OTA:** `esp-miner.bin` includes its complete matching web interface. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery. QAxe and OctAxe still require both their application and matching WWW images. See [single-file updates](docs/single-file-updates.md).
+
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
-| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` + matching Gamma `www.bin` | Beta13 **experimental** adaptive tuner. Gamma 602 remains unqualified for tuner admission/restore; W5500 hardware untested. [Gamma guide](docs/installation.md) · [Validation](docs/validation-autotune-release-20261103.md) |
+| Bitaxe Gamma PCB 601 or 602 | Gamma `esp-miner.bin` includes web UI; separate Gamma `www.bin` optional | Beta13 **experimental** adaptive tuner. Gamma 602 remains unqualified for tuner admission/restore; W5500 hardware untested. [Gamma guide](docs/installation.md) · [Validation](docs/validation-autotune-release-20261103.md) |
 | NerdQAxe++ / NERDQAXEPLUS2 / BM1370×4 | QAxe `esp-miner-NerdQAxe++.bin` + matching QAxe `www.bin` | Beta10 **experimental** adaptive tuner and ASIC errors; standard 320×170 default, larger panel unqualified. [QAxe guide](docs/nerdqaxe.md) · [Validation](docs/validation-autotune-release-20261103.md) |
 | NerdOCTAXE-γ / NERDOCTAXEGAMMA / BM1370×8 | OctAxe `esp-miner-NerdOCTAXE-Gamma.bin` + matching OctAxe `www.bin` | Beta8 **experimental** adaptive tuner and ASIC errors; PCB 2.2 observations only, larger panel unqualified. [OctAxe guide](docs/nerdoctaxe.md) · [Validation](docs/validation-autotune-release-20261103.md) |
 | QAxe+, other OctAxe revisions, GT800, other Gamma PCBs or other miners | No supported package in this repository | Do not use a similarly named board's image |
