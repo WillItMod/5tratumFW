@@ -1,0 +1,20 @@
+# NerdQAxe++ Beta12: a clearer Tuning page
+
+`5tratumFW-qa-0.1.0-beta.12` is an experimental BETA for **NerdQAxe++ / NERDQAXEPLUS2 with four BM1370 ASICs**. The release manifest identifies its exact compiled source. It retains NerdQAxe++ Beta11's controller, protections and original-settings backup, with a redesigned Tuning page. Earlier public binaries are unchanged.
+
+## Set limits, save, then start
+
+1. Choose Efficiency, Balanced or Performance and Continuous On/Off. These are adaptive priorities, not preset clocks.
+2. Set clock, voltage, temperature and power bounds. The advanced-clock warning and acknowledgement are directly beside the clock controls. For 900 MHz on a standard 800 MHz profile, explicitly acknowledge that warning before saving. This does not start tuning.
+3. **Save options** remains visible, with the saved and unsaved maximum shown separately. A disabled Save explains the missing requirement. Editing clears the previous success message. Saving does not require the run waiver and never starts a run.
+4. After verified save/readback, accept the separate risk waiver beside **Start tuning** only when ready to run. Active runs can be adjusted without a second Start or waiver.
+
+The Live dashboard keeps graphs, J/TH, ASIC/VRM temperatures, power, hashrate, board/worst-chip errors, share/network difficulty, controller decisions and recovery status together. Disable and restore remains reachable.
+
+The advanced 1,200 MHz project ceiling is a software boundary, not a safe hardware rating. Existing thermal, voltage, power, fault, fan and sensor guards remain authoritative. Start remains explicit; boot and OTA never start tuning automatically. Recommended starting ceilings remain 60°C ASIC and 70°C VRM, with warnings above them. Existing saved settings are retained.
+
+## Update and qualification
+
+Use **esp-miner-NerdQAxe++.bin and matching www.bin** from this release only. Use the existing 5tratumOS MAIN/DEV channel, select this model under Firmware update, choose BETA, check and install. Future compatible firmware discovery uses the public release feed. Verify completed restoration before updating an active tuner, then keep power connected through installation and readback.
+
+Full frontend suites and browser checks cover blocked 900 MHz, explicit advanced acknowledgement, saving while the run waiver is false, exact saved-value readback and a separate deliberate Start. These tests use simulated device responses and do not qualify a physical high clock. Earlier bounded hardware observations are recorded in [the 4 November validation](../validation-advanced-clock-live-20261104.md) and apply to those earlier images; later installation observations must be stated separately. No high-clock stability, thermal soak or universal performance gain is claimed. Larger Nerd screens, QAxe rev7 physical tuning and Gamma602 tuner hardware remain unqualified.

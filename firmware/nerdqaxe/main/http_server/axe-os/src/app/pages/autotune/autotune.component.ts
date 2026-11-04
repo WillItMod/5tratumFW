@@ -140,6 +140,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   setAdvancedClockAcknowledgement(accepted: boolean): void {
     if (!this.advancedClockAvailable || !this.edit || !this.isFresh || this.optionsLocked) return;
+    this.onOptionsEdit();
     this.advancedClockWarningAccepted=accepted===true;
     this.edit.advancedClockOverride=accepted===true;
     this.waiverAccepted=false;
@@ -216,6 +217,13 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return current.frequencyMHz<config.minFrequencyMHz || current.frequencyMHz>config.maxFrequencyMHz
       || current.coreVoltageMv<config.minVoltageMv || current.coreVoltageMv>config.maxVoltageMv
       ? `Saved clock and voltage bounds must include the current point before Start: ${this.pointText(current)}.` : '';
+  }
+  onOptionsEdit(): void { this.message=''; this.actionError=''; this.waiverAccepted=false; }
+  get clockSaveProblem(): string {
+    if (!this.edit || !this.report || !this.finite(this.edit.maxFrequencyMHz)) return '';
+    if (this.edit.maxFrequencyMHz>this.report.limits.maxFrequencyMHz && (!this.edit.advancedClockOverride || !this.advancedClockWarningAccepted))
+      return `${this.edit.maxFrequencyMHz} MHz is not saved. Accept the advanced clock warning directly above, then select Save options. The run waiver is only for Start.`;
+    return '';
   }
   get isEngaged(): boolean {return this.report?.status.active===true || this.report?.status.ownsSettings===true;}
   get optionsLocked(): boolean {return this.busy || this.isEngaged && ['applying','restoring'].includes(this.report?.status.state||'');}
@@ -584,7 +592,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const body: Record<string,unknown>={action:'configure',config:payload};
     if (payload.advancedClockOverride===true) {body['advancedClockWarningAccepted']=true;body['advancedClockWarningVersion']=1;}
     this.execute(body, report => JSON.stringify(this.config(report.config)) === JSON.stringify(payload),
-      this.isEngaged?'Changes saved for this tune. The controller will apply its safety checks and remeasure when required.':'Tuning options saved. Accept the waiver and Start when ready.');
+      this.isEngaged?`Changes saved for this tune: maximum clock ${payload.maxFrequencyMHz} MHz. The controller will apply its safety checks.`:`Tuning options saved: maximum clock ${payload.maxFrequencyMHz} MHz. Tuning has not started.`);
   }
   start(): void {
     if (!this.canStart) return;

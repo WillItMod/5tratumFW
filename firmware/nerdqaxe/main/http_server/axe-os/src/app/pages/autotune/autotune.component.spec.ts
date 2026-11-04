@@ -601,4 +601,34 @@ describe('Dynamic tuning controls', () => {
     tick(10000);expect(service.command.calls.count()).toBe(1);
   }));
 
+  it('clears an earlier save confirmation when 900 is edited and saves that exact ceiling without the run waiver', fakeAsync(() => {
+    advancedFixture(8,800);component.message='Tuning options saved: maximum clock 800 MHz.';
+    component.edit!.maxFrequencyMHz=900;component.onOptionsEdit();
+    expect(component.message).toBe('');expect(component.clockSaveProblem).toContain('900 MHz is not saved');
+    expect(component.clockSaveProblem).toContain('run waiver is only for Start');expect(component.canSave).toBeFalse();component.save();
+    expect(service.command).not.toHaveBeenCalled();component.setAdvancedClockAcknowledgement(true);
+    expect(component.waiverAccepted).toBeFalse();expect(component.canSave).toBeTrue();
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);expect(service.command.calls.count()).toBe(1);
+    expect(service.command.calls.mostRecent().args[0].config.maxFrequencyMHz).toBe(900);
+    expect(component.report!.config.maxFrequencyMHz).toBe(900);expect(component.message).toContain('900 MHz');
+    expect(component.message).toContain('has not started');expect(component.canStart).toBeFalse();expect(report.status.active).toBeFalse();
+    acceptedStart();component.waiverAccepted=true;component.start();tick(0);expect(service.command.calls.count()).toBe(2);
+  }));
+  it('invalidates old success and run consent on any options edit without changing advanced consent or writing', () => {
+    advancedFixture();component.setAdvancedClockAcknowledgement(true);component.message='Old success';component.actionError='Old error';component.waiverAccepted=true;
+    component.edit!.priority='performance';component.onOptionsEdit();
+    expect(component.message).toBe('');expect(component.actionError).toBe('');expect(component.waiverAccepted).toBeFalse();
+    expect(component.advancedClockWarningAccepted).toBeTrue();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('saves an active 900 MHz search ceiling without a new run or run waiver', fakeAsync(() => {
+    advancedFixture(4,800);report.status.active=true;report.status.ownsSettings=true;report.status.state='measuring';report.status.runId=7;
+    report.config.maxFrequencyMHz=800;report.status.current={frequencyMHz:750,coreVoltageMv:1150};component.load();
+    component.edit!.maxFrequencyMHz=900;component.onOptionsEdit();component.setAdvancedClockAcknowledgement(true);
+    service.command.and.callFake((body:any)=>{report.config=structuredClone(body.config);return of({ok:true,restartRequired:false});});
+    component.save();tick(0);expect(service.command.calls.count()).toBe(1);expect(service.command.calls.mostRecent().args[0].action).toBe('configure');
+    expect(component.report!.status.runId).toBe(7);expect(component.waiverAccepted).toBeFalse();expect(component.message).toContain('900 MHz');
+    expect(component.canStart).toBeFalse();
+  }));
+
 });
