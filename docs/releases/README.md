@@ -4,7 +4,7 @@
 
 | Miner | Current experimental BETA | Release notes | Installation |
 | --- | --- | --- | --- |
-| **Bitaxe Gamma 601 /602** | [Beta15](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.15) | [Gamma Beta15](v0.1.0-beta.15.md) | [Gamma](../installation.md) |
+| **Bitaxe Gamma 601 /602** | [Beta16](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.16) | [Gamma Beta16](v0.1.0-beta.16.md) | [Gamma](../installation.md) |
 | **NerdQAxe++** | [Beta12](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.12) | [QAxe Beta12](qaxe-v0.1.0-beta.12.md) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
 | **NerdOctAxe Gamma** | [Beta10](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.10) | [OctAxe Beta10](octaxe-v0.1.0-beta.10.md) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 

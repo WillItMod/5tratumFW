@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12** and **NerdOctAxe Gamma Beta10**, built from `747a8fccfa0ef38064753159093f795418ea6b64`. They clarify that options are saved before the separate per-run waiver and Start. Their new installed pairs and GET-only actual-browser form checks are recorded in [current validation](validation-tuning-flow-20261104.md); those checks did not save 900 MHz or start tuning. Higher-clock operation remains unqualified. Gamma includes its matching web interface in `esp-miner.bin`, with optional separate WWW; QAxe and OctAxe still require both matching images. See [downloads and OS instructions](../DOWNLOADS.md).
+The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12** and **NerdOctAxe Gamma Beta10**, with Gamma16 built from `385ae9e2b71b2b83e9a52d0ae369db701abe0209` and the Nerd releases retained at `747a8fccfa0ef38064753159093f795418ea6b64`. They clarify that options are saved before the separate per-run waiver and Start. Their new installed pairs and GET-only actual-browser form checks are recorded in [current validation](validation-tuning-flow-20261104.md); those checks did not save 900 MHz or start tuning. Higher-clock operation remains unqualified. Gamma includes its matching web interface in `esp-miner.bin`, with optional separate WWW; QAxe and OctAxe still require both matching images. See [downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -107,7 +107,7 @@ overclock or a particular efficiency improvement.
 
 ### Advanced clock override
 
-Gamma Beta15, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 include an explicit
+Gamma Beta16, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 include an explicit
 advanced clock override as an experimental release feature. The current installed pairs have been checked separately; see [flow validation](validation-tuning-flow-20261104.md). Higher-clock physical operation remains unqualified. The page shows the
 standard maximum reported by the detected profile: 690MHz for Gamma, 800MHz for
 the standard Nerd profile, or 1,000MHz for the recognized QAxe rev7 profile.
@@ -288,7 +288,7 @@ limits. Searches are local and bounded, not a guaranteed global optimum.
 
 ### Earlier rejection of unstable trials
 
-Gamma Beta15, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 add a separate fast
+Gamma Beta16, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 add a separate fast
 error check while measuring a baseline or testing a trial. The full settling
 and performance-measurement periods remain unchanged: after a confirmed
 application, 30 seconds of settling plus the 15-second counter exclusion and

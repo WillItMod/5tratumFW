@@ -4,7 +4,7 @@ These application and web images are for **Bitaxe Gamma PCB revisions 601 and 60
 
 GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this Gamma image's supported hardware. NerdQAxe++ has a separate firmware family in this repository; use its [model-specific guide](nerdqaxe.md) and image pair. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
 
-**Current public Gamma release: [Beta15 experimental BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.15).** Read [Tuning](autotuning.md) before enabling the optional controller and [fast-error software qualification](validation-autotune-fast-errors-20261104.md) for its limits. The Beta15 pair was installed and its original settings and served assets verified on the owned Gamma 601; current GET-only form checks did not save 900 MHz or start tuning. See [current flow validation](validation-tuning-flow-20261104.md). [Earlier release evidence](validation-autotune-release-20261103.md) retains its own image/source scope. Gamma 602 tuner admission/restore remains unqualified. W5500 stays off by default; physical LAN/Ethernet-only OTA remain unqualified. Previous releases retain their own evidence.
+**Current public Gamma release: [Beta16 experimental BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.16).** Read [Tuning](autotuning.md) before enabling the optional controller and [fast-error software qualification](validation-autotune-fast-errors-20261104.md) for its limits. The Beta16 application-only update was checked on the owned Gamma601 with the separate older WWW left untouched; the reported versions and all 11 served assets matched. Original settings were preserved. See [the app-only validation](validation-gamma-web-version-20261104.md) and [earlier form validation](validation-tuning-flow-20261104.md). [Earlier release evidence](validation-autotune-release-20261103.md) retains its own image/source scope. Gamma 602 tuner admission/restore remains unqualified. W5500 stays off by default; physical LAN/Ethernet-only OTA remain unqualified. Previous releases retain their own evidence.
 
 ## Choose the correct files
 
@@ -18,7 +18,7 @@ Use the paired files from the same 5tratumFW release or verified local build:
 
 The upload controls require the exact filenames above. Keep the files inside their versioned release directory so files from different releases do not get mixed. `esp-miner.bin` is an application OTA image, not a factory image. Do not upload a merged/factory BIN to either control. `www.bin` is the generated **3 MiB partition image** for the standard layout, even when its compressed web assets occupy much less space. Do not replace it with a ZIP, an asset directory, or a smaller raw payload.
 
-Gamma Beta15 retains the AxeOS single-file format: the matching web assets are compiled into `esp-miner.bin`. Firmware migration disables an older custom-WWW selection, so the new application normally serves its own embedded interface. An application update leaves the separate WWW partition's bytes untouched; those bytes are not required for normal embedded-interface operation. A WWW-only update still leaves the application unchanged. QAxe and OctAxe use different builds and still need their separate application/WWW pairs.
+Gamma Beta16 retains the AxeOS single-file format: the matching web assets are compiled into `esp-miner.bin`. Firmware migration disables an older custom-WWW selection, so the new application normally serves its own embedded interface. An application update leaves the separate WWW partition's bytes untouched; those bytes are not required for normal embedded-interface operation. A WWW-only update still leaves the application unchanged. QAxe and OctAxe use different builds and still need their separate application/WWW pairs.
 
 See [single-file updates](single-file-updates.md) for the verified format and migration limits. This does not establish that an unknown third-party updater, including Harlo, accepts the application or retains a compatible partition layout and board identity.
 
@@ -40,7 +40,7 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 

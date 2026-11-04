@@ -1,16 +1,18 @@
 # Download 5tratumFW
 
-Choose by the actual miner model. These are **experimental BETA prereleases**. **Gamma Beta15 supports a normal single-file update:** its `esp-miner.bin` includes the matching web interface. **QAxe and OctAxe still require both their application and matching `www.bin`.** Files from different families are not interchangeable.
+Choose by the actual miner model. These are **experimental BETA prereleases**. **Gamma Beta16 supports a normal single-file update:** its `esp-miner.bin` includes the matching web interface. **QAxe and OctAxe still require both their application and matching `www.bin`.** Files from different families are not interchangeable.
 
 | Your miner | Current release | Downloads | Installation |
 | --- | --- | --- | --- |
-| **Bitaxe Gamma 601 / 602** | [Beta15 experimental](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.15) | [Single-file firmware + web UI](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.15/esp-miner.bin) · [Optional separate WWW](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.15/www.bin) | [Gamma guide](docs/installation.md) |
+| **Bitaxe Gamma 601 / 602** | [Beta16 experimental](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.16) | [Single-file firmware + web UI](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.16/esp-miner.bin) · [Optional separate WWW](https://github.com/WillItMod/5tratumFW/releases/download/v0.1.0-beta.16/www.bin) | [Gamma guide](docs/installation.md) |
 | **NerdQAxe++** · BM1370 ×4 | [Beta12 experimental](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.12) | [Firmware BIN](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.12/esp-miner-NerdQAxe%2B%2B.bin) · [Web BIN](https://github.com/WillItMod/5tratumFW/releases/download/qaxe-v0.1.0-beta.12/www.bin) | [QAxe guide](firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
 | **NerdOctAxe Gamma** · BM1370 ×8 | [Beta10 experimental](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.10) | [Firmware BIN](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.10/esp-miner-NerdOCTAXE-Gamma.bin) · [Web BIN](https://github.com/WillItMod/5tratumFW/releases/download/octaxe-v0.1.0-beta.10/www.bin) | [OctAxe guide](firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 
-Each release includes its manifest, checksums and corresponding source. Gamma retains the ESP-Miner v2.15.4 base; both Nerd families retain shufps v1.1.1-rc1. These versions retain the [opt-in adaptive tuner](docs/autotuning.md) and add faster rejection of error-prone settings plus a separate opt-in advanced clock override. No update starts tuning or overclocks the miner automatically. See [Gamma Beta15](docs/releases/v0.1.0-beta.15.md), [QAxe Beta12](docs/releases/qaxe-v0.1.0-beta.12.md) and [OctAxe Beta10](docs/releases/octaxe-v0.1.0-beta.10.md) for family-specific release notes. The new pairs were installed with settings and served-asset verification on the owned Gamma 601, QAxe and OctAxe. The clarified form flow was checked in their actual browser interfaces using GET requests only; no 900 MHz setting was saved and no tuning run was started by that check. See [current installed-pair and form-flow evidence](docs/validation-tuning-flow-20261104.md). Higher-clock operation remains unqualified.
+Each release includes its manifest, checksums and corresponding source. Gamma retains the ESP-Miner v2.15.4 base; both Nerd families retain shufps v1.1.1-rc1. These versions retain the [opt-in adaptive tuner](docs/autotuning.md) and add faster rejection of error-prone settings plus a separate opt-in advanced clock override. No update starts tuning or overclocks the miner automatically. See [Gamma Beta16](docs/releases/v0.1.0-beta.16.md), [QAxe Beta12](docs/releases/qaxe-v0.1.0-beta.12.md) and [OctAxe Beta10](docs/releases/octaxe-v0.1.0-beta.10.md) for family-specific release notes. Gamma16 was checked through an application-only update on the owned Gamma601; QAxe12 and OctAxe10 retained their earlier paired-installation checks. Settings and served assets were verified. The clarified form flow was checked in their actual browser interfaces using GET requests only; no 900 MHz setting was saved and no tuning run was started by that check. See [current installed-pair and form-flow evidence](docs/validation-tuning-flow-20261104.md). Higher-clock operation remains unqualified.
 
-[Single-file format and migration details](docs/single-file-updates.md) explain the embedded Gamma interface, optional WWW image and third-party updater limits. The original Beta13 application already contained this interface. Beta15 is a new release; previous release assets and version numbers remain unchanged.
+[Single-file format and migration details](docs/single-file-updates.md) explain the embedded Gamma interface, optional WWW image and third-party updater limits. The original Beta13 application already contained this interface. Beta16 is a new release; previous release assets and version numbers remain unchanged.
+
+Gamma16 fixes the false `Unified` web-version warning. Read [the application-only validation](docs/validation-gamma-web-version-20261104.md); no newer QAxe or OctAxe firmware is needed for this Gamma-specific correction.
 
 ## Update through 5tratumOS
 
@@ -20,7 +22,7 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
@@ -38,7 +40,7 @@ Up to 16 exact error-rejected clock/voltage pairs are skipped for the current ru
 
 ## Advanced clock override
 
-Gamma Beta15, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 include a separate **Advanced clock override**. It starts off. Read and explicitly tick its initially unticked warning, choose your clock ceiling and select **Save options**. The saved maximum permits a wider search; it does not immediately set that clock. An advanced Start needs that acknowledgement as well as the ordinary per-run risk waiver. Existing manual settings or old reports never supply consent automatically.
+Gamma Beta16, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 include a separate **Advanced clock override**. It starts off. Read and explicitly tick its initially unticked warning, choose your clock ceiling and select **Save options**. The saved maximum permits a wider search; it does not immediately set that clock. An advanced Start needs that acknowledgement as well as the ordinary per-run risk waiver. Existing manual settings or old reports never supply consent automatically.
 
 The **1,200 MHz experimental project ceiling is not a safe hardware rating**. Temperature, voltage, power, fan, sensor and fault protections still apply. Whole-miner tuning remains bounded; unsupported PLL points are skipped before invalid frames can be sent. No physical override qualification is claimed.
 
@@ -73,7 +75,7 @@ Full guidance, sensor limits, backup behaviour and qualification limits are in [
 
 ## Manual update and screen selection
 
-For a manual **Gamma Beta15** update on a compatible layout, verify the checksum and upload **`esp-miner.bin`** through the firmware uploader. It includes the matching web interface, selected after restart. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery workflows.
+For a manual **Gamma Beta16** update on a compatible layout, verify the checksum and upload **`esp-miner.bin`** through the firmware uploader. It includes the matching web interface, selected after restart. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery workflows.
 
 For **QAxe or OctAxe**, upload the correct family's **application first**, wait for its restart, then upload **that same release's WWW** and reload. Follow the model guide's restart and readback steps. These are OTA images, without replacement NVS, factory settings or partition tables. Keep enabled authentication. Stock conversion uses the separate model guide.
 

@@ -46,7 +46,7 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
