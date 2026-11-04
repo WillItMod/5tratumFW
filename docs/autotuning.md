@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta14**, **NerdQAxe++ Beta11** and **NerdOctAxe Gamma Beta9**. These release candidates add faster ASIC-error rejection and a separate, default-off advanced clock override; final new packages are pending publication. Neither feature has physical qualification on these new images. Gamma includes its matching web interface in `esp-miner.bin`, with a separate optional WWW. QAxe and OctAxe still require both matching application and web images; no factory erase or NVS image is part of an update. See [downloads and 5tratumOS 0.8.50 instructions](../DOWNLOADS.md) and [fast-error software qualification](validation-autotune-fast-errors-20261104.md). The previous Gamma13/QA10/Oct8 [release record](validation-autotune-release-20261103.md) retains its earlier physical scope; it does not qualify the new fast guard or newer images.
+The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12** and **NerdOctAxe Gamma Beta10**, built from `747a8fccfa0ef38064753159093f795418ea6b64`. They clarify that options are saved before the separate per-run waiver and Start. Their new installed pairs and GET-only actual-browser form checks are recorded in [current validation](validation-tuning-flow-20261104.md); those checks did not save 900 MHz or start tuning. Higher-clock operation remains unqualified. Gamma includes its matching web interface in `esp-miner.bin`, with optional separate WWW; QAxe and OctAxe still require both matching images. See [downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -12,6 +12,8 @@ Open **Tuning** in the firmware web interface. The Scheduler remains separate.
 An active or held session opens on **Live dashboard**; use **Adjust this tune**
 to change the goal or limits. An idle miner opens on **Tuning options**. The
 activity banner and restore action stay visible when switching views.
+
+**Save before the run waiver.** Choose the objective and bounds, acknowledge the advanced warning if the draft exceeds the reported standard limit, then select **Save options** and wait for readback. The ordinary per-run waiver is not required to save options. Once saved, accept that waiver and select **Start tuning**; an advanced Start also requires its separate acknowledgement. Saving options does not start the controller. A local draft is not a saved miner change.
 
 | Priority | Goal |
 | --- | --- |
@@ -105,10 +107,8 @@ overclock or a particular efficiency improvement.
 
 ### Advanced clock override
 
-Gamma Beta14, NerdQAxe++ Beta11 and NerdOctAxe Gamma Beta9 include an explicit
-advanced clock override as an experimental release feature. These new packages
-are pending publication after their final checks; no physical override or
-new-release installation is claimed. The page shows the
+Gamma Beta15, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 include an explicit
+advanced clock override as an experimental release feature. The current installed pairs have been checked separately; see [flow validation](validation-tuning-flow-20261104.md). Higher-clock physical operation remains unqualified. The page shows the
 standard maximum reported by the detected profile: 690MHz for Gamma, 800MHz for
 the standard Nerd profile, or 1,000MHz for the recognized QAxe rev7 profile.
 The additional **1,200MHz experimental project ceiling** is a software boundary,
@@ -288,7 +288,7 @@ limits. Searches are local and bounded, not a guaranteed global optimum.
 
 ### Earlier rejection of unstable trials
 
-Gamma Beta14, NerdQAxe++ Beta11 and NerdOctAxe Gamma Beta9 add a separate fast
+Gamma Beta15, NerdQAxe++ Beta12 and NerdOctAxe Gamma Beta10 add a separate fast
 error check while measuring a baseline or testing a trial. The full settling
 and performance-measurement periods remain unchanged: after a confirmed
 application, 30 seconds of settling plus the 15-second counter exclusion and
@@ -297,8 +297,7 @@ distinct samples. Early rejection cannot establish a performance gain or replace
 a completed comparison window. See the [offline fast-error validation record](validation-autotune-fast-errors-20261104.md)
 for the implementation checks and physical limits. That historical record uses
 the previous version markers for private compilation; the new releases use
-unique versions and do not replace those older public files. No physical
-fast-guard or new-release installation is claimed.
+unique versions and do not replace those older public files. Current installed-pair and form-flow checks are separate from the earlier controller experiments; no higher-clock operation is claimed.
 
 Only fresh, distinct hardware-counter intervals belonging to the current
 point’s evaluation count. The possible old 15-second counter interval is

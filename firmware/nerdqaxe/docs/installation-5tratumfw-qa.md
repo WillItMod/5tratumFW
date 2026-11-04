@@ -1,6 +1,6 @@
 # QAxe paired OTA installation and recovery
 
-**QAxe Beta11 is an experimental adaptive-tuning BETA with earlier ASIC-error rejection.** Read [Tuning](../../../docs/autotuning.md), [fast-error software qualification](../../../docs/validation-autotune-fast-errors-20261104.md) and [Beta11 release notes](../../../docs/releases/qaxe-v0.1.0-beta.11.md). No physical fast-error test or Beta11 installation is claimed; [earlier physical evidence](../../../docs/validation-autotune-release-20261103.md) retains its own source scope. Tuning is off until an explicit per-run waiver and Start. Standard 320×170 remains the default; saved 480×320 RGB/BGR choices remain physically unqualified.
+**QAxe Beta12 is an experimental adaptive-tuning BETA with earlier ASIC-error rejection.** Read [Tuning](../../../docs/autotuning.md), [fast-error software qualification](../../../docs/validation-autotune-fast-errors-20261104.md) and [Beta12 release notes](../../../docs/releases/qaxe-v0.1.0-beta.12.md). The current pair was installed with original-settings and served-asset verification on the owned miner. [GET-only form checks](../../../docs/validation-tuning-flow-20261104.md) did not save 900 MHz or start tuning; [earlier physical evidence](../../../docs/validation-autotune-release-20261103.md) retains its own source scope. Tuning is off until an explicit per-run waiver and Start. Standard 320×170 remains the default; saved 480×320 RGB/BGR choices remain physically unqualified.
 
 ## Identify before choosing
 
@@ -8,7 +8,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download the **QAxe Beta11 matched pair** from [its release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.11), with `manifest.json`, `SHA256SUMS` and corresponding source the source commit recorded in the release manifest. Verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`. Keep the existing settings and a private unit-specific recovery backup. [Earlier Beta8](../../../docs/validation-aligned-20261028.md) and [Beta6](validation-qa-beta6.md) remain evidence for those images, not later qualification.
+Download the **QAxe Beta12 matched pair** from [its release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.12), with `manifest.json`, `SHA256SUMS` and corresponding source for the commit recorded in the release manifest. Verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`. Keep the existing settings and a private unit-specific recovery backup. [Earlier Beta8](../../../docs/validation-aligned-20261028.md) and [Beta6](validation-qa-beta6.md) remain evidence for those images, not later qualification.
 
 ## Installation FAQ
 
@@ -42,19 +42,21 @@ Open **Updates → Check updates**. The browser checks the public WillItMod/5tra
 
 ## Update through 5tratumOS
 
-In **5tratumOS → Settings → Updates**, install **0.8.50 on MAIN**, or **0.8.50-dev if already on DEV**, then reload the portal. Keep your existing OS channel; a firmware beta does not require changing it.
+In **5tratumOS → Settings → Updates**, use the recommended **0.8.52 on MAIN** or **0.8.52-dev on DEV** when offered, then reload the portal. Keep your existing OS channel; a firmware beta does not require switching it. Firmware discovery requires **0.8.50 or later**. OS 0.8.52 also enables compatible native DualMUX controls from capability metadata; it does not require a fixed firmware-version list.
+
+To start tuning after installation, choose your options and **Save options** before accepting the separate per-run waiver. A higher draft clock needs its advanced warning acknowledgement before Save; saving never starts the tuner. Then accept the run waiver and use **Start tuning** when ready.
 
 If this miner is already running a tuning candidate, first open its Tuning page, select **Disable and restore backup**, and wait until the original settings are confirmed restored and tuning is inactive. If already paused and ordinary restoration is waiting, use the separate **Restore original settings and resume mining** action and wait for completed verification. Do this before installing another firmware pair; an accepted Stop request alone is not completed restoration.
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta14**, **NerdQAxe++ Beta11**, or **NerdOctAxe Gamma Beta9**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta15**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
 The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
 
-Choose **NerdQAxe++ Beta11** for this guide. Read [Tuning](../../../docs/autotuning.md) before starting a run; the update does not start it.
+Choose **NerdQAxe++ Beta12** for this guide. Read [Tuning](../../../docs/autotuning.md) before starting a run; the update does not start it.
 
 ## Routine OTA upgrade
 

@@ -4,13 +4,15 @@
 
 | Miner | Current experimental BETA | Release notes | Installation |
 | --- | --- | --- | --- |
-| **Bitaxe Gamma 601 /602** | [Beta14](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.14) | [Gamma Beta14](v0.1.0-beta.14.md) | [Gamma](../installation.md) |
-| **NerdQAxe++** | [Beta11](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.11) | [QAxe Beta11](qaxe-v0.1.0-beta.11.md) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
-| **NerdOctAxe Gamma** | [Beta9](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.9) | [OctAxe Beta9](octaxe-v0.1.0-beta.9.md) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
+| **Bitaxe Gamma 601 /602** | [Beta15](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.15) | [Gamma Beta15](v0.1.0-beta.15.md) | [Gamma](../installation.md) |
+| **NerdQAxe++** | [Beta12](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.12) | [QAxe Beta12](qaxe-v0.1.0-beta.12.md) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
+| **NerdOctAxe Gamma** | [Beta10](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.10) | [OctAxe Beta10](octaxe-v0.1.0-beta.10.md) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
 
-Gamma Beta14, QAxe Beta11 and OctAxe Beta9 add faster rejection of unstable trials while retaining the unchanged full successful measurement. A bounded 16-pair run-local exclusion history prevents retrying error-rejected settings; measured stable-point rollback and guarded original-settings recovery retain protection. These are unique new versions, without replacing earlier public release files. No physical fast-guard or new-release installation is claimed. All three add opt-in measured whole-miner tuning, a per-run waiver, verified original-settings backup/restore, persistent activity status, live decisions and telemetry graphs. Nerd also adds board/per-chip ASIC errors. None enables tuning automatically. Use the [Tuning guide](../autotuning.md) and [5tratumOS 0.8.50 update instructions](../../DOWNLOADS.md#update-through-5tratumos).
+These revisions give Tuning a continuous goal → limits and adjacent advanced-clock warning → Save → waiver and Start flow. Save stays visible, explains missing requirements and shows saved versus unsaved values. Saving never requires the run waiver or starts tuning. Live status, J/TH, six charts, share/network difficulty, decisions and recovery remain together.
 
-Exact new build sources and image receipts are in each release manifest and corresponding source archive. The [fast-error software checks](../validation-autotune-fast-errors-20261104.md) are separate from [previous-release validation](../validation-autotune-release-20261103.md). Gamma Beta13, QAxe Beta10 and OctAxe Beta8 were built from `06d2bae5f1a45352a60b9deaf8dc0df34d2d2b89`; their dated physical observations do not qualify these newer releases. Gamma 602, larger panels and W5500 hardware remain outside completed tuner qualification. Original manifests and historical evidence are never relabelled.
+The controller and protections retain Gamma Beta14 /QAxe Beta11 /OctAxe Beta9 behaviour. The new pairs were installed with settings and served-asset verification; actual browser checks used GET requests and local drafts only. Read the [current validation](../validation-tuning-flow-20261104.md) for exact sources, checks and limits. No physical higher-clock test is claimed. Historical manifests, binaries and their evidence remain unchanged.
+
+Use [5tratumOS 0.8.52 on the existing MAIN/DEV channel](../../DOWNLOADS.md#update-through-5tratumos) for native controls of later qualified Nerd releases; firmware discovery already works with 0.8.50 or later. Hardware, identity and API checks remain required. Gamma602 tuning, physical QAxe rev7 tuning, larger Nerd panels and W5500 remain outside these completed checks.
 
 <details>
 <summary>Earlier-release validation and build provenance (Beta11 / QA8 / Oct6)</summary>
