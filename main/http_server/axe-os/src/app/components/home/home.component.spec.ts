@@ -97,6 +97,44 @@ describe('HomeComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('accepts the matching active embedded interface version without a pair warning', () => {
+    const info={hashRate:1200,temp:55,frequency:525,version:'5tratumFW-0.1.0-beta.16',axeOSVersion:'5tratumFW-0.1.0-beta.16'} as SystemInfo;
+    component.handleSystemMessages(info,{duration:0,startTime:null});
+    expect(component.messages.some(message=>message.type==='VERSION_MISMATCH'||message.type==='VERSION_UNVERIFIED')).toBeFalse();
+  });
+
+  it('keeps a genuine custom-interface mismatch visible with source-aware update guidance', () => {
+    const info={hashRate:1200,temp:55,frequency:525,version:'5tratumFW-0.1.0-beta.16',axeOSVersion:'5tratumFW-0.1.0-beta.15'} as SystemInfo;
+    component.handleSystemMessages(info,{duration:0,startTime:null});
+    const message=component.messages.find(value=>value.type==='VERSION_MISMATCH');
+    expect(message?.severity).toBe('warn');expect(message?.text).toContain('beta.16');expect(message?.text).toContain('beta.15');
+    expect(message?.text).toContain('bundled interface');expect(message?.text).toContain('custom www.bin');
+    expect(message?.text).not.toContain('Update both');expect(component.messages.some(value=>value.type==='VERSION_UNVERIFIED')).toBeFalse();
+  });
+
+  it('reports missing or placeholder web metadata as unverified and never treats Unified as proof of a matching pair', () => {
+    for(const web of [undefined,null,'','   ','Unknown','Unified',' unified ','unavailable']) {
+      const info={hashRate:1200,temp:55,frequency:525,version:'5tratumFW-0.1.0-beta.16',axeOSVersion:web} as unknown as SystemInfo;
+      component.handleSystemMessages(info,{duration:0,startTime:null});
+      expect(component.messages.some(value=>value.type==='VERSION_MISMATCH')).toBeFalse();
+      const message=component.messages.find(value=>value.type==='VERSION_UNVERIFIED');
+      expect(message?.severity).toBe('warn');expect(message?.text).toContain('could not be verified');
+    }
+  });
+
+  it('clears stale mismatch and unverified warnings only after a known matching report arrives', () => {
+    const info={hashRate:1200,temp:55,frequency:525,version:'5tratumFW-0.1.0-beta.16',axeOSVersion:'5tratumFW-0.1.0-beta.15'} as SystemInfo;
+    component.handleSystemMessages(info,{duration:0,startTime:null});
+    expect(component.messages.some(value=>value.type==='VERSION_MISMATCH')).toBeTrue();
+    component.handleSystemMessages({...info,axeOSVersion:'Unknown'},{duration:0,startTime:null});
+    expect(component.messages.some(value=>value.type==='VERSION_MISMATCH')).toBeFalse();
+    expect(component.messages.filter(value=>value.type==='VERSION_UNVERIFIED').length).toBe(1);
+    component.handleSystemMessages({...info,axeOSVersion:info.version},{duration:0,startTime:null});
+    expect(component.messages.some(value=>value.type==='VERSION_MISMATCH'||value.type==='VERSION_UNVERIFIED')).toBeFalse();
+    component.handleSystemMessages({...info,version:undefined as any},{duration:0,startTime:null});
+    expect(component.messages.some(value=>value.type==='VERSION_UNVERIFIED')).toBeTrue();
+  });
+
   it('does not lock the interface behind a loader while initial telemetry is unavailable', () => {
     expect(TestBed.inject(LoadingService).loading$.value).toBeFalse();
     expect(fixture.nativeElement.querySelector('.fw-hash-value')).toBeNull();

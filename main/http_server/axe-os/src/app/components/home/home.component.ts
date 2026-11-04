@@ -35,6 +35,7 @@ type MessageType =
   | 'FREQUENCY_LOW'
   | 'FALLBACK_STRATUM'
   | 'VERSION_MISMATCH'
+  | 'VERSION_UNVERIFIED'
   | 'NOT_SOLO_MINING'
   | 'NO_MINING_REWARD'
   | 'HARDWARE_FAULT';
@@ -51,6 +52,12 @@ interface ISystemInfoError {
 
 const HOME_CHART_DATA_SOURCES = 'HOME_CHART_DATA_SOURCES';
 const COINBASE_DISPLAY_KEY = '5TRATUMFW_SHOW_COINBASE';
+
+function comparableVersion(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const version=value.trim();
+  return version && !['unknown','unified','unavailable','n/a'].includes(version.toLowerCase()) ? version : null;
+}
 
 @Component({
   selector: 'app-home',
@@ -955,7 +962,10 @@ export class HomeComponent implements OnInit, OnDestroy {
     updateMessage(!!info.hardware_fault, 'HARDWARE_FAULT', 'error', `${info.hardware_fault}`);
     updateMessage(!info.frequency || info.frequency < 400, 'FREQUENCY_LOW', 'warn', 'Device frequency is set low - See settings');
     updateMessage(!!info.isUsingFallbackStratum, 'FALLBACK_STRATUM', 'warn', 'Using fallback pool - Share stats reset. Check Pool Settings and / or reboot Device.');
-    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and web interface (${info.axeOSVersion}) versions do not match. Update both www.bin and esp-miner.bin.`);
+    const firmwareVersion=comparableVersion(info.version), webVersion=comparableVersion(info.axeOSVersion);
+    const versionsKnown=firmwareVersion!==null && webVersion!==null;
+    updateMessage(!versionsKnown, 'VERSION_UNVERIFIED', 'warn', 'The firmware or running web interface version could not be verified. Check the active interface before choosing an update. A Gamma application includes its bundled interface; any custom www.bin should come from the same release.');
+    updateMessage(versionsKnown && firmwareVersion!==webVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${firmwareVersion}) and the running web interface (${webVersion}) have different versions. Use a matching Gamma release. The application includes its bundled interface; any custom www.bin must match that release.`);
     const percentage = this.showCoinbaseData && info.coinbaseOutputs?.length ? this.getPayoutPercentage(info) : -1;
     updateMessage(percentage > 0 && percentage < 95, 'NOT_SOLO_MINING', 'info', `Observed job coinbase allocation to the configured address: ${percentage.toFixed(1)}%. Pool or MUX payouts may differ.`);
     updateMessage(percentage === 0, 'NO_MINING_REWARD', 'info', 'Payout could not be verified on this device. Check your pool or MUX.');

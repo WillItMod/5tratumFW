@@ -189,6 +189,33 @@ void SYSTEM_init_system(GlobalState * GLOBAL_STATE)
     }
 }
 
+static bool copy_web_version(char *version, size_t capacity, const uint8_t *data, size_t length)
+{
+    /* version.txt is one uncompressed text line, optionally ending in LF or
+     * CRLF. Do not turn missing, truncated or malformed metadata into a claim
+     * that the web interface matches the application. */
+    if (!data || !length || length > capacity + 1) {
+        return false;
+    }
+    if (data[length - 1] == '\n') {
+        --length;
+        if (length && data[length - 1] == '\r') {
+            --length;
+        }
+    }
+    if (!length || length >= capacity) {
+        return false;
+    }
+    for (size_t i = 0; i < length; ++i) {
+        if (data[i] < 0x21 || data[i] > 0x7e) {
+            return false;
+        }
+    }
+    memcpy(version, data, length);
+    version[length] = '\0';
+    return true;
+}
+
 void SYSTEM_init_versions(GlobalState * GLOBAL_STATE)
 {
     const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -201,23 +228,30 @@ void SYSTEM_init_versions(GlobalState * GLOBAL_STATE)
     }
 
     bool use_custom = nvs_config_get_bool(NVS_CONFIG_USE_CUSTOM_WWW) && GLOBAL_STATE->filesystem_is_available;
-    char version[64] = "Unified";
+    char version[64] = "Unknown";
 
     if (use_custom) {
-        // Read AxeOS version from SPIFFS
-        FILE *f = fopen("/version.txt", "r");
+        /* Read the selected custom web interface, never the embedded version
+         * as a fallback for an unverified custom bundle. */
+        FILE *f = fopen("/version.txt", "rb");
         if (f != NULL) {
-            if (fgets(version, sizeof(version), f) != NULL) {
-                // Remove trailing newline if present
-                size_t len = strlen(version);
-                if (len > 0 && version[len - 1] == '\n') {
-                    version[len - 1] = '\0';
-                }
+            uint8_t data[sizeof(version) + 1];
+            size_t length = fread(data, 1, sizeof(data), f);
+            int extra = fgetc(f);
+            if (extra != EOF || ferror(f) || !copy_web_version(version, sizeof(version), data, length)) {
+                ESP_LOGW(TAG, "Invalid /version.txt from SPIFFS");
             }
             fclose(f);
         } else {
-            strlcpy(version, "Unknown", sizeof(version));
             ESP_LOGW(TAG, "Failed to open /version.txt from SPIFFS");
+        }
+    } else {
+        /* Keep this selection in step with the HTTP file handler: when custom
+         * WWW is not both enabled and available, the embedded bundle is served.
+         * Its actual version marker is the version to report. */
+        const EmbeddedFile *file = get_embedded_file("/version.txt");
+        if (!file || file->is_gzipped || !copy_web_version(version, sizeof(version), file->data, file->size)) {
+            ESP_LOGW(TAG, "Missing or invalid embedded /version.txt");
         }
     }
 
