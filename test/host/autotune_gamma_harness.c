@@ -32,6 +32,8 @@ static atomic_uint_least32_t tx_failures;
 static double sensor_vout_delta;
 static float host_asic_temp=50,host_vrm_temp=55;
 static double host_error_percentage;
+static uint8_t host_status_cml;
+static char last_fault_reason[160];
 static bool host_applied_paused,host_internal_stack=true,host_resume_refused;
 static uint32_t host_schedule_revision=1;
 static unsigned host_resume_requests;
@@ -90,7 +92,8 @@ esp_err_t TPS546_read_strict(TPS546_StrictTelemetry *out) {
     if(v<=0) return ESP_FAIL; /* Running strict acquisition rejects a powered-off rail. */
     /* Deterministic output-power plant; it is not a claimed real miner curve. */
     double watts=12.0*(gs.POWER_MANAGEMENT_MODULE.frequency_value/625.125)*(v/1.173)*(v/1.173);
-    *out=(TPS546_StrictTelemetry){.vin=5.1,.vout=v+sensor_vout_delta,.iout=host_current_ok?watts/v:0,.temperature_c=host_vrm_temp};
+    *out=(TPS546_StrictTelemetry){.vin=5.1,.vout=v+sensor_vout_delta,.iout=host_current_ok?watts/v:0,.temperature_c=host_vrm_temp,
+        .status_word=host_status_cml?TPS546_STATUS_CML:0,.status_cml=host_status_cml};
     return ESP_OK;
 }
 esp_err_t TPS546_read_strict_off(TPS546_StrictTelemetry *out) {
@@ -116,7 +119,8 @@ GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state,uint64
 }
 void hashrate_monitor_reset_measurements(void *state) {(void)state;++counter_resets;}
 void POWER_MANAGEMENT_stop_for_fault(void *state,const char *reason) {
-    (void)reason;GlobalState *device=state;++fault_stops;device->SYSTEM_MODULE.hardware_fault=true;device->ASIC_initalized=false;
+    snprintf(last_fault_reason,sizeof(last_fault_reason),"%s",reason);
+    GlobalState *device=state;++fault_stops;device->SYSTEM_MODULE.hardware_fault=true;device->ASIC_initalized=false;
 }
 static httpd_req_t tune_request(bool write,const char *body) {return request(write?4:3,body);}
 static void observe(void) {
@@ -817,6 +821,47 @@ int main(int argc,char **argv) {
         assert(nvs_config_apply_atomic(changes,2)==ESP_OK);
         assert(!autotune_gamma_select_target(&gs,&stale_mv,&stale_mhz));
         assert(!tuner.core.owns&&stale_mv==1150&&stale_mhz==575);
+    } else if(!strcmp(name,"restore-verify-only")) {
+        start();nvs_config_set_bool(NVS_CONFIG_AUTO_FAN_SPEED,false);drain_auth_write();step(true);
+        assert(!tuner.core.owns&&!nvs_config_get_bool(NVS_CONFIG_AUTO_FAN_SPEED));
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        const unsigned resets=counter_resets,frames=physical_uart_frames,rail=physical_i2c_frames;
+        const uint64_t generation=tuner.generation;
+        assert(step(true)&&tuner.restore_verify_only&&tuner.confirming);
+        assert(nvs_config_get_bool(NVS_CONFIG_AUTO_FAN_SPEED)&&!tuner.backup_restored);
+        assert(step(true)&&tuner.restore_pending&&!tuner.backup_restored);
+        step(true);assert(!tuner.restore_pending&&tuner.backup_restored&&!tuner.core.owns);
+        assert(counter_resets==resets&&tuner.generation==generation&&physical_uart_frames==frames&&physical_i2c_frames==rail&&!point_changes&&!fault_stops);
+    } else if(!strcmp(name,"restore-verify-only-stale")) {
+        start();assert(tune_request(true,"{\"action\":\"stop\"}").code==200);step(true);
+        const unsigned resets=counter_resets;
+        counters_ok=false;
+        for(unsigned i=0;i<20;++i) assert(step(true));
+        assert(tuner.restore_pending&&tuner.restore_verify_only&&!tuner.backup_restored&&!fault_stops);
+        assert(!strcmp(tuner.override_reason,"original-settings-verification-waiting-for-fresh-data"));
+        counters_ok=true;sensors_ok=false;
+        for(unsigned i=0;i<20;++i) assert(step(true));
+        assert(tuner.restore_pending&&!tuner.backup_restored&&!fault_stops&&counter_resets==resets);
+        sensors_ok=true;step(true);step(true);
+        assert(!tuner.restore_pending&&tuner.backup_restored&&!fault_stops&&counter_resets==resets);
+    } else if(!strcmp(name,"restore-verify-only-faults")) {
+        const char *expected[]={"communication","fan tachometer","temperature","temperature","voltage readback"};
+        for(unsigned kind=0;kind<5;++kind) {
+            gs.SYSTEM_MODULE.hardware_fault=false;gs.ASIC_initalized=true;host_status_cml=0;
+            host_fan_ok=true;host_asic_temp=50;host_vrm_temp=55;sensor_vout_delta=0;
+            reboot_runtime();host_now+=TUNE_POLL_US;observe();start();
+            assert(tune_request(true,"{\"action\":\"stop\"}").code==200);step(true);
+            assert(tuner.restore_verify_only);
+            const unsigned faults=fault_stops,resets=counter_resets,frames=physical_uart_frames,rail=physical_i2c_frames;
+            if(kind==0) host_status_cml=2;
+            if(kind==1) host_fan_ok=false;
+            if(kind==2) host_asic_temp=70;
+            if(kind==3) host_vrm_temp=95;
+            if(kind==4) sensor_vout_delta=.08;
+            step(true);
+            assert(fault_stops==faults+1&&gs.SYSTEM_MODULE.hardware_fault&&!gs.ASIC_initalized&&!tuner.backup_restored);
+            assert(strstr(last_fault_reason,expected[kind])&&counter_resets==resets&&physical_uart_frames==frames&&physical_i2c_frames==rail);
+        }
     } else if(!strcmp(name,"restore-storage")) {
         start();for(unsigned i=0;i<50&&!point_changes;++i) step(true);assert(point_changes);
         const float live=gs.POWER_MANAGEMENT_MODULE.frequency_value;

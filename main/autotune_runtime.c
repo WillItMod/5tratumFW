@@ -40,7 +40,7 @@ typedef enum { RECOVERY_IDLE, RECOVERY_VALIDATING_OFF, RECOVERY_RESTORING,
 typedef struct {
     GlobalState *device;
     bool initialized, supported, storage_ok, backup_available, backup_restored;
-    bool restore_pending, restore_committed, confirming, commanded, frozen;
+    bool restore_pending, restore_committed, restore_verify_only, confirming, commanded, frozen;
     bool rail_wait, rail_commanded;
     bool recovery_requested;
     bool recovery_automatic, automatic_recovery_attempted;
@@ -684,6 +684,20 @@ static bool backup_matches_live(GlobalState *state,uint64_t now) {
     return true;
 }
 
+static const char *restore_verification_fault(uint64_t now) {
+    if (!tuner.sensor_ok || !tuner.sensor_at || now<tuner.sensor_at || now-tuner.sensor_at>TUNE_FRESH_US) return NULL;
+    if (tuner.strict.status_cml) return "Original settings verification stopped: regulator communication or internal fault";
+    if (tuner.strict.status_vout) return "Original settings verification stopped: regulator output-voltage fault";
+    if (tuner.strict.status_iout || tuner.strict.iout>=25) return "Original settings verification stopped: regulator output-current fault";
+    if (tuner.strict.status_input) return "Original settings verification stopped: regulator input-power fault";
+    if (tuner.strict.status_temperature || tuner.input.asicTempC>=70 || tuner.input.vrmTempC>=95)
+        return "Original settings verification stopped: temperature protection";
+    if (!tuner.input.fanOk) return "Original settings verification stopped: fan tachometer fault";
+    if (fabs(tuner.input.voltageReadbackMv-tuner.target.coreVoltageMv)>30)
+        return "Original settings verification stopped: original voltage readback mismatch";
+    return NULL;
+}
+
 bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) {
     if (!tuner.initialized || !tuner.supported || !mv || !mhz) return false;
     pthread_mutex_lock(&tuner_mutex);
@@ -707,7 +721,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
     }
     if ((tuner.core.owns || tuner.restore_pending) && epoch != tuner.owner_epoch) {
         fwt_cancel(&tuner.core,"manual-control");
-        tuner.restore_pending = tuner.confirming = tuner.commanded = tuner.rail_wait = false;
+        tuner.restore_pending = tuner.restore_verify_only = tuner.confirming = tuner.commanded = tuner.rail_wait = false;
         tuner.override_reason = "manual-control";
         atomic_store(&transition_live,false);
         /* The owner may have read its normal target before the manual
@@ -734,7 +748,16 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
     bool owned = tuner.core.owns;
     if (tuner.restore_pending) {
         tuner.core.state = FWT_DISABLED;
-        if (tuner.restore_committed && (now < tuner.actuation_started ||
+        if (tuner.restore_committed && tuner.restore_verify_only) {
+            const char *fault=restore_verification_fault(now);
+            if (fault) {
+                tuner.override_reason=fault;
+                pthread_mutex_unlock(&tuner_mutex);
+                POWER_MANAGEMENT_stop_for_fault(state,fault);
+                return false;
+            }
+        }
+        if (tuner.restore_committed && !tuner.restore_verify_only && (now < tuner.actuation_started ||
             now-tuner.actuation_started > FWT_APPLY_TIMEOUT_US)) {
             tuner.override_reason="restore-transition-timed-out";
             pthread_mutex_unlock(&tuner_mutex);
@@ -743,7 +766,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
         }
         if (!tuner.input.valid || !tuner.input.miningActive || tuner.input.fault || !tuner.input.fanOk ||
             tuner.input.asicTempC >= 70 || tuner.input.vrmTempC >= 95) {
-            tuner.override_reason = "restore-pending-safe-operating-state";
+            tuner.override_reason = tuner.restore_verify_only ? "original-settings-verification-waiting-for-fresh-data" : "restore-pending-safe-operating-state";
             /* Retain the live point instead of falling through to the saved
              * baseline, which might now be unsafe to restore. */
             *mv = state->POWER_MANAGEMENT_MODULE.applied_core_voltage_mv;
@@ -773,6 +796,21 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
             tuner.rail_commanded=false;tuner.rail_confirmations=0;
             tuner.rail_frequency=state->POWER_MANAGEMENT_MODULE.frequency_value;
             tuner.rail_sample_at=tuner.sensor_at;
+            /* A settings/fan restore at an already confirmed original clock
+             * and rail is verification, not a new ASIC transition. Preserve
+             * the useful counter interval and do not invent an actuation
+             * timeout while waiting for fresh evidence. */
+            tuner.restore_verify_only = !tuner.rail_wait &&
+                fabs(state->POWER_MANAGEMENT_MODULE.frequency_value-tuner.target.frequencyMHz)<0.01 &&
+                isfinite(state->POWER_MANAGEMENT_MODULE.actual_frequency) &&
+                fabs(state->POWER_MANAGEMENT_MODULE.actual_frequency-tuner.target.frequencyMHz)<=2 &&
+                state->POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==tuner.target.coreVoltageMv &&
+                fabs(tuner.input.voltageReadbackMv-tuner.target.coreVoltageMv)<=30;
+            if (tuner.restore_verify_only) {
+                tuner.commanded=true;tuner.confirming=true;tuner.confirmations=0;
+                tuner.applied_at=tuner.sensor_at;
+                tuner.override_reason="verifying-original-settings-without-clock-change";
+            }
         }
         owned = true;
     } else if (tuner.core.owns) {
@@ -829,6 +867,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
                                   current[i].value.u16 == tuner.backup[i].value.u16);
                 tuner.backup_restored = equal;
                 tuner.restore_pending = !equal;
+                if (equal) tuner.restore_verify_only=false;
                 tuner.override_reason = equal ? "backup-restored" : "restore-readback-failed";
                 owned = false; atomic_store(&transition_live,false);
             } else {
@@ -841,7 +880,7 @@ bool autotune_gamma_select_target(GlobalState *state, uint16_t *mv, float *mhz) 
         *mv = (uint16_t)lround(tuner.target.coreVoltageMv);
         *mhz = tuner.target.frequencyMHz;
         atomic_store(&transition_epoch,tuner.owner_epoch);
-        atomic_store(&transition_live,true);
+        atomic_store(&transition_live,!tuner.restore_verify_only);
     } else atomic_store(&transition_live,false);
     pthread_mutex_unlock(&tuner_mutex);
     return owned;
@@ -900,7 +939,7 @@ void autotune_gamma_interrupt(const char *reason) {
     if (!constraint_pause) fwt_cancel(&tuner.core,reason);
     if (!strcmp(reason,"firmware-update") || !strcmp(reason,"restart")) tuner.frozen=true;
     tuner.override_reason = constraint_pause?tuner.core.reason:reason;
-    tuner.confirming = tuner.commanded = tuner.restore_pending = tuner.rail_wait = false;
+    tuner.confirming = tuner.commanded = tuner.restore_pending = tuner.restore_verify_only = tuner.rail_wait = false;
     /* Keep the old wire epoch armed until the power owner acknowledges it.
      * Otherwise a preflight-approved old command could run after revocation. */
     pthread_mutex_unlock(&tuner_mutex);
@@ -1264,7 +1303,7 @@ static const char *handle_action(const cJSON *json) {
         tuner.recovery_automatic=false;
         autotune_gamma_manual_override();
         fwt_cancel(&tuner.core,"restore-requested");
-        tuner.restore_pending=true; tuner.restore_committed=false; tuner.backup_restored=false;
+        tuner.restore_pending=true; tuner.restore_committed=false; tuner.restore_verify_only=false; tuner.backup_restored=false;
         tuner.confirming=tuner.commanded=tuner.rail_wait=false; tuner.owner_epoch=atomic_load(&manual_epoch);
         tuner.override_reason="restore-requested";
     } else error="invalid-request";
