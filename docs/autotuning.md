@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental releases are **Gamma Beta17**, **NerdQAxe++ Beta13** and **NerdOctAxe Gamma Beta11**, built from `1e2d1b545a01218ce906936dddba6c82b5af62b7`. They add precise Start requirements, readable diagnostics and bounded error recovery. Real controller starts, measurement/rejection and restoration checks are recorded in [current validation](validation-reliability-20261105.md); these bounded checks do not qualify maximum speed or every board. Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. See [downloads and OS instructions](../DOWNLOADS.md).
+The current experimental releases are **Gamma Beta17**, **NerdQAxe++ Beta14** and **NerdOctAxe Gamma Beta12**. Gamma17 remains unchanged; the Nerd fan-feedback update is built from `012488d6078f914cc68a3dd3594374e8e07aa507`. See [current fan-feedback validation](validation-single-fan-20261105.md) and the separate [Gamma17/QA13/Oct11 reliability record](validation-reliability-20261105.md). Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. See [downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -16,6 +16,8 @@ activity banner and restore action stay visible when switching views.
 **Save before the run waiver.** Choose the objective and bounds, acknowledge the advanced warning if the draft exceeds the reported standard limit, then select **Save options** and wait for readback. The ordinary per-run waiver is not required to save options. Once saved, accept that waiver and select **Start tuning**; an advanced Start also requires its separate acknowledgement. Saving options does not start the controller. A local draft is not a saved miner change.
 
 **Read the Start checklist.** It identifies the exact missing sensor, fan, ASIC counter or mining condition. Expand all checks or use **Copy tuning diagnostics** for support. Fresh status is required; a waiver cannot bypass protection or missing measurements. A temperature above the recommended default can be saved when it remains inside the board's reported limit.
+
+**Check the fitted fans on QAxe and OctAxe.** Tuning options offers **Both fans** (default), **Fan 1 only** and **Fan 2 only**. Select the actual fitted arrangement, explicitly acknowledge that it cools both the ASICs and VRM, then **Save cooling setup** and wait for confirmation. This is separate from Save options and the run waiver. It does not start tuning, change fan speed or overwrite the pre-tuning backup. While a tune owns the miner, disable it and finish restoration before changing the fan selection. An unselected channel is omitted from tuning admission; every selected channel still needs valid running-fan feedback. All other protections remain active. Do not deselect a failed fitted fan to bypass a fault.
 
 | Priority | Goal |
 | --- | --- |

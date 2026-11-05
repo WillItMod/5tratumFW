@@ -11,7 +11,7 @@ The tuner defaults to requiring both fans. A separate **Cooling setup** section 
 ## Using a single fitted fan
 
 1. Stop tuning and confirm restoration first if a run owns the settings.
-2. Open **Tuning → Cooling setup**. Select only the fan actually fitted, using the same Fan1/Fan2 labels as the miner controls. The fitted cooling must cover both ASICs and the voltage regulator.
+2. Open **Tuning → Tuning options → Fitted cooling fans**. Select only the fan actually fitted, using the same Fan1/Fan2 labels as the miner controls. The fitted cooling must cover both ASICs and the voltage regulator.
 3. Read the acknowledgement, then select **Save cooling setup** and wait for confirmation.
 4. Save the ordinary tuning options separately. At clocks within the standard limit, the advanced clock override is unnecessary; select **Use standard clock limits** and save if it was enabled accidentally.
 5. Accept the run waiver and select **Start tuning** once all required checks pass.

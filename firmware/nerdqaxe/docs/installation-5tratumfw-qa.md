@@ -1,6 +1,6 @@
 # QAxe paired OTA installation and recovery
 
-**QAxe Beta13 adds precise tuning readiness and bounded ASIC-error recovery.** See [current validation](../../../docs/validation-reliability-20261105.md) for the software, real Start, measurement and restoration checks. Read [Tuning](../../../docs/autotuning.md) before enabling the controller. Standard 320×170 remains the default; larger panels and other board revisions remain outside these checks.
+**QAxe Beta14 repairs fan feedback and adds an explicit fitted-fan choice.** See [current fan-feedback validation](../../../docs/validation-single-fan-20261105.md). The [earlier reliability record](../../../docs/validation-reliability-20261105.md) retains its own Start and restoration evidence for QA13/Oct11. Read [Tuning](../../../docs/autotuning.md) before enabling the controller. Standard 320×170 remains the default; larger panels and other board revisions remain outside these checks.
 
 ## Identify before choosing
 
@@ -8,7 +8,7 @@ This BETA targets NerdQAxe++ (`NERDQAXEPLUS2`, BM1370 ×4). Confirm the actual b
 
 The inherited QAxe++ driver uses one `NERDQAXEPLUS2` application target; there is no separate 6.0/6.1 filename or compile profile. This is not a claim that both PCB revisions have been physically tested. The reported model and power connector do not independently verify the PCB/regulator wiring. The separate inherited rev7 regulator probe also does not extend this BETA's hardware qualification.
 
-Download the **QAxe Beta13 matched pair** from [its release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.13), with `manifest.json`, `SHA256SUMS` and corresponding source for the commit recorded in the release manifest. Verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`. Keep the existing settings and a private unit-specific recovery backup. [Earlier Beta8](../../../docs/validation-aligned-20261028.md) and [Beta6](validation-qa-beta6.md) remain evidence for those images, not later qualification.
+Download the **QAxe Beta14 matched pair** from [its release](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.14), with `manifest.json`, `SHA256SUMS` and corresponding source for the commit recorded in the release manifest. Verify with `shasum -a 256 esp-miner-NerdQAxe++.bin www.bin`. Keep the existing settings and a private unit-specific recovery backup. [Earlier Beta8](../../../docs/validation-aligned-20261028.md) and [Beta6](validation-qa-beta6.md) remain evidence for those images, not later qualification.
 
 ## Installation FAQ
 
@@ -50,13 +50,13 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta17**, **NerdQAxe++ Beta13**, or **NerdOctAxe Gamma Beta11**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta17**, **NerdQAxe++ Beta14**, or **NerdOctAxe Gamma Beta12**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
 The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
 
-Choose **NerdQAxe++ Beta13** for this guide. Read [Tuning](../../../docs/autotuning.md) before starting a run; the update does not start it.
+Choose **NerdQAxe++ Beta14** for this guide. Read [Tuning](../../../docs/autotuning.md) before starting a run; the update does not start it.
 
 ## Routine OTA upgrade
 

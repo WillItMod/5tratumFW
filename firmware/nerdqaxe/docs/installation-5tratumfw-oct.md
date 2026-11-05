@@ -1,8 +1,8 @@
 # OctAxe BETA installation and recovery — owned PCB 2.2 scope
 
-**OctAxe Gamma Beta11 adds precise tuning readiness and bounded ASIC-error recovery.** See [current validation](../../../docs/validation-reliability-20261105.md) for the software, real Start, measurement and restoration checks. Read [Tuning](../../../docs/autotuning.md) before enabling the controller. Standard 320×170 remains the default; larger panels and other board revisions remain outside these checks.
+**OctAxe Gamma Beta12 repairs fan feedback and adds an explicit fitted-fan choice.** See [current fan-feedback validation](../../../docs/validation-single-fan-20261105.md). The [earlier reliability record](../../../docs/validation-reliability-20261105.md) retains its own Start and restoration evidence for QA13/Oct11. Read [Tuning](../../../docs/autotuning.md) before enabling the controller. Standard 320×170 remains the default; larger panels and other board revisions remain outside these checks.
 
-This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. The Beta11 pair is built from the source commit recorded in the release manifest. [Current software qualification](../../../docs/validation-autotune-fast-errors-20261104.md) does not extend the [earlier release record](../../../docs/validation-autotune-release-20261103.md) or source `35719b8e`'s limited PCB 2.2 tuner bench. The earlier [Beta6 paired-update record](validation-oct-beta6.md) retains its own standard-screen evidence; it does not qualify later images, another board or a larger panel.
+This guide applies only to **NerdOCTAXE-γ / NERDOCTAXEGAMMA / eight BM1370 ASICs**. The Beta12 pair is built from the source commit recorded in the release manifest. [Historical fast-error qualification](../../../docs/validation-autotune-fast-errors-20261104.md) does not extend the [earlier release record](../../../docs/validation-autotune-release-20261103.md) or source `35719b8e`'s limited PCB 2.2 tuner bench. The earlier [Beta6 paired-update record](validation-oct-beta6.md) retains its own standard-screen evidence; it does not qualify later images, another board or a larger panel.
 
 The previous standard-screen [Beta5 pair](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.5) remains available. Beta5 passed separate supervised settings/mining, pause/resume and same-point profile-schedule checks; [that dated evidence](../../../docs/validation-aligned-20261028.md) remains scoped to Beta5. Bench evidence is limited to one owned PCB 2.2 unit after a verified private recovery backup and actual layout inspection. Regulator strap/stock profile were reviewed against pinned hardware source; the package marking was not physically read. No other assembly or revision is qualified by this guide.
 
@@ -22,7 +22,7 @@ A PCB 3.1 unit using the same **NERDOCTAXEGAMMA / NerdOCTAXE-γ / BM1370 ×8** d
 
 ## Matched pair and routine OTA
 
-Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from the same [OctAxe Beta11 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.11). Both application/web versions must be `5tratumFW-oct-0.1.0-beta.11`. Verify the manifest, checksums and source receipt. The intended tag family is `octaxe-v…`; a QAxe/Gamma pair or generic latest download is not an OctAxe selection.
+Use `esp-miner-NerdOCTAXE-Gamma.bin` and `www.bin` from the same [OctAxe Beta12 release](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.12). Both application/web versions must be `5tratumFW-oct-0.1.0-beta.12`. Verify the manifest, checksums and source receipt. The intended tag family is `octaxe-v…`; a QAxe/Gamma pair or generic latest download is not an OctAxe selection.
 
 Once the exact unit/layout and recovery path are established:
 
@@ -46,19 +46,19 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta17**, **NerdQAxe++ Beta13**, or **NerdOctAxe Gamma Beta11**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta17**, **NerdQAxe++ Beta14**, or **NerdOctAxe Gamma Beta12**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 
 The OS installs both matching images and verifies the resulting pair and saved settings. Version 0.8.50 includes the older Nerd settings-verification/redirect correction. Future compatible releases are discovered without another OS update for each firmware version. Hardware, identity, layout and API checks still apply. Initial conversion from stock firmware remains a separate manual process. NerdQAxe++ Beta6 remains selectable only when it upgrades an older installation; it is not a downgrade option.
 
-Choose **NerdOctAxe Gamma Beta11** for this guide. The one-click route does not replace the separate stock-conversion instructions. Read [Tuning](../../../docs/autotuning.md) before starting a run.
+Choose **NerdOctAxe Gamma Beta12** for this guide. The one-click route does not replace the separate stock-conversion instructions. Read [Tuning](../../../docs/autotuning.md) before starting a run.
 
 ## Select the experimental larger screen
 
 The reported larger panel is treated as **480×320 (153,600 pixels)** by accepted working assumption. Its controller, wiring and any vendor-specific flash layout remain unidentified. The application defaults to **Standard 320×170** and does not detect a larger panel automatically.
 
-1. Complete the one-click update above and wait for **Firmware installation verified**, or finish the manual Beta11 application/WWW installation in that order. Reload the miner's browser page.
+1. Complete the one-click update above and wait for **Firmware installation verified**, or finish the manual Beta12 application/WWW installation in that order. Reload the miner's browser page.
 2. Open **Miner controls → Display → Screen**.
 3. Select **3.5-inch 480×320 RGB** or **3.5-inch 480×320 BGR** for the larger panel. Keep **Standard 320×170** for the standard screen.
 4. Select **Save this section**, wait for the saved/next-boot notice, then select **Restart device**. Selecting a choice alone does not change the active screen.
