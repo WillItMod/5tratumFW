@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental BETA releases are **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12** and **NerdOctAxe Gamma Beta10**, with Gamma16 built from `385ae9e2b71b2b83e9a52d0ae369db701abe0209` and the Nerd releases retained at `747a8fccfa0ef38064753159093f795418ea6b64`. They clarify that options are saved before the separate per-run waiver and Start. Their new installed pairs and GET-only actual-browser form checks are recorded in [current validation](validation-tuning-flow-20261104.md); those checks did not save 900 MHz or start tuning. Higher-clock operation remains unqualified. Gamma includes its matching web interface in `esp-miner.bin`, with optional separate WWW; QAxe and OctAxe still require both matching images. See [downloads and OS instructions](../DOWNLOADS.md).
+The current experimental releases are **Gamma Beta17**, **NerdQAxe++ Beta13** and **NerdOctAxe Gamma Beta11**, built from `1e2d1b545a01218ce906936dddba6c82b5af62b7`. They add precise Start requirements, readable diagnostics and bounded error recovery. Real controller starts, measurement/rejection and restoration checks are recorded in [current validation](validation-reliability-20261105.md); these bounded checks do not qualify maximum speed or every board. Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. See [downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -14,6 +14,8 @@ to change the goal or limits. An idle miner opens on **Tuning options**. The
 activity banner and restore action stay visible when switching views.
 
 **Save before the run waiver.** Choose the objective and bounds, acknowledge the advanced warning if the draft exceeds the reported standard limit, then select **Save options** and wait for readback. The ordinary per-run waiver is not required to save options. Once saved, accept that waiver and select **Start tuning**; an advanced Start also requires its separate acknowledgement. Saving options does not start the controller. A local draft is not a saved miner change.
+
+**Read the Start checklist.** It identifies the exact missing sensor, fan, ASIC counter or mining condition. Expand all checks or use **Copy tuning diagnostics** for support. Fresh status is required; a waiver cannot bypass protection or missing measurements. A temperature above the recommended default can be saved when it remains inside the board's reported limit.
 
 | Priority | Goal |
 | --- | --- |
@@ -73,7 +75,7 @@ protection channels. Missing or disabled required protection prevents Start.
 
 Choose stricter limits for uncertain cooling. Lowering a temperature or power
 ceiling can cause a bounded clock reduction or a stop if the requested limit
-cannot be met. Increasing voltage is considered for timing errors only when
+cannot be met. Error recovery permits at most two unmeasured voltage increases before reserving remaining attempts for clock reduction. Six total corrections remain allowed until a complete clean measurement resets the allowance. Increasing voltage is considered for timing errors only when
 both thermal and electrical headroom are available. Hot sensors, inadequate
 power headroom, weak/missing chips or invalid readings cannot justify a voltage
 increase. Firmware cannot infer a PSU, connector or cooling assembly's rating

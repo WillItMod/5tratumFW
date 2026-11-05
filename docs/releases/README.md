@@ -1,18 +1,8 @@
 # Firmware releases
 
-**[Download firmware: choose your miner](../../DOWNLOADS.md)**
+Current experimental releases: [Gamma Beta17](v0.1.0-beta.17.md), [NerdQAxe++ Beta13](qaxe-v0.1.0-beta.13.md) and [NerdOctAxe Gamma Beta11](octaxe-v0.1.0-beta.11.md). All are built from `1e2d1b545a01218ce906936dddba6c82b5af62b7` with matched images and corresponding source. [Current validation](../validation-reliability-20261105.md) records software/package tests and the actual owned-miner Start, measurement/rejection and restore checks. No high-clock, larger-panel or new-board qualification is implied.
 
-| Miner | Current experimental BETA | Release notes | Installation |
-| --- | --- | --- | --- |
-| **Bitaxe Gamma 601 /602** | [Beta16](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.16) | [Gamma Beta16](v0.1.0-beta.16.md) | [Gamma](../installation.md) |
-| **NerdQAxe++** | [Beta12](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.12) | [QAxe Beta12](qaxe-v0.1.0-beta.12.md) | [QAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-qa.md) |
-| **NerdOctAxe Gamma** | [Beta10](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.10) | [OctAxe Beta10](octaxe-v0.1.0-beta.10.md) | [OctAxe](../../firmware/nerdqaxe/docs/installation-5tratumfw-oct.md) |
-
-These revisions give Tuning a continuous goal → limits and adjacent advanced-clock warning → Save → waiver and Start flow. Save stays visible, explains missing requirements and shows saved versus unsaved values. Saving never requires the run waiver or starts tuning. Live status, J/TH, six charts, share/network difficulty, decisions and recovery remain together.
-
-The controller and protections retain Gamma Beta14 /QAxe Beta11 /OctAxe Beta9 behaviour. The new pairs were installed with settings and served-asset verification; actual browser checks used GET requests and local drafts only. Read the [current validation](../validation-tuning-flow-20261104.md) for exact sources, checks and limits. No physical higher-clock test is claimed. Historical manifests, binaries and their evidence remain unchanged.
-
-Use [5tratumOS 0.8.52 on the existing MAIN/DEV channel](../../DOWNLOADS.md#update-through-5tratumos) for native controls of later qualified Nerd releases; firmware discovery already works with 0.8.50 or later. Hardware, identity and API checks remain required. Gamma602 tuning, physical QAxe rev7 tuning, larger Nerd panels and W5500 remain outside these completed checks.
+Use [5tratumOS on your existing MAIN/DEV channel](../../DOWNLOADS.md#update-through-5tratumos). Current compatible firmware is discovered dynamically; no per-release OS update is needed. Historical downloads and their evidence remain unchanged.
 
 <details>
 <summary>Earlier-release validation and build provenance (Beta11 / QA8 / Oct6)</summary>

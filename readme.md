@@ -8,7 +8,7 @@
 
 **Advanced clock override stays off by default.** Its warning checkbox starts unticked, requires an explicit Save, and does not replace the separate per-run waiver or advanced Start acknowledgement. The **1,200 MHz project ceiling is not a safe hardware rating** and does not command an immediate clock jump. Temperature, voltage, power, fan and fault protections remain active. Existing higher manual clocks and original backups do not imply consent. Whole-miner PLL preflight skips unsupported points; the original protected backup/restore stays independent and unchanged. [Read the advanced guidance](docs/autotuning.md) before enabling it. No physical override qualification is claimed.
 
-**Gamma Beta16 supports single-file OTA:** `esp-miner.bin` includes its complete matching web interface. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery. QAxe and OctAxe still require both their application and matching WWW images. See [single-file updates](docs/single-file-updates.md).
+**Gamma Beta17 supports single-file OTA:** `esp-miner.bin` includes its complete matching web interface. The separate Gamma `www.bin` is optional for custom-WWW, compatibility and recovery. QAxe and OctAxe still require both their application and matching WWW images. See [single-file updates](docs/single-file-updates.md).
 
 | Your device | Firmware pair | Qualification and guide |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ QAxe's native A/B MUX connections have independently configured routes and fresh
 
 ## Gamma family
 
-**Gamma BETA: root-source images accept Gamma 601/602 only. The current pair is experimental `5tratumFW-0.1.0-beta.16`. Read the exact-source validation before enabling tuning; Gamma 602 has not passed tuner admission/restore qualification. Earlier pairs retain their own records.**
+**Gamma BETA: root-source images accept Gamma 601/602 only. The current pair is experimental `5tratumFW-0.1.0-beta.17`. Read the exact-source validation before enabling tuning; Gamma 602 has not passed tuner admission/restore qualification. Earlier pairs retain their own records.**
 
 Firmware and a compact web interface for **Bitaxe Gamma PCB revisions 601 and 602 only**.
 A GPLv3 derivative of [Bitaxe ESP-Miner v2.15.4](https://github.com/bitaxeorg/ESP-Miner/tree/v2.15.4), maintained by [WillItMod](https://github.com/WillItMod).
@@ -63,7 +63,7 @@ The current experimental pairs add opt-in whole-miner adaptive tuning with expli
 
 ## Install and operate
 
-Current **experimental BETA**: [Gamma Beta16](docs/releases/v0.1.0-beta.16.md), [QAxe Beta12](docs/releases/qaxe-v0.1.0-beta.12.md) and [OctAxe Beta10](docs/releases/octaxe-v0.1.0-beta.10.md). The W5500 driver remains off by default and physically unqualified. Before a downgrade, disable tuning and verify restoration, then review the exact journal, Ethernet and screen-profile compatibility requirements.
+Current **experimental BETA**: [Gamma Beta17](docs/releases/v0.1.0-beta.17.md), [QAxe Beta13](docs/releases/qaxe-v0.1.0-beta.13.md) and [OctAxe Beta11](docs/releases/octaxe-v0.1.0-beta.11.md). The W5500 driver remains off by default and physically unqualified. Before a downgrade, disable tuning and verify restoration, then review the exact journal, Ethernet and screen-profile compatibility requirements.
 
 For Gamma, the **application** `esp-miner.bin` includes the matching web interface; the same-build `www.bin` is optional for custom-WWW, compatibility or recovery. QAxe and OctAxe still require their two matching images. These are OTA images, not a factory image. The compressed web payload and the full 3 MiB WWW partition image have different sizes.
 
