@@ -49,9 +49,22 @@ static JsonDocument sendDocument(JsonDocument &body){std::string text;serializeJ
 static JsonDocument advancedStart(){return response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1,\"advancedClockAccepted\":true}");}
 static uint64_t wireEpoch=0;
 static bool wirePermission(){return Config::tuningMutationRevision()==wireEpoch;}
+static void expectReadiness(const char *key,bool ready,const char *detail) {
+    const auto before=writes.size();const auto reads=hostSensorReads,nvs=hostNvsCalls.load();
+    auto report=snapshot();auto rows=report["status"]["readiness"].as<JsonArrayConst>();
+    assert(rows.size()==static_cast<unsigned>(hostBoard.count+8)&&rows.size()<=16);
+    bool found=false;
+    for(auto row:rows){
+        assert(row["key"].is<const char *>()&&row["label"].is<const char *>()&&row["ready"].is<bool>()&&row["detail"].is<const char *>());
+        if(!strcmp(row["key"].as<const char *>(),key)){
+            found=true;assert(row["ready"].as<bool>()==ready);assert(strstr(row["detail"].as<const char *>(),detail));
+        }
+    }
+    assert(found&&writes.size()==before&&hostSensorReads==reads&&hostNvsCalls.load()==nvs);
+}
 int main(int argc,char **argv) {
     assert(argc==2);const std::string scenario=argv[1];
-    if(scenario=="oct"||scenario=="weak-chip-oct"||scenario=="auto-errors-exhausted-oct")hostBoard.count=8;
+    if(scenario=="oct"||scenario=="weak-chip-oct"||scenario=="auto-errors-exhausted-oct"||scenario=="readiness-oct")hostBoard.count=8;
     assert(FiveTratumAutotune::preloadStorage());
     {HostStackContext power(false);FiveTratumAutotune::powerReady();}
     step();
@@ -67,6 +80,36 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario=="readiness-qa"||scenario=="readiness-oct") {
+        // Keep the real ArduinoJson report alive after report() releases its
+        // mutex, then overwrite every cached readiness buffer before encoding.
+        JsonDocument heldReport;assert(FiveTratumAutotune::report(heldReport));
+        std::string beforeAcquisition;serializeJson(heldReport,beforeAcquisition);
+        fanReportedRpm=2200;step();
+        std::string afterAcquisition;serializeJson(heldReport,afterAcquisition);
+        assert(afterAcquisition==beforeAcquisition);
+        bool heldFan=false,heldFreshness=false;
+        for(auto row:heldReport["status"]["readiness"].as<JsonArrayConst>()) {
+            if(row["key"]=="fan-1")heldFan=strstr(row["detail"].as<const char *>(),"1800 RPM");
+            if(row["key"]=="freshness")heldFreshness=strstr(row["detail"].as<const char *>(),"maximum 15 s");
+        }
+        assert(heldFan&&heldFreshness);fanReportedRpm=1800;step();
+        expectReadiness("fan-1",true,"1800 RPM");expectReadiness("counters-1",true,"sample");
+        expectReadiness(hostBoard.count==8?"counters-8":"counters-4",true,"sample");
+        fanReadFail=true;step();expectReadiness("fan-2",false,"could not be read");
+        fanReadFail=false;fanReportedRpm=200;step();expectReadiness("fan-1",false,"200 RPM");
+        fanReportedRpm=1800;sensorFail=true;step();expectReadiness("sensors",false,"Strict sensor or regulator-status read failed");
+        sensorFail=false;counterValid=false;step();expectReadiness("counters-3",false,"missing or stale");
+        expectReadiness("telemetry",false,"chain-wide ASIC error summary");
+        counterValid=true;weakChip=true;step();expectReadiness("counters-1",false,"20% of expected work");
+        expectReadiness("counters-2",true,"sample");
+        weakChip=false;paused=true;step();expectReadiness("mining",false,"paused or has not initialized");
+        expectReadiness("sensors",false,"not checked while mining is inactive");
+        paused=false;STRATUM_MANAGER=nullptr;step();expectReadiness("mining",false,"No pool connection");
+        STRATUM_MANAGER=&manager;step();hostNow+=16000000;expectReadiness("freshness",false,"maximum 15 s");
+        step();expectReadiness("freshness",true,"maximum 15 s");
+        return 0;
+    }
     if(scenario.rfind("advanced-",0)==0) {
         using namespace FiveTratumAutotune;
         hostBoard.standardFrequency=800;

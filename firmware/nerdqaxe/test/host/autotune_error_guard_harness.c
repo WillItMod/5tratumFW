@@ -252,14 +252,96 @@ static void protection_precedes_error_recovery(void) {
 
 static void fast_corrections_remain_bounded(void) {
  fixture f=begin(options());
- for(unsigned n=0;n<6;++n) {
+ for(unsigned n=0;n<FWT_MAX_ERROR_CORRECTIONS;++n) {
+  const fwt_point before=f.input.current;
   const fwt_request request=reading(&f,15,3,3);
-  correction(request,f.input.current);apply(&f,request);
+  correction(request,before);
+  if(n<FWT_MAX_ERROR_VOLTAGE_TRIALS) {
+   assert(request.point.frequencyMHz==before.frequencyMHz);
+   assert(request.point.coreVoltageMv==before.coreVoltageMv+5);
+  } else {
+   assert(request.point.frequencyMHz<before.frequencyMHz);
+   assert(request.point.coreVoltageMv==before.coreVoltageMv);
+  }
+  apply(&f,request);
  }
  const fwt_request request=reading(&f,15,3,3);
  assert(request.kind==FWT_REQUEST_PAUSE&&!f.core.owns);
  assert(!strcmp(f.core.reason,"error-recovery-exhausted"));
  assert(f.core.rejected==7);
+ assert(f.core.recoveryVoltageTrials==FWT_MAX_ERROR_VOLTAGE_TRIALS);
+}
+
+static fwt_request ordinary_rejection(fixture *f,double board,double worst) {
+ assert(reading(f,15,board,worst).kind==FWT_REQUEST_NONE);
+ assert(reading(f,5,board,worst).kind==FWT_REQUEST_NONE);
+ return reading(f,5,board,worst);
+}
+
+static void voltage_trials_leave_room_for_clock_recovery(void) {
+ /* Reproduce the reported 600/1230 -> 600/1235 tail. A still-failing
+  * 1235mV point must get a clock reduction, not another voltage-only search
+  * until the shared correction budget expires. All modes share this rule. */
+ for(unsigned mode=FWT_EFFICIENCY;mode<=FWT_PERFORMANCE;++mode) {
+  fwt_config config=options();config.priority=mode;
+  config.minFrequencyMHz=400;config.maxFrequencyMHz=600;config.maxVoltageMv=1250;
+  config.maxAsicTempC=60;config.maxVrmTempC=70;config.maxPowerW=40;
+  fixture f=begin(config);
+  fwt_cancel(&f.core,"test-reported-start");
+  f.input.current=(fwt_point){600,1225};f.input.voltageReadbackMv=1225;
+  f.input.powerW=23.8;f.input.asicTempC=54.3;f.input.vrmTempC=51;
+  assert(fwt_start(&f.core,&f.input,f.now));
+  for(unsigned n=0;n<2;++n) {
+   const fwt_request request=ordinary_rejection(&f,1.37,1.88);
+   assert(request.kind==FWT_REQUEST_APPLY);
+   assert(request.point.frequencyMHz==600&&request.point.coreVoltageMv==1230+5*n);
+   assert(!strcmp(f.core.reason,"error-recovery-voltage-trial"));
+   apply(&f,request);
+  }
+  const fwt_request reduced=ordinary_rejection(&f,1.37,1.88);
+  assert(reduced.kind==FWT_REQUEST_APPLY&&reduced.point.frequencyMHz<600);
+  assert(reduced.point.coreVoltageMv==1235);
+  assert(!strcmp(f.core.reason,"error-recovery-clock-backoff"));
+  assert(f.core.recoveryAttempts==3&&f.core.recoveryVoltageTrials==2);
+  apply(&f,reduced);
+  const fwt_point recovered=f.input.current;
+  const uint64_t appliedAt=f.now;
+  bool measured=false;
+  for(unsigned n=0;n<30&&!measured;++n) {
+   /* Real positive but accepted noise, rather than an artificial zero-error
+    * trace, establishes a stable point after the frequency reduction. */
+   const double board[]={0.30,0.44,0.36,0.48};
+   const double worst[]={0.71,0.92,0.83,0.99};
+   const fwt_request request=reading(&f,5,board[n%4],worst[n%4]);
+   assert(request.kind!=FWT_REQUEST_PAUSE);
+   if(f.core.stableAvailable) {
+    assert(f.now-appliedAt>=105*FWT_SECOND);
+    assert(fwt_point_equal(f.core.stable,recovered));
+    assert(f.core.recoveryAttempts==0&&f.core.recoveryVoltageTrials==0);
+    measured=true;
+   } else assert(request.kind==FWT_REQUEST_NONE);
+  }
+  assert(measured&&f.core.owns);
+ }
+}
+
+static void voltage_allowance_requires_a_complete_passing_window(void) {
+ fixture f=begin(options());
+ for(unsigned n=0;n<FWT_MAX_ERROR_VOLTAGE_TRIALS;++n) {
+  apply(&f,ordinary_rejection(&f,0.6,0.8));
+ }
+ /* One clean interval and a changed goal must not open another series of
+  * voltage rises. The miner has not established any stable measured point. */
+ assert(reading(&f,15,0.1,0.2).kind==FWT_REQUEST_NONE);
+ fwt_config config=f.core.config;config.priority=FWT_PERFORMANCE;
+ assert(fwt_configure(&f.core,&config));
+ assert(f.core.recoveryVoltageTrials==2&&f.core.recoveryAttempts==2);
+ const fwt_point before=f.input.current;
+ const fwt_request request=ordinary_rejection(&f,0.6,0.8);
+ assert(request.kind==FWT_REQUEST_APPLY);
+ assert(request.point.frequencyMHz<before.frequencyMHz);
+ assert(request.point.coreVoltageMv==before.coreVoltageMv);
+ assert(f.core.recoveryAttempts==3&&f.core.recoveryVoltageTrials==2);
 }
 
 static void full_performance_window_is_unchanged(void) {
@@ -391,11 +473,13 @@ int main(void) {
  stable_rollback_and_safe_fallback();
  protection_precedes_error_recovery();
  fast_corrections_remain_bounded();
+ voltage_trials_leave_room_for_clock_recovery();
+ voltage_allowance_requires_a_complete_passing_window();
  full_performance_window_is_unchanged();
  failed_point_exclusion_survives_rounds_and_edits();
  corrections_do_not_return_to_failed_points();
  bounded_failed_point_memory_exhausts_safely();
  command_resolution_preflight();
- puts("Actual shared controller: early ASIC-error boundaries/streaks, counter flush, stable rollback, protection priority, full windows and bounded run exclusions passed");
+ puts("Actual shared controller: early ASIC-error guards, bounded voltage trials, clock recovery across all modes, measured reset, stable rollback and run exclusions passed");
  return 0;
 }

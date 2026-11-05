@@ -61,6 +61,7 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_stale_manual_clock_cannot_bypass_advanced_policy_or_become_a_backup(self): self.run_case('advanced-stale-manual')
     def test_default_60_70_ceilings_preserve_explicit_saved_user_limits(self): self.run_case('conservative-defaults')
     def test_get_is_read_only_and_authorization_precedes_body(self): self.run_case('read-only')
+    def test_readiness_explains_each_failed_gate_without_reads_or_writes(self): self.run_case('readiness')
     def test_passive_activity_is_nonblocking_read_only_without_observer_renewal(self): self.run_case('passive-activity')
     def test_passive_activity_reports_ownership_fault_and_immediate_handoff(self): self.run_case('passive-owned-fault')
     def test_real_decision_history_is_ordered_bounded_repeatable_and_ram_only(self): self.run_case('decision-history')

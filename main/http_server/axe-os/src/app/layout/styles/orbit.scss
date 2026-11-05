@@ -18,13 +18,12 @@ button:focus-visible, a:focus-visible {
 }
 
 .orbit-shell {
-    --orbit-accent: #20cfff;
+    --orbit-accent: var(--primary-color);
     --orbit-rail: #0b111b;
     --orbit-rail-text: #d5e0ee;
     --orbit-rail-muted: #96a4b8;
-    background: radial-gradient(ellipse at 80% 0, rgba(32, 207, 255, .035), transparent 40%), var(--surface-ground);
+    background: radial-gradient(ellipse at 80% 0, color-mix(in srgb, var(--orbit-accent) 4%, transparent), transparent 40%), var(--surface-ground);
 
-    &.layout-theme-light { --orbit-accent: #006681; }
     .layout-topbar {
         padding: 0 24px;
         gap: 18px;
@@ -97,7 +96,7 @@ button:focus-visible, a:focus-visible {
         app-sidebar { min-height: 100%; display: flex; flex-direction: column; }
     }
     .orbit-rail-heading { display: flex; align-items: center; gap: 8px; color: var(--orbit-rail-muted); font-size: 10px; letter-spacing: .16em; margin: 0 12px 18px; }
-    .orbit-rail-dot { width: 5px; height: 5px; background: #20cfff; border-radius: 50%; }
+    .orbit-rail-dot { width: 5px; height: 5px; background: var(--orbit-accent); border-radius: 50%; }
     .layout-menu {
         .layout-menuitem-root-text { color: var(--orbit-rail-muted); font-size: 10px; font-weight: 500; letter-spacing: .14em; margin: 18px 12px 7px; }
         ul a {
@@ -233,7 +232,7 @@ button:focus-visible, a:focus-visible {
 @media (max-width: 575px) {
   .orbit-shell { .fw-config-heading { h1 { font-size: 24px; } } .fw-config-page .card { padding: 18px; } .fw-network-page .field.grid > label, .fw-network-page .field.grid > div { width: 100%; flex: 0 0 100%; } .fw-network-page .field.grid > label { margin-bottom: 8px; } .fw-update-grid > div:not(:first-child) { width: 100%; flex: 0 0 100%; } .fw-setting-grid .grid.p-fluid > .md\:col-10 { width: 100%; flex: 0 0 100%; } }
 }
-/* Dashboard measurements use brand/semantic colors independently of control themes. */
+/* Ordinary measurements follow the accent; warning and fault colours remain semantic. */
 .orbit-dashboard {
   .fw-reading-list dt > span, .fw-route-kind, .fw-panel-link, .fw-route-footer a { color: var(--orbit-accent); }
   .fw-thermal .p-progressbar .p-progressbar-value { background: var(--orbit-accent); }

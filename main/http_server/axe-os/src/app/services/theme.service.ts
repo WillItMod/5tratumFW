@@ -2,75 +2,73 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { catchError, map, switchMap, tap } from 'rxjs/operators';
+import { themeAccentColors } from './theme-colors';
 
 export interface ThemeSettings {
   colorScheme: string;
-  accentColors?: {
-    [key: string]: string;
-  };
+  primaryColor?: string;
+  accentColors?: { [key: string]: string };
 }
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ThemeService {
-  private readonly mockSettings: ThemeSettings = {
-    colorScheme: 'dark',
-    accentColors: {
-      '--primary-color': '#F80421',
-      '--primary-color-text': '#ffffff',
-      '--highlight-bg': '#F80421',
-      '--highlight-text-color': '#ffffff',
-      '--focus-ring': '0 0 0 0.2rem rgba(255,64,50,0.2)',
-      // PrimeNG Slider
-      '--slider-bg': '#dee2e6',
-      '--slider-range-bg': '#F80421',
-      '--slider-handle-bg': '#F80421',
-      // Progress Bar
-      '--progressbar-bg': '#dee2e6',
-      '--progressbar-value-bg': '#F80421',
-      // PrimeNG Checkbox
-      '--checkbox-border': '#F80421',
-      '--checkbox-bg': '#F80421',
-      '--checkbox-hover-bg': '#e63c2e',
-      // PrimeNG Button
-      '--button-bg': '#F80421',
-      '--button-hover-bg': '#e63c2e',
-      '--button-focus-shadow': '0 0 0 2px #ffffff, 0 0 0 4px #F80421',
-      // Toggle button
-      '--togglebutton-bg': '#F80421',
-      '--togglebutton-border': '1px solid #F80421',
-      '--togglebutton-hover-bg': '#e63c2e',
-      '--togglebutton-hover-border': '1px solid #e63c2e',
-      '--togglebutton-text-color': '#ffffff'
-    }
-  };
+const DEFAULT_SETTINGS: ThemeSettings = { colorScheme: 'dark', primaryColor: '#20cfff' };
 
-  private themeSettingsSubject = new BehaviorSubject<ThemeSettings>(this.mockSettings);
-  private themeSettings$ = this.themeSettingsSubject.asObservable();
+/** The device persists a scheme and one colour, never an arbitrary CSS map. */
+function normalized(settings: ThemeSettings, fallback = DEFAULT_SETTINGS): ThemeSettings {
+  const candidate = settings.primaryColor || settings.accentColors?.['--primary-color'];
+  const primaryColor = candidate && /^#[0-9a-f]{6}$/i.test(candidate)
+    ? candidate.toLowerCase() : fallback.primaryColor!;
+  const colorScheme = ['dark', 'light'].includes(settings.colorScheme) ? settings.colorScheme : fallback.colorScheme;
+  return { colorScheme, primaryColor, accentColors: themeAccentColors(primaryColor, colorScheme) };
+}
+
+@Injectable({ providedIn: 'root' })
+export class ThemeService {
+  private themeSettingsSubject = new BehaviorSubject<ThemeSettings>(normalized(DEFAULT_SETTINGS));
+  private loadStateSubject = new BehaviorSubject({ loading: false, error: '' });
+  readonly loadState$ = this.loadStateSubject.asObservable();
 
   constructor(private http: HttpClient) {
-    if (environment.production) {
-      this.http.get<ThemeSettings>('/api/theme').pipe(
-        catchError(() => of(this.mockSettings)),
-        tap(settings => this.themeSettingsSubject.next(settings))
-      ).subscribe();
-    }
+    if (environment.production) this.reload();
   }
 
-  getThemeSettings(): Observable<ThemeSettings> {
-    return this.themeSettings$;
+  getThemeSettings(): Observable<ThemeSettings> { return this.themeSettingsSubject.asObservable(); }
+
+  reload(): void {
+    if (!environment.production) return;
+    this.loadStateSubject.next({ loading: true, error: '' });
+    this.http.get<ThemeSettings>('/api/theme').pipe(
+      map(settings => {
+        if (!settings || !['dark', 'light'].includes(settings.colorScheme) || !/^#[0-9a-f]{6}$/i.test(settings.primaryColor || '')) {
+          throw new Error('The miner returned incomplete appearance settings.');
+        }
+        return settings;
+      }),
+      tap(settings => this.themeSettingsSubject.next(normalized(settings))),
+      catchError(() => {
+        this.loadStateSubject.next({ loading: false, error: 'Saved appearance could not be loaded. Retry before changing it.' });
+        return of(null);
+      })
+    ).subscribe(settings => {
+      if (settings) this.loadStateSubject.next({ loading: false, error: '' });
+    });
   }
 
-  saveThemeSettings(settings: ThemeSettings): Observable<void> {
-    if (environment.production) {
-      return this.http.post<void>('/api/theme', settings).pipe(
-        tap(() => this.themeSettingsSubject.next(settings))
-      );
-    } else {
-      this.themeSettingsSubject.next(settings);
-      return of(void 0);
-    }
+  saveThemeSettings(settings: Partial<ThemeSettings>): Observable<void> {
+    const next = normalized({ ...this.themeSettingsSubject.value, ...settings } as ThemeSettings, this.themeSettingsSubject.value);
+    // Match the firmware API and retain the accent when only the scheme changes.
+    const payload = { colorScheme: next.colorScheme, primaryColor: next.primaryColor };
+    const saved$ = environment.production
+      ? this.http.post<void>('/api/theme', payload).pipe(
+        switchMap(() => this.http.get<ThemeSettings>('/api/theme')),
+        map(saved => {
+          if (saved.colorScheme !== next.colorScheme || saved.primaryColor?.toLowerCase() !== next.primaryColor) {
+            throw new Error('The miner did not confirm the selected appearance.');
+          }
+          return normalized(saved);
+        })
+      )
+      : of(next);
+    return saved$.pipe(tap(saved => this.themeSettingsSubject.next(saved)), map(() => void 0));
   }
 }

@@ -61,6 +61,7 @@ typedef struct {
  uint64_t stateSinceUs, lastNowUs, lastSampleId, generation, invalidSinceUs;
  uint64_t observationStartedUs, lastSearchUs;
  unsigned samples, searchIndex, noImprovement, readbackSamples, roundExperiments, recoveryAttempts;
+ unsigned recoveryVoltageTrials;
  double sumHash, sumPower, sumHashSquared, sumPowerSquared, sumError, worstError, maxAsic, maxVrm;
  double baselineHash, baselinePower, bestHash, bestPower, bestScore, bestUncertainty;
  double previousAsicTemp, previousVrmTemp;
@@ -105,6 +106,11 @@ static inline const char *fwt_priority_name(fwt_priority priority);
 #define FWT_CHIP_SEVERE_ERROR_LIMIT 5.0
 #define FWT_ERROR_MIN_SAMPLES 3u
 #define FWT_ERROR_CONFIRM_US (10 * FWT_SECOND)
+/* One unhealthy episode must reserve recovery attempts for reducing load.
+ * A passing full window, not a quieter instantaneous sample or a clock step,
+ * is required before another episode can try increasing voltage again. */
+#define FWT_MAX_ERROR_CORRECTIONS 6u
+#define FWT_MAX_ERROR_VOLTAGE_TRIALS 2u
 
 static inline double fwt_clamp(double n,double lo,double hi) {
  return n < lo ? lo : (n > hi ? hi : n);
@@ -365,16 +371,19 @@ static inline fwt_request fwt_error_recover(fwt_controller *c,const fwt_input *i
   return fwt_pause(c,"error-recovery-exhausted");
  }
  if(c->rejected<UINT32_MAX) ++c->rejected;
- if(++c->recoveryAttempts>6) {
+ if(++c->recoveryAttempts>FWT_MAX_ERROR_CORRECTIONS) {
   c->lastDecision.reason="error-recovery-exhausted";
   return fwt_pause(c,"error-recovery-exhausted");
  }
  c->holdAfterRecovery=(!c->active&&!c->config.continuous)||c->holdAfterRecovery;
  c->trial=false;c->recovering=true;c->active=true;
  if(fwt_can_return_stable(c,i)) return fwt_apply(c,c->stable,now,"restoring-last-stable-point");
- if(voltageAllowed&&fwt_can_raise_voltage(c,i)) {
+ if(voltageAllowed&&c->recoveryVoltageTrials<FWT_MAX_ERROR_VOLTAGE_TRIALS&&fwt_can_raise_voltage(c,i)) {
   fwt_point p=c->current;p.coreVoltageMv=fmin(c->config.maxVoltageMv,p.coreVoltageMv+c->limits.voltageStepMv);
-  if(!fwt_point_failed(c,p)) return fwt_apply(c,p,now,"error-recovery-voltage-trial");
+  if(!fwt_point_failed(c,p)) {
+   ++c->recoveryVoltageTrials;
+   return fwt_apply(c,p,now,"error-recovery-voltage-trial");
+  }
  }
  return fwt_backoff(c,i,now,"error-recovery-clock-backoff");
 }
@@ -505,7 +514,7 @@ static inline fwt_request fwt_tick(fwt_controller *c,const fwt_input *i,uint64_t
   c->lastDecision.outcome=FWT_OUTCOME_FAILED;
   return fwt_error_recover(c,i,now,true);
  }
- c->recoveryAttempts=0;
+ c->recoveryAttempts=0;c->recoveryVoltageTrials=0;
  c->stable=c->current;c->stablePower=power;c->stableAvailable=!fwt_point_failed(c,c->current);
  if(!c->bestAvailable) {
   fwt_event_measure(c,FWT_EVENT_BASELINE,"round-reference-measured",now,hash,power,false,0,0);

@@ -42,6 +42,7 @@ export interface AutotuneEvent {
   score: number | null; requiredScore: number | null;
   conditions?: AutotuneConditions | null;
 }
+export interface AutotuneReadiness { key: string; label: string; ready: boolean; detail: string; }
 export interface AutotuneReport {
   schemaVersion: 1; supported: boolean; waiverVersion: 1;
   hardware: { model: string; asicCount: number; asicSensor: string; vrmSensor: string; powerSource: string };
@@ -51,6 +52,8 @@ export interface AutotuneReport {
     state: string; reason: string; active: boolean; ownsSettings: boolean; runId: number; experiments: number;
     baseline: AutotunePoint | null; current: AutotunePoint | null; best: AutotunePoint | null;
     telemetry: AutotuneTelemetry;
+    /** Additive diagnostics; existing sensor and controller guards still authorize Start. */
+    readiness?: AutotuneReadiness[];
     /** Additive presentation data; never required to authorize Restore. */
     search?: AutotuneSearch;
     eventCapacity?: number; events?: AutotuneEvent[];

@@ -40,6 +40,7 @@ static std::map<int,std::string> handles;
 static int nextHandle=1;
 static uint64_t storageDelayUs=0;
 static bool revokeDuringBackup=false,fanReadFail=false;
+static uint16_t fanReportedRpm=1800;
 static thread_local bool hostInternalStack=true;
 static bool hostReadFailure=false,hostBlobAllocationFail=false,hostWorkerExternal=false;
 static std::atomic<unsigned> hostNvsCalls{0};
@@ -158,7 +159,7 @@ public:
  int getNumFans(){return 2;}int getFanMode(int ch){return Config::cfgGetU16(ch?"fan1mode":"autofanspeed",2);}
  bool isInvertFanPolarityEnabled(){return fanPolarity;}void setFanPolarity(bool value){fanPolarity=value;}
  bool restoreTuningFanPolarity(bool,bool (*)());
- bool readTuningFan(int,uint16_t &rpm){rpm=fanReadFail?0:1800;return !fanReadFail;}
+ bool readTuningFan(int,uint16_t &rpm){rpm=fanReadFail?0:fanReportedRpm;return !fanReadFail;}
  bool refreshTuningTemperatures(){return true;}
  PidSettings *getPidSettings(int ch){return &pid[ch];}
  bool restoreOriginalTuningFrequency(uint16_t);

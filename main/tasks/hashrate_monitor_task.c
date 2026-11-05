@@ -60,11 +60,12 @@ HashrateDisplaySnapshot hashrate_monitor_display_snapshot(void *pvParameters, ui
 
 GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *pvParameters, uint64_t now_us)
 {
-    GammaAutotuneCounterSample result = {0};
+    GammaAutotuneCounterSample result = {.readiness_reason="Waiting for a supported Gamma counter source"};
     GlobalState *state = pvParameters;
     if (!state || state->DEVICE_CONFIG.family.asic_count != 1 ||
         state->DEVICE_CONFIG.family.asic.hash_domains != 4) return result;
     HashrateMonitorModule *monitor = &state->HASHRATE_MONITOR_MODULE;
+    result.readiness_reason="ASIC work counters are not initialized";
     if (!monitor->is_initialized || !monitor->total_measurement ||
         !monitor->error_measurement || !monitor->domain_measurements) return result;
     pthread_mutex_lock(&monitor->lock);
@@ -76,16 +77,29 @@ GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *pvParameters
     bool valid = isfinite(expected) && expected > 0 && total.rate_sample_us && error.rate_sample_us &&
         isfinite(total.hashrate) && total.hashrate > 0 &&
         isfinite(error.hashrate) && error.hashrate >= 0 && error.hashrate <= total.hashrate;
+    result.readiness_reason = !isfinite(expected) || expected<=0 ? "The applied clock cannot establish expected ASIC work" :
+        !total.rate_sample_us ? "ASIC total-work counter has no sample" :
+        !error.rate_sample_us ? "ASIC error counter has no sample" :
+        !isfinite(total.hashrate) || total.hashrate<=0 ? "ASIC total-work rate is unavailable or zero" :
+        !isfinite(error.hashrate) || error.hashrate<0 || error.hashrate>total.hashrate ? "ASIC error counter rate is invalid" : NULL;
     if (error.rate_sample_us < oldest) oldest = error.rate_sample_us;
     for (unsigned domain = 0; domain < 4; ++domain) {
         const measurement_t sample = monitor->domain_measurements[0][domain];
         /* Deny automatic adjustments on a nearly silent domain rather than
          * increasing voltage/clock to compensate for missing hardware work.
          * This is a conservative liveness gate, not a performance guarantee. */
-        valid = valid && sample.rate_sample_us && isfinite(sample.hashrate) && sample.hashrate >= expected/4.0*0.20;
+        const bool domain_valid=sample.rate_sample_us && isfinite(sample.hashrate) && sample.hashrate >= expected/4.0*0.20;
+        if (!domain_valid && !result.readiness_reason) {
+            result.blocked_domain=domain+1;
+            result.readiness_reason=!sample.rate_sample_us ? "Work domain has no counter sample" :
+                "Work domain is below 20% of expected work";
+        }
+        valid = valid && domain_valid;
         if (sample.rate_sample_us < oldest) oldest = sample.rate_sample_us;
     }
-    valid = valid && now_us >= oldest && now_us - oldest <= UINT64_C(15000000);
+    const bool fresh=now_us>=oldest && now_us-oldest<=UINT64_C(15000000);
+    if (!fresh && !result.readiness_reason) result.readiness_reason="ASIC counter sample is stale or has an invalid timestamp";
+    valid = valid && fresh;
     if (valid) {
         /* Gamma 0x8C is total work; do not add 0x4C errors a second time. */
         result.valid = true;
@@ -93,6 +107,7 @@ GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *pvParameters
         result.sample_id = oldest;
         result.useful_ghs = (double)total.hashrate - error.hashrate;
         result.error_percentage = 100.0 * error.hashrate / total.hashrate;
+        result.readiness_reason=NULL;
     }
     pthread_mutex_unlock(&monitor->lock);
     return result;

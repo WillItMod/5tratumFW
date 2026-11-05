@@ -1,6 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { ThemeService } from '../../services/theme.service';
+import { themeAccentColors } from '../../services/theme-colors';
 import { LocalStorageService } from '../../local-storage.service';
 
 const STATIC_MENU_DESKTOP_INACTIVE = 'STATIC_MENU_DESKTOP_INACTIVE'
@@ -110,6 +111,8 @@ export class LayoutService {
 
     private staticMenuDesktopInactive$ = new BehaviorSubject<boolean>(this.state.staticMenuDesktopInactive);
 
+    private selectedPrimaryColor = '#20cfff';
+
     constructor(
       private themeService: ThemeService,
       private localStorageService: LocalStorageService
@@ -119,15 +122,10 @@ export class LayoutService {
             settings => {
                 if (settings) {
                     this._config = {
-                        ...this._config,
+                        ...this.config(),
                         colorScheme: settings.colorScheme,
                     };
-                    // Apply accent colors if they exist
-                    if (settings.accentColors) {
-                        Object.entries(settings.accentColors).forEach(([key, value]) => {
-                            document.documentElement.style.setProperty(key, value);
-                        });
-                    }
+                    this.selectedPrimaryColor = settings.primaryColor || '#20cfff';
                 }
                 // Update signal with config
                 this.config.set(this._config);
@@ -206,47 +204,12 @@ export class LayoutService {
             document.documentElement.style.setProperty(key, value);
         });
 
-        // Orbit defaults are presentation-only. Never write device preferences on load.
-        const light = config.colorScheme === 'light';
-        const accent = light ? '#006681' : '#20cfff';
-        const button = light ? '#006681' : '#17677f';
-        const hover = light ? '#00516a' : '#207e99';
-        const accentVars = {
-            '--primary-color': accent,
-            '--primary-color-text': '#ffffff',
-            '--highlight-bg': light ? '#d4eaf5' : '#103044',
-            '--highlight-text-color': light ? '#132133' : '#e8eef8',
-            '--focus-ring': `0 0 0 0.2rem ${light ? 'rgba(0,102,129,.25)' : 'rgba(32,207,255,.25)'}`,
+        const accents = themeAccentColors(this.selectedPrimaryColor, config.colorScheme);
+        Object.entries({
             '--slider-bg': themeVars['--surface-d'],
-            '--slider-range-bg': accent,
-            '--slider-handle-bg': accent,
             '--progressbar-bg': themeVars['--surface-d'],
-            '--progressbar-value-bg': accent,
-            '--checkbox-border': button,
-            '--checkbox-bg': button,
-            '--checkbox-hover-bg': hover,
-            '--button-bg': button,
-            '--button-hover-bg': hover,
-            '--button-focus-shadow': `0 0 0 2px ${themeVars['--surface-card']}, 0 0 0 4px ${accent}`,
-            '--togglebutton-bg': button,
-            '--togglebutton-border': `1px solid ${button}`,
-            '--togglebutton-hover-bg': hover,
-            '--togglebutton-hover-border': `1px solid ${hover}`,
-            '--togglebutton-text-color': '#ffffff',
-        };
-        Object.entries(accentVars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
-
-        // Load theme settings from NVS
-        this.themeService.getThemeSettings().subscribe(
-            settings => {
-                if (settings && settings.accentColors) {
-                    Object.entries(settings.accentColors).forEach(([key, value]) => {
-                        document.documentElement.style.setProperty(key, value);
-                    });
-                }
-            },
-            error => console.error('Error loading accent colors:', error)
-        );
+            ...accents,
+        }).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
     }
 
     changeScale(value: number) {

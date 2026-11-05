@@ -30,6 +30,9 @@ typedef struct {
     bool valid;
     uint64_t captured_at_us, sample_id;
     double useful_ghs, error_percentage;
+    /* Read-only explanation of the existing validity gate; never a bypass. */
+    const char *readiness_reason;
+    unsigned blocked_domain;
 } GammaAutotuneCounterSample;
 GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state, uint64_t now_us);
 

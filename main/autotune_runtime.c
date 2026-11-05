@@ -20,6 +20,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #define TUNE_NAMESPACE "5fw_tune"
 #define TUNE_BODY_MAX 2048
@@ -70,6 +71,10 @@ typedef struct {
     fwt_input input;
     TPS546_StrictTelemetry strict;
     bool sensor_ok;
+    bool regulator_read_ok, thermal_read_ok, counters_valid;
+    uint16_t fan_rpm;
+    const char *counter_readiness_reason;
+    unsigned counter_blocked_domain;
     NvsConfigMutation backup[BACKUP_FIELDS];
     fwt_point target;
     const char *override_reason;
@@ -401,8 +406,10 @@ static void poll_input(GlobalState *state, uint64_t now) {
         float temperature = 0; uint16_t rpm = 0;
         TPS546_StrictTelemetry strict = {0};
         const uint64_t began = esp_timer_get_time();
-        tuner.sensor_ok = TPS546_read_strict(&strict) == ESP_OK &&
-            EMC2101_read_strict(&temperature,&rpm) == ESP_OK;
+        tuner.regulator_read_ok = TPS546_read_strict(&strict) == ESP_OK;
+        tuner.thermal_read_ok = tuner.regulator_read_ok && EMC2101_read_strict(&temperature,&rpm) == ESP_OK;
+        tuner.sensor_ok = tuner.regulator_read_ok && tuner.thermal_read_ok;
+        tuner.fan_rpm = tuner.thermal_read_ok ? rpm : 0;
         tuner.sensor_at = began;
         if (tuner.sensor_ok) {
             tuner.strict = strict;
@@ -416,6 +423,9 @@ static void poll_input(GlobalState *state, uint64_t now) {
     }
     now = esp_timer_get_time();
     GammaAutotuneCounterSample counters = hashrate_monitor_autotune_snapshot(state,now);
+    tuner.counters_valid = counters.valid;
+    tuner.counter_readiness_reason = counters.readiness_reason;
+    tuner.counter_blocked_domain = counters.blocked_domain;
     fwt_input *input = &tuner.input;
     input->capturedAtUs = tuner.sensor_at < counters.captured_at_us ? tuner.sensor_at : counters.captured_at_us;
     input->sampleId = counters.sample_id;
@@ -1059,6 +1069,52 @@ static bool add_events(cJSON *status) {
     }
     return true;
 }
+static bool readiness_row(cJSON *rows,const char *key,const char *label,bool ready,const char *format,...) {
+    char detail[192]; va_list args;
+    va_start(args,format);vsnprintf(detail,sizeof(detail),format,args);va_end(args);
+    cJSON *row=cJSON_CreateObject();
+    if (!row) return false;
+    if (!cJSON_AddItemToArray(rows,row)) {cJSON_Delete(row);return false;}
+    return cJSON_AddStringToObject(row,"key",key) && cJSON_AddStringToObject(row,"label",label) &&
+        cJSON_AddBoolToObject(row,"ready",ready) && cJSON_AddStringToObject(row,"detail",detail);
+}
+/* Cached acquisition diagnostics only. Reading this list must never command
+ * hardware, replace the controller's checks or make old evidence fresh. */
+static bool add_readiness(cJSON *status,uint64_t now) {
+    cJSON *rows=cJSON_AddArrayToObject(status,"readiness");
+    if (!rows) return false;
+    const bool power=tuner.sensor_ok && tuner.strict.vin>=4.5 && tuner.strict.vin<=6.5 && tuner.strict.iout>0;
+    if (!readiness_row(rows,"regulator","Regulator and power",power,
+        !tuner.sensor_at ? "Waiting for a strict regulator reading" :
+        !tuner.regulator_read_ok ? "Strict regulator read failed; valid voltage, current and status are required" :
+        !tuner.sensor_ok ? "Regulator responded; waiting for the ASIC temperature and fan reading" :
+        "Input %.2f V (required 4.5 to 6.5 V), output current %.2f A (must be positive)",tuner.strict.vin,tuner.strict.iout)) return false;
+    const bool temperature=tuner.thermal_read_ok && isfinite(tuner.input.asicTempC) && tuner.input.asicTempC>0 && tuner.input.asicTempC<125;
+    if (!readiness_row(rows,"asic-sensor","ASIC temperature sensor",temperature,
+        !tuner.thermal_read_ok ? "No successful EMC2101 temperature and fan reading in the latest acquisition" :
+        "ASIC %.1f C; a valid positive sensor reading is required",tuner.input.asicTempC)) return false;
+    if (!readiness_row(rows,"fan-1","Cooling fan",tuner.thermal_read_ok && tuner.input.fanOk,
+        !tuner.thermal_read_ok ? "Fan RPM is unavailable because the strict sensor read did not complete" :
+        "%u RPM; more than 100 RPM is required",(unsigned)tuner.fan_rpm)) return false;
+    char counter[192];
+    if (tuner.counters_valid) snprintf(counter,sizeof(counter),"Fresh total, error and all four work-domain counters; %.1f GH/s",tuner.input.hashRateGHs);
+    else if (tuner.counter_blocked_domain) snprintf(counter,sizeof(counter),"Domain %u: %s",tuner.counter_blocked_domain,
+        tuner.counter_readiness_reason ? tuner.counter_readiness_reason : "Counter evidence is unavailable");
+    else snprintf(counter,sizeof(counter),"%s",tuner.counter_readiness_reason ? tuner.counter_readiness_reason :
+        "Waiting for fresh total, error and all four work-domain counters");
+    if (!readiness_row(rows,"counters-1","ASIC 1 work and error counters",tuner.counters_valid,"%s",counter)) return false;
+    if (!readiness_row(rows,"mining","Mining active",live_mining(),"%s",live_mining() ? "Mining is active" :
+        "Mining is paused, initializing, updating or blocked by miner protection")) return false;
+    if (!readiness_row(rows,"fault","Miner protection",!current_fault(),"%s",current_fault() ?
+        "A hardware, temperature or regulator fault is active; clear its cause before tuning" : "No active miner protection fault")) return false;
+    if (!readiness_row(rows,"telemetry","Usable tuning measurements",tuner.input.valid,"%s",tuner.input.valid ?
+        "Sensor, power and ASIC counter checks passed" : "One or more sensor, power or ASIC counter checks above are incomplete")) return false;
+    const bool fresh=tuner.input.capturedAtUs && now>=tuner.input.capturedAtUs && now-tuner.input.capturedAtUs<=TUNE_FRESH_US;
+    if (!tuner.input.capturedAtUs || now<tuner.input.capturedAtUs)
+        return readiness_row(rows,"freshness","Measurement freshness",false,"Waiting for a complete timestamped measurement");
+    return readiness_row(rows,"freshness","Measurement freshness",fresh,"Latest complete measurement is %.1f s old; maximum 15 s",
+        (now-tuner.input.capturedAtUs)/1000000.0);
+}
 static cJSON *report(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) return NULL;
@@ -1119,6 +1175,7 @@ static cJSON *report(void) {
     const bool fresh = fresh_input(now);
     BOOL(telemetry,"valid",fresh); BOOL(telemetry,"miningActive",mining_active);
     BOOL(telemetry,"fault",fault); BOOL(telemetry,"fanOk",fresh && tuner.input.fanOk);
+    if (!add_readiness(status,now)) goto failed;
     cJSON *search = cJSON_AddObjectToObject(status,"search");
     if (!search) goto failed;
     const fwt_search_view progress = fwt_search_read(&tuner.core,now,obscured_search());

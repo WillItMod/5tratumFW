@@ -310,7 +310,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = documentStyle.getPropertyValue('--text-color-secondary');
     const surfaceBorder = documentStyle.getPropertyValue('--surface-border');
-    const primaryColor = this.layoutService.config().colorScheme === 'light' ? '#006681' : '#20cfff';
+    const primaryColor = documentStyle.getPropertyValue('--primary-color').trim() || '#20cfff';
     this.primaryColorRgb = this.hexToRgb(primaryColor);
 
     // Update chart colors
@@ -356,7 +356,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-color-secondary');
     const surfaceBorder = getComputedStyle(document.documentElement).getPropertyValue('--surface-border');
-    const primaryColor = this.layoutService.config().colorScheme === 'light' ? '#006681' : '#20cfff';
+    const primaryColor = documentStyle.getPropertyValue('--primary-color').trim() || '#20cfff';
     this.primaryColorRgb = this.hexToRgb(primaryColor);
 
     this.chartData = {

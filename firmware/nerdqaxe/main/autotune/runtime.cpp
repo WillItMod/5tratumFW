@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <string>
 #include <utility>
+#include <cstdarg>
+#include <cstdio>
 #include "http_server/http_utils.h"
 #ifdef min
 #undef min
@@ -73,6 +75,21 @@ fwt_point target{};
 JsonDocument backup;
 const char *adapterReason = nullptr;
 const char *observationReason = nullptr;
+struct ReadinessCheck {const char *key=nullptr,*label=nullptr;bool ready=false;char detail[128]{};};
+// Two fans, eight chips and six shared checks. Cached diagnostics never poll
+// hardware from HTTP and never replace any controller admission check.
+constexpr unsigned readinessCapacity=16;
+ReadinessCheck readiness[readinessCapacity];
+unsigned readinessCount=0;
+const char *const chipReadinessKeys[]={"counters-1","counters-2","counters-3","counters-4","counters-5","counters-6","counters-7","counters-8"};
+const char *const chipReadinessLabels[]={"ASIC 1 work and error counters","ASIC 2 work and error counters","ASIC 3 work and error counters","ASIC 4 work and error counters","ASIC 5 work and error counters","ASIC 6 work and error counters","ASIC 7 work and error counters","ASIC 8 work and error counters"};
+void readinessCheck(const char *key,const char *label,bool ready,const char *format,...) {
+    unsigned index=0;
+    while(index<readinessCount && strcmp(readiness[index].key,key))++index;
+    if(index==readinessCount){if(readinessCount>=readinessCapacity)return;++readinessCount;}
+    auto &entry=readiness[index];entry.key=key;entry.label=label;entry.ready=ready;
+    va_list args;va_start(args,format);vsnprintf(entry.detail,sizeof(entry.detail),format,args);va_end(args);
+}
 std::atomic<const char *> handoff{nullptr};
 std::atomic_uint firmwareUpdates{0};
 std::atomic_bool permanentFreeze{false};
@@ -285,6 +302,7 @@ bool ensureBackup(Board *board) {
 }
 void acquire(Board *board) {
     observed = {}; sensors = {}; observationReason = nullptr;
+    readinessCount=0;
     const uint64_t acquisitionStarted=esp_timer_get_time();
     observed.current = {static_cast<double>(POWER_MANAGEMENT_MODULE.getAppliedTuningFrequency()),
                         static_cast<double>(POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage())};
@@ -293,21 +311,70 @@ void acquire(Board *board) {
     observed.miningActive = exactFamily(board) && board->isInitialized() && board->isBuckInitialized() &&
         FiveTratumMining::miningWritesAllowed() && !observed.fault && STRATUM_MANAGER &&
         STRATUM_MANAGER->isAnyConnected();
+    readinessCheck("device","Supported miner",exactFamily(board),"%s",exactFamily(board) ?
+        "Supported standalone BM1370 miner" : "A supported standalone four-chip or eight-chip BM1370 miner is required");
+    readinessCheck("fault","Miner protection",!observed.fault,"%s",observed.fault ?
+        "A board or power protection fault is active; clear its cause before tuning" : "No active board or power protection fault");
+    const char *miningReason=observed.miningActive ? "Mining is active and a pool is connected" :
+        !board ? "No miner board is available" : !exactFamily(board) ? "This board or CAN configuration is not supported by the tuner" :
+        !board->isInitialized() ? "The ASIC chain is paused or has not initialized" :
+        !board->isBuckInitialized() ? "The regulator is not initialized" :
+        !FiveTratumMining::miningWritesAllowed() ? "Mining is paused or work is blocked by the current control state" :
+        observed.fault ? "Mining is blocked by miner protection" : "No pool connection is active";
+    readinessCheck("mining","Mining active",observed.miningActive,"%s",miningReason);
+    readinessCheck("sensors","Temperature and power sensors",false,"%s",observed.miningActive ?
+        "Waiting for a strict sensor reading" : "Sensors are not checked while mining is inactive");
+    readinessCheck("telemetry","Usable tuning measurements",false,"Waiting for valid sensor and ASIC counter measurements");
+    const int expectedCount=board ? std::min(board->getAsicCount(),8) : 0;
+    for(int i=0;i<expectedCount;++i)readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,
+        "Waiting for fresh valid-work and error counter samples");
     observed.fanOk = true;
     if (board) for (int i=0;i<board->getNumFans();++i) {
         uint16_t rpm = 0;
-        if (!board->readTuningFan(i,rpm) || rpm < 500 || rpm > 16000) observed.fanOk = false;
+        const bool read=board->readTuningFan(i,rpm);
+        const bool fanReady=read && rpm>=500 && rpm<=16000;
+        if (!fanReady) observed.fanOk = false;
+        if(i<2)readinessCheck(i ? "fan-2" : "fan-1",i ? "Cooling fan 2" : "Cooling fan 1",fanReady,
+            read ? "%u RPM; required range 500 to 16000 RPM" : "Fan RPM could not be read",static_cast<unsigned>(rpm));
     }
-    if (!observed.miningActive || !board->readTuningSensors(sensors)) return;
+    if (!observed.miningActive) return;
+    if (!board->readTuningSensors(sensors)) {
+        readinessCheck("sensors","Temperature and power sensors",false,"Strict sensor or regulator-status read failed; no previous reading is reused");
+        return;
+    }
+    readinessCheck("sensors","Temperature and power sensors",true,"ASIC %.1f C, VRM %.1f C, %.1f W",sensors.asicTempC,sensors.vrmTempC,sensors.powerW);
     observed.asicTempC = sensors.asicTempC; observed.vrmTempC = sensors.vrmTempC;
     observed.powerW = sensors.powerW; observed.voltageReadbackMv = sensors.coreVoltageMv;
     const uint64_t now = esp_timer_get_time();
     FiveTratumTelemetry::TuningErrorTelemetry counters;
-    if (!HASHRATE_MONITOR.copyTuningErrorTelemetry(counters,board->getAsicCount(),now,true)) return;
-    if (counters.asicCount != board->getAsicCount() || !counters.errorPercentageAvailable) return;
+    if (!HASHRATE_MONITOR.copyTuningErrorTelemetry(counters,board->getAsicCount(),now,true)) {
+        for(int i=0;i<expectedCount;++i)readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"ASIC counter source is unavailable or the chain count does not match");
+        return;
+    }
     uint64_t counterAt = now;
     auto *asics = board->getAsics();
     const double expectedChip = asics ? observed.current.frequencyMHz * asics->getSmallCoreCount() / 1000.0 : 0;
+    for(int i=0;i<expectedCount;++i) {
+        if(i>=counters.asicCount){readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"No counter entry for this ASIC");continue;}
+        const auto &chip=counters.chips[i];
+        const double age=chip.sampleCapturedAtUs>0 && static_cast<uint64_t>(chip.sampleCapturedAtUs)<=now ?
+            (now-static_cast<uint64_t>(chip.sampleCapturedAtUs))/1000000.0 : -1;
+        if(!chip.errorSampleFresh || !chip.errorPercentageAvailable)
+            readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"Valid-work and error samples are missing or stale (age %.1f s)",age);
+        else if(!std::isfinite(chip.hashRate) || chip.hashRate<=0)
+            readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"No positive work rate is available for this ASIC");
+        else if(!std::isfinite(expectedChip) || expectedChip<=0)
+            readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"The applied clock cannot establish expected work");
+        else if(chip.hashRate<expectedChip*0.20)
+            readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"%.1f GH/s; at least %.1f GH/s (20%% of expected work) is required",chip.hashRate,expectedChip*0.20);
+        else if(age<0)
+            readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,"The counter timestamp is unavailable or invalid");
+        else readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],true,"%.1f GH/s; error counters available, sample %.1f s old",chip.hashRate,age);
+    }
+    if (counters.asicCount != board->getAsicCount() || !counters.errorPercentageAvailable) {
+        readinessCheck("telemetry","Usable tuning measurements",false,"The chain-wide ASIC error summary is incomplete or stale");
+        return;
+    }
     if (!std::isfinite(expectedChip) || expectedChip <= 0) return;
     for (int i=0;i<counters.asicCount;++i) {
         const auto &chip = counters.chips[i];
@@ -323,6 +390,9 @@ void acquire(Board *board) {
     observed.errorPercentage = counters.errorPercentage;
     observed.valid = observed.fanOk && sensors.vin >= board->getMinVin() && sensors.vin <= board->getMaxVin() &&
         sensors.outputCurrentA > 0 && sensors.coreVoltageMv > 0 && observed.capturedAtUs > 0;
+    readinessCheck("telemetry","Usable tuning measurements",observed.valid,
+        "Input %.2f V (required %.2f to %.2f V), output %.0f mV / %.2f A; positive output and working fans required",
+        sensors.vin,board->getMinVin(),board->getMaxVin(),sensors.coreVoltageMv,sensors.outputCurrentA);
 }
 bool revisionCurrent() { return !handoff.load() && !firmwareUpdates.load() && !permanentFreeze.load() && Config::tuningMutationRevision() == mutationRevision && (!recoveryRequested || FiveTratumMining::policyRevision()==recoveryPolicy); }
 void failTransition(const char *reason) {
@@ -521,6 +591,27 @@ void eventsJson(JsonObject status) {
         if(event->hasScore && std::isfinite(event->score)) value["score"]=event->score;else value["score"]=nullptr;
         if(event->hasScore && std::isfinite(event->requiredScore)) value["requiredScore"]=event->requiredScore;else value["requiredScore"]=nullptr;
     }
+}
+void readinessJson(JsonObject status,uint64_t now) {
+    auto rows=status["readiness"].to<JsonArray>();
+    for(unsigned i=0;i<readinessCount;++i) {
+        const auto &entry=readiness[i];auto row=rows.add<JsonObject>();
+        row["key"]=entry.key;row["label"]=entry.label;row["ready"]=entry.ready;
+        // A report outlives this lock. Copy the mutable acquisition buffer so
+        // the next power-owner sample cannot change an in-flight response.
+        row["detail"]=std::string(entry.detail);
+    }
+    if(!readinessCount) {
+        auto row=rows.add<JsonObject>();row["key"]="telemetry";row["label"]="Usable tuning measurements";
+        row["ready"]=false;row["detail"]="Waiting for the first power-owner sensor and ASIC counter acquisition";
+    }
+    auto row=rows.add<JsonObject>();row["key"]="freshness";row["label"]="Measurement freshness";
+    const bool timestamp=observed.capturedAtUs>0 && now>=observed.capturedAtUs;
+    row["ready"]=timestamp && now-observed.capturedAtUs<=15000000;
+    char detail[128];
+    if(timestamp)snprintf(detail,sizeof(detail),"Latest complete measurement is %.1f s old; maximum 15 s",(now-observed.capturedAtUs)/1000000.0);
+    else snprintf(detail,sizeof(detail),"Waiting for a complete timestamped sensor and ASIC counter measurement");
+    row["detail"]=std::string(detail);
 }
 void searchJson(JsonObject status,uint64_t now) {
     const auto view=fwt_search_read(&controller,now,presentationObscured());
@@ -803,6 +894,7 @@ bool report(JsonDocument &document) {
     const uint64_t now=esp_timer_get_time();
     searchJson(status,now);
     eventsJson(status);
+    readinessJson(status,now);
     const bool valid=observed.valid && observed.capturedAtUs>0 && now>=observed.capturedAtUs && now-observed.capturedAtUs<=15000000;
     telemetry["valid"]=valid; telemetry["miningActive"]=observed.miningActive; telemetry["fault"]=observed.fault; telemetry["fanOk"]=observed.fanOk;
     if (valid) {

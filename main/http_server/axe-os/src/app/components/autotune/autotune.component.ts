@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { EMPTY, Subject, catchError, exhaustMap, filter, finalize, map, switchMap, take, takeUntil, tap, throwError, timeout, timer } from 'rxjs';
 import { AutotuneService } from '../../services/autotune.service';
-import { AutotuneConfig, AutotuneConditions, AutotuneRecovery, AutotuneEvent, AutotunePoint, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
+import { AutotuneConfig, AutotuneConditions, AutotuneRecovery, AutotuneEvent, AutotunePoint, AutotuneReadiness, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
 
 type ObservedMetric = 'ths' | 'joules' | 'asicTempC' | 'vrmTempC' | 'powerW' | 'boardErrors' | 'worstErrors';
 interface TabObservation { at: number; ths: number | null; joules: number | null; asicTempC: number | null; vrmTempC: number | null; powerW: number | null; boardErrors: number | null; worstErrors: number | null; }
@@ -16,6 +16,9 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   readError = '';
   actionError = '';
   message = '';
+  showAllReadiness = false;
+  diagnosticsText = '';
+  diagnosticsMessage = '';
   waiverAccepted = false;
   advancedClockWarningAccepted = false;
   viewMode: 'live' | 'options' = 'options';
@@ -235,6 +238,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return 'Save your choices, then accept the waiver and Start when ready. Saving options alone does not start tuning.';
   }
   get startExplanation(): string {
+    if(this.loading)return 'Refreshing the miner status. Wait for the current readiness checks.';
     if(this.optionsLocked)return this.editExplanation;
     if(this.isEngaged)return 'This tune already owns the settings. Change its options and save; there is no second Start or waiver to accept. Disable and restore the backup when you want to end it.';
     if(!this.isFresh)return 'A fresh miner report is required before starting. Refresh status and check the connection.';
@@ -244,19 +248,68 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if(this.hasUnsavedChanges)return 'Save these options before starting a new tune.';
     if(this.validationError)return this.validationError;
     if(this.startPointError)return this.startPointError;
-    if(!this.telemetryFresh||!this.report!.status.telemetry.fanOk||!this.report!.status.telemetry.miningActive)return 'Starting requires fresh sensors and ASIC counters, working cooling, and active mining.';
+    if(!this.telemetryFresh||!this.report!.status.telemetry.fanOk||!this.report!.status.telemetry.miningActive||this.hardwareReadiness.some(row=>!row.ready))return this.blockedStartChecks.find(row=>row.key!=='waiver')?.detail||'Check the readiness requirements below before starting.';
     return this.waiverAccepted?'Ready to start a new tune.':'Accept the disclaimer below to enable Start for this new run.';
   }
   showView(view:'live'|'options'): void {
     this.viewMode=view;this.viewInitialized=true;
     requestAnimationFrame(()=>document.getElementById(view==='live'?'tuning-live-dashboard':'tuning-options')?.scrollIntoView({block:'start',behavior:'smooth'}));
   }
+  private get hardwareReadiness(): AutotuneReadiness[] {
+    const rows = this.report?.status.readiness;
+    if (!Array.isArray(rows) || rows.length > 32 || !rows.every(row => !!row
+      && typeof row.key === 'string' && row.key.length <= 64
+      && typeof row.label === 'string' && row.label.length <= 100
+      && typeof row.detail === 'string' && row.detail.length <= 400 && typeof row.ready === 'boolean')) return [];
+    return rows.map(row => this.isFresh ? row : {...row,ready:false,detail:'No current reading. Refresh status to check this requirement.'});
+  }
+  get startChecks(): AutotuneReadiness[] {
+    const report=this.report, telemetry=report?.status.telemetry;
+    const row=(key:string,label:string,ready:boolean,detail:string):AutotuneReadiness=>({key,label,ready,detail});
+    const checks=[row('report','Connection and live status',this.isFresh,this.isFresh?'The miner is responding.':'Refresh status and check the connection.')];
+    if (!report || !telemetry) return checks;
+    checks.push(row('request','No request in progress',!this.busy && !this.loading,this.busy?'Wait for the miner to confirm the current request.':this.loading?'Refreshing the miner status.':'No request is pending.'),row('options','Saved tuning options',this.optionsUsable && !this.hasUnsavedChanges && !this.validationError,
+      !this.optionsUsable?'Tuning options or hardware limits are unavailable.':this.hasUnsavedChanges?'Save the changed options before starting.':this.validationError||'The selected options are saved and valid.'),
+      row('current-point','Starting clock and voltage',this.optionsUsable && !this.startPointError,!this.optionsUsable?'The current clock and voltage bounds cannot be verified.':this.startPointError||'The current point is within the saved search bounds.'),
+      row('control','Controller available',!this.isEngaged && !this.optionsLocked && !['faulted','restoring','applying'].includes(report.status.state),
+        this.isEngaged?'A tune already owns the settings. Edit that tune or disable and restore it first.':['restoring','applying'].includes(report.status.state)?'Wait for the current change or restoration to finish.':report.status.state==='faulted'?'The miner reports a fault. Check its cause before starting.':'No other tuning session owns the settings.'));
+    const detailed=this.hardwareReadiness;
+    checks.push(...detailed);
+    // Keep the authoritative aggregate gates even with partial diagnostics.
+    // Individual checks add detail and can conservatively block, never bypass.
+    {
+      checks.push(row('cooling','Cooling feedback',this.isFresh && telemetry.fanOk===true,telemetry.fanOk===true?'Fan feedback is available.':'Cooling feedback is missing or outside the permitted range.'),
+        row('mining','Active mining',this.isFresh && telemetry.miningActive===true,telemetry.miningActive===true?'Mining is active.':'Mining must be active before starting. Check Pause, the pool connection and chip activity.'),
+        row('protection','Hardware protection',this.isFresh && telemetry.fault===false,telemetry.fault===false?'No hardware fault is reported.':'The miner reports a fault. The waiver cannot override protection.'));
+    }
+    const age=telemetry.sampleAgeSeconds;
+    const detail=!this.isFresh?'Refresh status and check the connection.':!this.validTelemetry(telemetry)
+      ? (detailed.find(item=>!item.ready)?.detail||'A sensor or ASIC counter is invalid. This firmware does not identify which one. Copy diagnostics for investigation.')
+      : !this.telemetryFresh?`The readings are too old to start${this.finite(age)?' (reported age '+age.toFixed(1)+' seconds)':''}. Wait for fresh readings or refresh status.`
+      :'Sensor readings and ASIC counters are current.';
+    checks.push(row('fresh-readings','Fresh sensor and ASIC readings',this.telemetryFresh,detail),
+      row('waiver','Run acknowledgement',this.waiverAccepted,this.waiverAccepted?'The tuning disclaimer is accepted for this run.':'Accept the tuning disclaimer below when you are ready.'));
+    return checks;
+  }
+  get blockedStartChecks(): AutotuneReadiness[] { return this.startChecks.filter(row=>!row.ready); }
+  get visibleStartChecks(): AutotuneReadiness[] { return this.showAllReadiness?this.startChecks:this.blockedStartChecks; }
+  async copyDiagnostics(): Promise<void> {
+    this.diagnosticsText=JSON.stringify({capturedAt:new Date().toISOString(),statusFresh:this.isFresh,
+      startChecks:this.startChecks,report:this.report},null,2);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(this.diagnosticsText);
+      this.diagnosticsMessage='Tuning diagnostics copied. Include the installed firmware version when reporting a problem.';
+    } catch {
+      this.diagnosticsMessage='Select and copy the diagnostics below. Include the installed firmware version when reporting a problem.';
+    }
+  }
   get canSave(): boolean { return !this.busy && !this.loading && this.isFresh && this.optionsUsable && this.hasUnsavedChanges && !this.validationError; }
   get canStart(): boolean {
     const report = this.report;
     return !!report && !this.busy && !this.loading && this.isFresh && this.optionsUsable && !report.status.active
       && !['faulted','restoring','applying'].includes(report.status.state) && !report.status.ownsSettings && !this.hasUnsavedChanges
-      && !this.validationError && !this.startPointError && this.telemetryFresh && report.status.telemetry.fanOk === true
+      && !this.validationError && !this.startPointError && this.telemetryFresh && !this.hardwareReadiness.some(row=>!row.ready) && report.status.telemetry.fanOk === true
       && report.status.telemetry.miningActive === true && report.status.telemetry.fault === false && this.waiverAccepted;
   }
   get canRestore(): boolean { return !this.busy && !this.loading && (this.report?.backup?.available === true || this.report?.status.ownsSettings === true || this.startUnconfirmed); }
@@ -345,7 +398,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       'power-limit-backoff':'Backing off because the reported power ceiling is close or exceeded. This is the miner’s power reading, not wall power.',
       'new-user-limits':'Adjusting to newly saved search limits. The controller must stay inside those bounds.',
       'error-recovery-voltage-trial':'Trying a small voltage increase to reduce ASIC timing errors, after checking temperature and power headroom. It must still settle and pass measurement checks.',
-      'error-recovery-clock-backoff':'Reducing clock to recover from excessive ASIC errors. Voltage recovery is not allowed without sufficient headroom.',
+      'error-recovery-clock-backoff':'Reducing clock to recover from excessive ASIC errors after limited voltage retries, or because voltage or cooling headroom prevents a raise.',
       'restoring-better-measured-point':'Returning to a previously measured better point after a comparison failed its acceptance checks. This is separate from restoring the original backup.',
       'rollback-lacks-headroom':'Backing off because returning to the measured best point would lack temperature or power headroom.',
       'held-point-became-unstable':'The held result no longer meets error or stability requirements. Reducing load before taking new measurements.',

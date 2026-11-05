@@ -631,4 +631,70 @@ describe('Dynamic tuning controls', () => {
     expect(component.canStart).toBeFalse();
   }));
 
+  it('identifies the failed ASIC readiness check instead of suggesting another waiver', () => {
+    report.status.telemetry.valid=false;
+    report.status.readiness=[{key:'counters-3',label:'ASIC 3 counters',ready:false,detail:'ASIC 3 has no fresh error-counter interval.'}];
+    component.load();component.waiverAccepted=true;
+    expect(component.canStart).toBeFalse();
+    expect(component.startExplanation).toContain('ASIC 3');
+    expect(component.visibleStartChecks.some(row=>row.key==='counters-3' && !row.ready)).toBeTrue();
+    expect(component.blockedStartChecks.some(row=>row.key==='waiver')).toBeFalse();
+    component.start();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('explains legacy cooling and mining gates without claiming individual sensors passed', () => {
+    report.status.telemetry.fanOk=false;report.status.telemetry.miningActive=false;
+    component.load();component.waiverAccepted=true;
+    expect(component.startExplanation).toContain('Cooling feedback');
+    expect(component.blockedStartChecks.map(row=>row.key)).toContain('mining');
+    expect(component.canStart).toBeFalse();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('does not treat stale positive readiness diagnostics as current healthy readings', () => {
+    report.status.readiness=[{key:'fan-1',label:'Fan 1',ready:true,detail:'1500 RPM'}];component.load();component.waiverAccepted=true;
+    now+=13000;
+    expect(component.startChecks.find(row=>row.key==='fan-1')?.ready).toBeFalse();
+    expect(component.startChecks.find(row=>row.key==='fan-1')?.detail).toContain('No current reading');
+    expect(component.canStart).toBeFalse();
+  });
+  it('falls back safely when optional readiness diagnostics are malformed', () => {
+    report.status.readiness=[{key:'fan-1',ready:'true'}] as any;report.status.telemetry.fanOk=false;
+    component.load();component.waiverAccepted=true;
+    expect(component.startExplanation).toContain('Cooling feedback');expect(component.canStart).toBeFalse();
+  });
+  it('accepts 65 C within the reported ASIC limit and explains limits above it', () => {
+    report.config.maxAsicTempC=65;component.load();component.waiverAccepted=true;
+    expect(component.validationError).toBe('');expect(component.canStart).toBeTrue();
+    component.edit!.maxAsicTempC=report.limits.maxAsicTempC+1;
+    expect(component.validationError).toContain('Temperature ceilings');expect(component.canStart).toBeFalse();
+  });
+  it('exports useful diagnostics without issuing a miner command', async () => {
+    report.status.readiness=[{key:'fan-2',label:'Fan 2',ready:false,detail:'No fan RPM reading.'}];component.load();
+    await component.copyDiagnostics();
+    const exported=JSON.parse(component.diagnosticsText);
+    expect(exported.report.status.readiness[0].key).toBe('fan-2');
+    expect(exported.startChecks.some((row:any)=>row.key==='fan-2')).toBeTrue();
+    expect(component.diagnosticsMessage).toContain('diagnostics');expect(service.command).not.toHaveBeenCalled();
+  });
+
+  it('retains mining and fault blockers when detailed readiness is only partial', () => {
+    report.status.readiness=[{key:'fan-1',label:'Fan 1',ready:true,detail:'1500 RPM'}];
+    report.status.telemetry.miningActive=false;report.status.telemetry.fault=true;
+    component.load();component.waiverAccepted=true;
+    expect(component.blockedStartChecks.map(row=>row.key)).toContain('mining');
+    expect(component.blockedStartChecks.map(row=>row.key)).toContain('protection');
+    expect(component.canStart).toBeFalse();
+  });
+  it('conservatively blocks contradictory failed diagnostics without bypassing aggregate guards', () => {
+    report.status.readiness=[{key:'fan-2',label:'Fan 2',ready:false,detail:'Fan 2 has no valid RPM reading.'}];
+    component.load();component.waiverAccepted=true;
+    expect(component.canStart).toBeFalse();expect(component.startExplanation).toContain('Fan 2');
+    component.start();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('shows a pending request as a blocker while refreshing status', () => {
+    const waiting=new Subject<AutotuneReport>();service.get.and.returnValue(waiting);
+    component.waiverAccepted=true;component.load();
+    expect(component.canStart).toBeFalse();
+    expect(component.blockedStartChecks.some(row=>row.key==='request')).toBeTrue();
+    waiting.next(report);waiting.complete();expect(component.canStart).toBeTrue();
+  });
+
 });

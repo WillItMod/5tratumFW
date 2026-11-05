@@ -1,4 +1,4 @@
-:host{--at-t:var(--fw-text,#dce8ed);--at-m:var(--fw-muted,#93a4b8);--at-a:var(--fw-accent,#72d4b7);--at-b:var(--fw-border,#243044);--at-s:var(--fw-surface,#101824);--at-sa:var(--fw-surface-alt,#15212d);--at-w:var(--fw-warn,#e5b675);--at-d:var(--fw-danger,#ec7b7b);display:block;color:var(--at-t)}
+:host{--at-t:var(--fw-text,#dce8ed);--at-m:var(--fw-muted,#93a4b8);--at-a:var(--primary-color,#72d4b7);--at-b:var(--fw-border,#243044);--at-s:var(--fw-surface,#101824);--at-sa:var(--fw-surface-alt,#15212d);--at-w:var(--fw-warn,#e5b675);--at-d:var(--fw-danger,#ec7b7b);display:block;color:var(--at-t)}
 .tuning-page{max-width:1200px;margin:auto;min-width:0}
 .tuning-heading,.panel-heading,.save-bar,.run-actions{display:flex;justify-content:space-between;align-items:center;gap:1rem}
 .tuning-heading{align-items:flex-start;margin-bottom:1rem}
@@ -29,7 +29,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--at-a);flex:0 0 auto;wi
 summary{font-size:.9rem;cursor:pointer}
 .save-bar{background:var(--at-sa);border:1px solid var(--at-b);border-radius:8px;padding:1rem}
 .save-bar strong{font-size:.8rem}
-.button{padding:.7rem 1.1rem;font-size:.8rem;min-height:42px;border:1px solid var(--at-a);background:var(--at-a);color:#09151a;border-radius:5px;cursor:pointer;font-weight:550;white-space:nowrap}
+.button{padding:.7rem 1.1rem;font-size:.8rem;min-height:42px;border:1px solid var(--at-a);background:var(--at-a);color:var(--primary-color-text,#09151a);border-radius:5px;cursor:pointer;font-weight:550;white-space:nowrap}
 .button:disabled{opacity:.4;cursor:default}
 .button--quiet{background:transparent;color:inherit;border-color:var(--at-b)}
 .button--stop{background:transparent;border-color:var(--at-w);color:var(--at-w)}

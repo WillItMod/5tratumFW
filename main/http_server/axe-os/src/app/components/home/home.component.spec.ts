@@ -93,6 +93,16 @@ describe('HomeComponent', () => {
 
   afterEach(() => localStorage.removeItem('5TRATUMFW_SHOW_COINBASE'));
 
+  it('updates the hash chart when the saved appearance changes', () => {
+    TestBed.inject(ThemeService).saveThemeSettings({colorScheme:'dark',primaryColor:'#f7931a'}).subscribe();
+    fixture.detectChanges();
+    expect(component.chartData.datasets[0].borderColor).toBe('#f7931a');
+    expect(component.chartOptions.scales.y.ticks.color).toBe('#f7931a');
+    TestBed.inject(ThemeService).saveThemeSettings({colorScheme:'dark',primaryColor:'#f80421'}).subscribe();
+    fixture.detectChanges();
+    expect(component.chartData.datasets[0].borderColor).toBe('#f80421');
+  });
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });

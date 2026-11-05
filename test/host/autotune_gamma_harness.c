@@ -115,7 +115,8 @@ esp_err_t EMC2101_read_fan_strict(uint16_t *rpm) {
 GammaAutotuneCounterSample hashrate_monitor_autotune_snapshot(void *state,uint64_t now) {
     (void)state;
     return (GammaAutotuneCounterSample){.valid=counters_ok,.captured_at_us=now-500000,
-        .sample_id=now-500000,.useful_ghs=gs.POWER_MANAGEMENT_MODULE.frequency_value*2.04,.error_percentage=host_error_percentage};
+        .sample_id=now-500000,.useful_ghs=gs.POWER_MANAGEMENT_MODULE.frequency_value*2.04,.error_percentage=host_error_percentage,
+        .readiness_reason=counters_ok?NULL:"Work domain has no counter sample",.blocked_domain=counters_ok?0:3};
 }
 void hashrate_monitor_reset_measurements(void *state) {(void)state;++counter_resets;}
 void POWER_MANAGEMENT_stop_for_fault(void *state,const char *reason) {
@@ -219,9 +220,37 @@ static void *wire_revoker(void *fault) {
     if(fault) autotune_gamma_interrupt("hardware-fault");else autotune_gamma_manual_override();
     atomic_store(&revocation_completed,true);return NULL;
 }
+static void expect_readiness(const char *key,bool ready,const char *detail) {
+    const unsigned before=writes,reads=sensor_reads;
+    cJSON *json=report(),*status=cJSON_GetObjectItem(json,"status");
+    cJSON *rows=cJSON_GetObjectItem(status,"readiness"),*found=NULL;
+    assert(cJSON_IsArray(rows)&&cJSON_GetArraySize(rows)==8);
+    for(int i=0;i<cJSON_GetArraySize(rows);++i) {
+        cJSON *row=cJSON_GetArrayItem(rows,i);
+        assert(cJSON_IsString(cJSON_GetObjectItem(row,"key"))&&cJSON_IsString(cJSON_GetObjectItem(row,"label"))&&
+            cJSON_IsString(cJSON_GetObjectItem(row,"detail"))&&cJSON_IsBool(cJSON_GetObjectItem(row,"ready")));
+        if(!strcmp(cJSON_GetObjectItem(row,"key")->valuestring,key))found=row;
+    }
+    assert(found&&cJSON_IsTrue(cJSON_GetObjectItem(found,"ready"))==ready);
+    assert(strstr(cJSON_GetObjectItem(found,"detail")->valuestring,detail));
+    cJSON_Delete(json);assert(writes==before&&sensor_reads==reads);
+}
 int main(int argc,char **argv) {
     assert(argc==2);init();const char *name=argv[1];
-    if(!strcmp(name,"advanced-migration")) {
+    if(!strcmp(name,"readiness")) {
+        expect_readiness("fan-1",true,"3000 RPM");
+        expect_readiness("counters-1",true,"all four");
+        expect_readiness("freshness",true,"maximum 15 s");
+        host_fan_ok=false;host_now+=TUNE_POLL_US;observe();expect_readiness("fan-1",false,"0 RPM");
+        host_fan_ok=true;sensors_ok=false;host_now+=TUNE_POLL_US;observe();
+        expect_readiness("regulator",false,"Strict regulator read failed");expect_readiness("asic-sensor",false,"No successful");
+        sensors_ok=true;counters_ok=false;host_now+=TUNE_POLL_US;observe();expect_readiness("counters-1",false,"Domain 3: Work domain has no counter sample");
+        counters_ok=true;host_current_ok=false;host_now+=TUNE_POLL_US;observe();expect_readiness("regulator",false,"0.00 A");
+        host_current_ok=true;host_now+=TUNE_POLL_US;observe();
+        gs.SYSTEM_MODULE.hardware_fault=true;expect_readiness("fault",false,"fault is active");gs.SYSTEM_MODULE.hardware_fault=false;
+        gs.SYSTEM_MODULE.mining_paused=true;expect_readiness("mining",false,"paused");gs.SYSTEM_MODULE.mining_paused=false;
+        host_now+=TUNE_FRESH_US+1;expect_readiness("freshness",false,"maximum 15 s");
+    } else if(!strcmp(name,"advanced-migration")) {
         fwt_config config=tuner.core.config;
         cJSON *record=bound_json(),*legacy=config_json(&config,false);assert(record&&legacy);
         cJSON_DeleteItemFromObjectCaseSensitive(legacy,"advancedClockOverride");
