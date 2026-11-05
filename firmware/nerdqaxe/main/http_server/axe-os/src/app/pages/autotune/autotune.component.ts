@@ -7,7 +7,7 @@ type ObservedMetric = 'ths' | 'joules' | 'asicTempC' | 'vrmTempC' | 'powerW' | '
 interface TabObservation { at: number; ths: number | null; joules: number | null; asicTempC: number | null; vrmTempC: number | null; powerW: number | null; boardErrors: number | null; worstErrors: number | null; }
 interface ObservedLine { name: string; secondary: boolean; path: string; points: {x:number;y:number}[]; }
 
-@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss', './autotune-goals.scss', './autotune-observations.scss', './autotune-readings.scss', './autotune-activity.scss', './autotune-events.scss', './autotune-flow.scss'] })
+@Component({ selector: 'app-autotune', templateUrl: './autotune.component.html', styleUrls: ['./autotune.component.scss', './autotune-goals.scss', './autotune-observations.scss', './autotune-readings.scss', './autotune-activity.scss', './autotune-events.scss', './autotune-flow.scss', './autotune-cooling.scss'] })
 export class AutotuneComponent implements OnInit, OnDestroy {
   report: AutotuneReport | null = null;
   edit: AutotuneConfig | null = null;
@@ -21,6 +21,17 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   diagnosticsMessage = '';
   waiverAccepted = false;
   advancedClockWarningAccepted = false;
+  coolingDraftMask: number | null = null;
+  coolingWarningAccepted = false;
+  coolingMessage = '';
+  coolingError = '';
+  private pendingCoolingMask: number | null = null;
+  private coolingSubmittedAt = Infinity;
+  private coolingWasAdvertised = false;
+  private coolingPostSent = false;
+  private coolingReconcileAfter = Infinity;
+  private coolingReconcileSequence = Infinity;
+  private reportSequence = 0;
   viewMode: 'live' | 'options' = 'options';
   private viewInitialized = false;
   readonly wholeMHz = true;
@@ -163,10 +174,27 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   private accept(report: AutotuneReport, requestedAt: number): boolean {
     if (!this.validReport(report)) { this.historyGap = true; this.readError = 'This application returned an unrecognised tuning report. Install its matching application and web interface.'; return false; }
     const dirty = this.hasUnsavedChanges;
+    const coolingDirty = this.hasUnsavedCoolingChanges;
+    const previousCoolingMask = this.report?.cooling?.requiredMask;
     if (this.report && this.clockWarningChanged(this.report,report) && this.pendingAction!=='configure') this.advancedClockWarningAccepted=false;
     this.report = report;
+    ++this.reportSequence;
+    if (report.cooling !== undefined) this.coolingWasAdvertised=true;
     this.requestedAt = requestedAt;
     this.readError = '';
+    if (this.coolingAvailable) {
+      if (this.coolingDraftMask === null || !coolingDirty) this.coolingDraftMask=report.cooling!.requiredMask;
+      if (previousCoolingMask!==undefined && previousCoolingMask!==report.cooling!.requiredMask) {
+        this.coolingWarningAccepted=false;this.waiverAccepted=false;this.coolingMessage='';this.coolingError='';
+      }
+      if (this.pendingCoolingMask!==null && requestedAt>=this.coolingSubmittedAt && report.cooling!.valid
+        && report.cooling!.requiredMask===this.pendingCoolingMask
+        && (this.coolingReconcileSequence===Infinity || this.reportSequence>this.coolingReconcileSequence && requestedAt>this.coolingReconcileAfter)) {
+        this.pendingCoolingMask=null;
+        this.coolingError='';
+        this.coolingMessage='Cooling setup confirmed on the miner. Tuning has not started.';
+      }
+    }
     if (this.recovery && requestedAt >= this.recoverySubmittedAt) this.recoveryUnconfirmed=false;
     if (!this.viewInitialized) {this.viewMode=report.status.active||report.status.ownsSettings?'live':'options';this.viewInitialized=true;}
     this.observeEvents();
@@ -245,6 +273,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if(['applying','restoring'].includes(this.report!.status.state))return 'Wait for the current operating-point transition or restoration to finish.';
     if(this.report!.status.state==='faulted'||this.report!.status.telemetry.fault)return 'The miner reports a fault. Check its cause; the waiver cannot override protection.';
     if(!this.optionsUsable)return 'Valid options and hardware limits are required before starting.';
+    if(!this.coolingReady)return this.coolingProblem;
     if(this.hasUnsavedChanges)return 'Save these options before starting a new tune.';
     if(this.validationError)return this.validationError;
     if(this.startPointError)return this.startPointError;
@@ -274,6 +303,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       row('control','Controller available',!this.isEngaged && !this.optionsLocked && !['faulted','restoring','applying'].includes(report.status.state),
         this.isEngaged?'A tune already owns the settings. Edit that tune or disable and restore it first.':['restoring','applying'].includes(report.status.state)?'Wait for the current change or restoration to finish.':report.status.state==='faulted'?'The miner reports a fault. Check its cause before starting.':'No other tuning session owns the settings.'));
     const detailed=this.hardwareReadiness;
+    if (this.hasCoolingMetadata) checks.push(row('fitted-fans','Saved cooling setup',this.coolingReady,
+      this.coolingReady?this.coolingSelectionText(report.cooling!.requiredMask)+' selected for monitoring.':this.coolingProblem));
     checks.push(...detailed);
     // Keep the authoritative aggregate gates even with partial diagnostics.
     // Individual checks add detail and can conservatively block, never bypass.
@@ -309,8 +340,70 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const report = this.report;
     return !!report && !this.busy && !this.loading && this.isFresh && this.optionsUsable && !report.status.active
       && !['faulted','restoring','applying'].includes(report.status.state) && !report.status.ownsSettings && !this.hasUnsavedChanges
-      && !this.validationError && !this.startPointError && this.telemetryFresh && !this.hardwareReadiness.some(row=>!row.ready) && report.status.telemetry.fanOk === true
+      && !this.validationError && !this.startPointError && this.coolingReady && this.telemetryFresh && !this.hardwareReadiness.some(row=>!row.ready) && report.status.telemetry.fanOk === true
       && report.status.telemetry.miningActive === true && report.status.telemetry.fault === false && this.waiverAccepted;
+  }
+  get hasCoolingMetadata(): boolean { return this.coolingWasAdvertised || this.report?.cooling !== undefined; }
+  get coolingAvailable(): boolean {
+    const value=this.report?.cooling;
+    return !!value && typeof value==='object' && !Array.isArray(value) && value.warningVersion===1
+      && typeof value.valid==='boolean' && Number.isInteger(value.supportedMask) && value.supportedMask>=1 && value.supportedMask<=3
+      && Number.isInteger(value.requiredMask) && value.requiredMask>=1 && value.requiredMask<=3 && (value.requiredMask & ~value.supportedMask)===0;
+  }
+  get coolingChoices(): {mask:number;label:string}[] {
+    const supported=this.coolingAvailable?this.report!.cooling!.supportedMask:0;
+    return [{mask:3,label:'Both fans'}, {mask:1,label:'Fan 1 only'}, {mask:2,label:'Fan 2 only'}]
+      .filter(choice=>(choice.mask & ~supported)===0);
+  }
+  coolingSelectionText(mask: number | null): string { return this.coolingChoices.find(choice=>choice.mask===mask)?.label || 'Unconfirmed cooling setup'; }
+  get hasUnsavedCoolingChanges(): boolean {
+    return this.coolingAvailable && this.coolingDraftMask!==null && this.coolingDraftMask!==this.report!.cooling!.requiredMask;
+  }
+  get coolingLocked(): boolean {
+    return this.busy || this.loading || !this.isFresh || this.isEngaged || this.recovery?.requested===true
+      || ['applying','restoring'].includes(this.report?.status.state || '') || this.pendingCoolingMask!==null;
+  }
+  get coolingReady(): boolean {
+    return !this.hasCoolingMetadata || this.coolingAvailable && this.report!.cooling!.valid
+      && !this.hasUnsavedCoolingChanges && this.pendingCoolingMask===null;
+  }
+  get coolingSaveUnconfirmed(): boolean { return this.pendingCoolingMask!==null; }
+  get canUseSavedCooling(): boolean {
+    return this.coolingAvailable && this.isFresh && !this.busy && !this.loading && !this.isEngaged && !this.recovery?.requested
+      && (this.pendingCoolingMask===null || !this.coolingPostSent
+        || this.reportSequence>this.coolingReconcileSequence && this.requestedAt>this.coolingReconcileAfter);
+  }
+  get coolingProblem(): string {
+    if (!this.coolingAvailable) return 'Cooling setup could not be verified. Refresh status and check that the application and web interface match.';
+    if (this.pendingCoolingMask!==null) return 'The cooling setup request is not confirmed. Refresh status before starting.';
+    if (!this.report!.cooling!.valid) return 'The stored cooling setup needs repair. Confirm the fitted fans below and save the cooling setup.';
+    if (this.hasUnsavedCoolingChanges) return 'Save the changed cooling setup before starting.';
+    return '';
+  }
+  get canSaveCooling(): boolean {
+    return this.coolingAvailable && !this.coolingLocked && this.coolingWarningAccepted
+      && this.coolingChoices.some(choice=>choice.mask===this.coolingDraftMask)
+      && (this.hasUnsavedCoolingChanges || !this.report!.cooling!.valid);
+  }
+  selectCooling(mask: number): void {
+    if (this.coolingLocked || !this.coolingChoices.some(choice=>choice.mask===mask)) return;
+    this.coolingDraftMask=mask;this.coolingWarningAccepted=false;this.waiverAccepted=false;
+    this.coolingMessage='';this.coolingError='';
+  }
+  useSavedCooling(): void {
+    if (!this.canUseSavedCooling) return;
+    this.coolingDraftMask=this.report!.cooling!.requiredMask;this.pendingCoolingMask=null;
+    this.coolingWarningAccepted=false;this.waiverAccepted=false;this.coolingMessage='';this.coolingError='';
+  }
+  saveCooling(): void {
+    if (!this.canSaveCooling) return;
+    const mask=this.coolingDraftMask!;
+    this.pendingCoolingMask=mask;this.coolingSubmittedAt=performance.now();
+    this.coolingPostSent=false;this.coolingReconcileAfter=Infinity;this.coolingReconcileSequence=Infinity;
+    this.coolingWarningAccepted=false;this.waiverAccepted=false;this.coolingMessage='';this.coolingError='';
+    this.execute({action:'configure-cooling',requiredFanMask:mask,coolingWarningAccepted:true,coolingWarningVersion:1},
+      report=>this.coolingAvailable && report.cooling!.valid && report.cooling!.requiredMask===mask,
+      'Cooling setup saved and confirmed. Tuning has not started.');
   }
   get canRestore(): boolean { return !this.busy && !this.loading && (this.report?.backup?.available === true || this.report?.status.ownsSettings === true || this.startUnconfirmed); }
   get recovery(): AutotuneRecovery | null {
@@ -682,6 +775,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     this.readEpoch++;
     this.actionError = this.message = '';
     this.service.authorize().pipe(take(1),switchMap(({totp}) => {
+      if (body['action']==='configure-cooling') this.coolingPostSent=true;
       if (body['action'] === 'start') this.startUnconfirmed = true;
       if (body['action'] === 'restore-and-resume') {this.recoveryUnconfirmed=true;this.recoverySubmittedAt=performance.now();}
       return this.service.command(body,totp);
@@ -696,14 +790,18 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       }),tap(({report,requestedAt}) => {
         if (!this.accept(report,requestedAt)) throw new Error('unconfirmed');
         if (body['action']==='restore-and-resume') {if(this.recovery?.phase==='blocked')throw new Error('recovery-blocked');}
-        else if (report.status.state === 'faulted') throw new Error('transition-fault');
+        else if (body['action']!=='configure-cooling' && report.status.state === 'faulted') throw new Error('transition-fault');
       }),filter(({report}) => confirms(report)),take(1),timeout({first:30000}));
-    }),takeUntil(this.destroyed),takeUntil(this.cancelActionReadback),finalize(() => {this.busy=false;this.pendingAction='';this.actionAcknowledged=false;})).subscribe({
+    }),takeUntil(this.destroyed),takeUntil(this.cancelActionReadback),finalize(() => {
+      if(body['action']==='configure-cooling' && !this.coolingPostSent) this.pendingCoolingMask=null;
+      this.busy=false;this.pendingAction='';this.actionAcknowledged=false;
+    })).subscribe({
       next: ({report}) => {
         this.startUnconfirmed = false;
         if (body['action'] === 'start') {this.viewMode='live';document.querySelector('.run-banner')?.scrollIntoView({block:'start'});}
         if (body['action'] === 'configure') { this.edit = this.config(report.config); this.baseline = JSON.stringify(this.edit); }
-        this.message = success;
+        if (body['action']==='configure-cooling') this.coolingMessage=success;
+        else this.message = success;
       },
       error: error => {
         this.advancedClockWarningAccepted=false;
@@ -713,6 +811,9 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         this.actionError = error?.message==='recovery-blocked' ? this.recoveryText : explanation
           ? `${explanation} Refresh status before choosing another action. No repeat request was sent.`
           : 'The request could not be confirmed. Refresh status and check the miner before trying again. No repeat request was sent.';
+        if (body['action']==='configure-cooling') {
+          this.coolingError=this.actionError;this.coolingReconcileAfter=performance.now();this.coolingReconcileSequence=this.reportSequence;
+        }
       },
     });
   }
@@ -721,6 +822,6 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return backup.available === true && !!point && this.finite(backup.frequencyMHz) && this.finite(backup.coreVoltageMv)
       && Math.abs(point.frequencyMHz - backup.frequencyMHz) < .01 && Math.abs(point.coreVoltageMv - backup.coreVoltageMv) < .01;
   }
-  canLeave(): boolean { return !this.hasUnsavedChanges || window.confirm('Leave this page and discard its unsaved tuning options?'); }
+  canLeave(): boolean { return !(this.hasUnsavedChanges || this.hasUnsavedCoolingChanges || this.pendingCoolingMask!==null) || window.confirm('Leave this page and discard its unsaved tuning options?'); }
 }
 export function leaveAutotune(component: AutotuneComponent): boolean { return component.canLeave(); }

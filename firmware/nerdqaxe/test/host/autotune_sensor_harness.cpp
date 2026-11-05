@@ -1,10 +1,12 @@
 #include "autotune/write_gate.h"
 #include "drivers/BuckConverter.h"
 #include "tuning_telemetry.h"
+#include "tuning_fan.h"
 #include "pmbus_commands.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <math.h>
 #include <cstdint>
 #include <map>
@@ -13,8 +15,14 @@
 #include <vector>
 using esp_err_t=int;constexpr int ESP_OK=0,ESP_FAIL=-1,ESP_ERR_INVALID_ARG=-3;
 static std::map<uint8_t,uint8_t> fanRegisters;
+static std::map<uint8_t,unsigned> fanReadCounts;
 static int fanFailed=-1;
-static esp_err_t i2c_master_register_read(uint8_t,uint8_t reg,uint8_t *out,size_t count){assert(count==1);if(fanFailed==reg)return ESP_FAIL;*out=fanRegisters[reg];return ESP_OK;}
+static esp_err_t i2c_master_register_read(uint8_t,uint8_t reg,uint8_t *out,size_t count){
+ assert(count==1);++fanReadCounts[reg];if(fanFailed==reg)return ESP_FAIL;*out=fanRegisters[reg];
+ // Model the actual read-to-clear fault registers, not ordinary RAM.
+ if(reg==0x25 || reg==0x26 || reg==0x27)fanRegisters[reg]=0;
+ return ESP_OK;
+}
 #define ESP_LOGI(...) do {} while(0)
 #define ESP_LOGE(...) do {} while(0)
 static int muxFailedPin=-1;
@@ -84,6 +92,7 @@ public:
  virtual float tuningVrmOffset() const{return 0;}
  virtual bool tuningAsicTemperature(float &,int64_t &);
  bool readTuningSensors(TuningSensors &);
+ void readTuningFans(TuningFanSample output[2]);
  bool readRecoverySensors(TuningSensors &);bool isRecoveryPowerOff();
  virtual bool refreshTuningTemperatures(){return true;}
  bool setTuningVoltage(float,bool (*)());
@@ -114,7 +123,9 @@ int main(){
    }
    fanFailed=-1;
    for(uint8_t status:{EMC2302_STALL_STATUS,EMC2302_SPIN_STATUS,EMC2302_DRIVE_STATUS})for(uint8_t bit:{1,2}){
-     fanRegisters[status]=bit;assert(!EMC2302_read_tuning_fan(channel,&rpm));fanRegisters[status]=0;
+     fanRegisters[status]=bit;const bool ownFault=bit==(channel?1:2);
+     assert(EMC2302_read_tuning_fan(channel,&rpm)==!ownFault);
+     assert(ownFault?rpm==0:rpm==2644);fanRegisters[status]=0;
    }
    fanRegisters[base+EMC2302_OFS_FAN_CONFIG1]=0x28;assert(!EMC2302_read_tuning_fan(channel,&rpm));fanRegisters[base+EMC2302_OFS_FAN_CONFIG1]=0x08;
    for(unsigned raw:{0U,8191U}){
@@ -122,6 +133,71 @@ int main(){
      assert(EMC2302_get_fan_speed(channel,&rpm)==ESP_OK&&rpm==0);assert(!EMC2302_read_tuning_fan(channel,&rpm));
    }
  }
+ // Each logical fan sees its own physical status bits from one shared snapshot.
+ const auto initFans=[](unsigned first=1487,unsigned second=1487) {
+   fanFailed=-1;fanRegisters.clear();fanReadCounts.clear();
+   for(int channel=0;channel<2;++channel) {
+     const uint8_t base=channel?EMC2302_FAN1:EMC2302_FAN2;
+     const unsigned raw=channel?second:first;
+     fanRegisters[base+EMC2302_OFS_FAN_CONFIG1]=0x08;
+     fanRegisters[base+EMC2302_OFS_TACH_READING_MSB]=raw>>5;
+     fanRegisters[base+EMC2302_OFS_TACH_READING_LSB]=(raw&31)<<3;
+   }
+ };
+ const auto statusReadOnce=[]() {
+   for(uint8_t reg:{EMC2302_STALL_STATUS,EMC2302_SPIN_STATUS,EMC2302_DRIVE_STATUS})
+     assert(fanReadCounts[reg]==1);
+ };
+ TuningFanSample fans[2];
+ initFans();EMC2302_read_tuning_fans(fans);statusReadOnce();
+ assert(fans[0].valid&&fans[1].valid&&fans[0].rpm==2644&&fans[1].rpm==2644);
+ for(uint8_t reg:{EMC2302_STALL_STATUS,EMC2302_SPIN_STATUS,EMC2302_DRIVE_STATUS}) {
+   for(uint8_t bits:{1,2,3}) {
+     initFans();fanRegisters[reg]=bits;EMC2302_read_tuning_fans(fans);statusReadOnce();
+     // Faults in FAN1 are not lost when logical fan0/FAN2 is examined first.
+     assert(fans[0].valid==!(bits&2));assert(fans[1].valid==!(bits&1));
+     assert((bits&2)?fans[0].rpm==0:fans[0].rpm==2644);
+     assert((bits&1)?fans[1].rpm==0:fans[1].rpm==2644);
+     const char *reason=reg==EMC2302_STALL_STATUS?"stalled":reg==EMC2302_SPIN_STATUS?"spin-up":"drive";
+     if(bits&2)assert(std::strstr(fans[0].reason,reason));
+     if(bits&1)assert(std::strstr(fans[1].reason,reason));
+     assert(fanRegisters[reg]==0); // Read-to-clear fake actually consumed it.
+   }
+   initFans();fanFailed=reg;EMC2302_read_tuning_fans(fans);statusReadOnce();
+   assert(!fans[0].valid&&!fans[1].valid&&fans[0].rpm==0&&fans[1].rpm==0);
+   assert(std::strstr(fans[0].reason,"status read failed"));
+ }
+ // Single connected logical fan0 remains valid despite an unused FAN1 fault.
+ initFans(1487,8191);fanRegisters[EMC2302_STALL_STATUS]=1;
+ EMC2302_read_tuning_fans(fans);statusReadOnce();assert(fans[0].valid&&!fans[1].valid);
+ for(int channel=0;channel<2;++channel) {
+   const uint8_t base=channel?EMC2302_FAN1:EMC2302_FAN2;
+   initFans();fanFailed=base+EMC2302_OFS_FAN_CONFIG1;
+   EMC2302_read_tuning_fans(fans);statusReadOnce();
+   assert(!fans[channel].valid&&fans[1-channel].valid);
+   assert(std::strstr(fans[channel].reason,"configuration read failed"));
+   initFans();fanRegisters[base+EMC2302_OFS_FAN_CONFIG1]=0x28;
+   EMC2302_read_tuning_fans(fans);assert(!fans[channel].valid&&fans[1-channel].valid);
+   assert(std::strstr(fans[channel].reason,"configuration is unsupported"));
+   for(uint8_t offset:{EMC2302_OFS_TACH_READING_MSB,EMC2302_OFS_TACH_READING_LSB}) {
+     initFans();fanFailed=base+offset;EMC2302_read_tuning_fans(fans);
+     assert(!fans[channel].valid&&fans[1-channel].valid);
+     assert(std::strstr(fans[channel].reason,"tachometer read failed"));
+   }
+   for(unsigned raw:{0U,8191U,7865U,245U}) {
+     initFans(channel?1487:raw,channel?raw:1487);EMC2302_read_tuning_fans(fans);
+     assert(!fans[channel].valid&&fans[1-channel].valid&&fans[channel].rpm==0);
+   }
+   for(unsigned raw:{7864U,246U}) {
+     initFans(channel?1487:raw,channel?raw:1487);EMC2302_read_tuning_fans(fans);
+     assert(fans[channel].valid&&fans[1-channel].valid);
+   }
+ }
+ initFans();NerdQaxePlus fanBoard;fanBoard.readTuningFans(fans);statusReadOnce();
+ assert(fans[0].valid&&fans[1].valid); // The production board uses the batch path.
+ initFans();uint16_t invalidRpm=123;assert(!EMC2302_read_tuning_fan(-1,&invalidRpm));
+ assert(!EMC2302_read_tuning_fan(2,&invalidRpm));assert(!EMC2302_read_tuning_fan(0,nullptr));
+ EMC2302_read_tuning_fans(nullptr);assert(fanReadCounts.empty());
  initializeWords();TPS53647 four;Rev7TPS546::TPS546 rev;
  BuckTuningTelemetry sample;
  assert(four.readTuningTelemetry(sample)&&sample.measuredInputPower&&sample.pin==100&&std::fabs(sample.vout-1.15039)<0.001);
@@ -167,5 +243,5 @@ int main(){
  for(int pass=0;pass<25;++pass){nowUs+=800000;assert(oct.refreshTuningTemperatures()&&oct.readTuningSensors(sensors));}
  assert(oct.refreshCount>3);oct.refreshFail=true;nowUs+=5000001;assert(!oct.refreshTuningTemperatures());
  oct.m_hasTMux[0]=oct.m_hasTMux[1]=false;const auto refreshes=oct.refreshCount;assert(oct.refreshTuningTemperatures()&&oct.refreshCount==refreshes);
- std::cout<<"Actual strict TPS53647/67, rev7 TPS546, EMC2302 two-fan status/tach and shared/mux board sensors: failed reads/mode/status/saturation/zero, revocation, calibrated offsets, partial/stale/missing per-chip inputs passed\n";
+ std::cout<<"Actual strict TPS53647/67, rev7 TPS546, EMC2302 batched per-channel read-to-clear status/tach and shared/mux board sensors: failed reads/mode/status/saturation/zero, cross-channel isolation, revocation, calibrated offsets, partial/stale/missing per-chip inputs passed\n";
 }

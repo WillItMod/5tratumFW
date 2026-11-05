@@ -47,6 +47,7 @@ class NerdQaxePlus : public Board {
     virtual void setFanPolarity(bool invert);
     bool restoreTuningFanPolarity(bool invert, bool (*allowed)()) override;
     bool readTuningFan(int channel, uint16_t &rpm) override;
+    void readTuningFans(TuningFanSample output[2]) override;
     virtual void setFanSpeedCh(int channel, float perc);
     virtual void getFanSpeedCh(int channel, uint16_t *rpm);
 

@@ -91,23 +91,71 @@ esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst)
     return ESP_OK;
 }
 
+void EMC2302_read_tuning_fans(TuningFanSample output[2]) {
+    if (!output) return;
+    output[0] = {};
+    output[1] = {};
+
+    // These registers are read-to-clear. Capture each once, then evaluate both
+    // physical channels against the same evidence. Reading once per fan could
+    // consume a sibling fault before that fan is checked.
+    const uint8_t registers[] = {EMC2302_STALL_STATUS, EMC2302_SPIN_STATUS, EMC2302_DRIVE_STATUS};
+    const char *const readFailures[] = {
+        "Fan controller stall-status read failed",
+        "Fan controller spin-status read failed",
+        "Fan controller drive-status read failed"
+    };
+    uint8_t status[3] = {};
+    const char *readFailure = nullptr;
+    for (unsigned index = 0; index < 3; ++index) {
+        if (i2c_master_register_read(EMC2302_ADDR, registers[index], &status[index], 1) != ESP_OK && !readFailure)
+            readFailure = readFailures[index];
+    }
+    if (readFailure) {
+        output[0].reason = output[1].reason = readFailure;
+        return;
+    }
+
+    for (int channel = 0; channel < 2; ++channel) {
+        auto &sample = output[channel];
+        // Logical 0 is connector M2 / physical FAN2; logical 1 is M1 / FAN1.
+        const uint8_t base = channel == 0 ? EMC2302_FAN2 : EMC2302_FAN1;
+        const uint8_t mask = channel == 0 ? 0x02 : 0x01;
+        uint8_t config = 0;
+        if (i2c_master_register_read(EMC2302_ADDR, base + EMC2302_OFS_FAN_CONFIG1, &config, 1) != ESP_OK) {
+            sample.reason = "Fan configuration read failed";
+            continue;
+        }
+        // Existing RPM conversion requires direct control, multiplier 1 and
+        // five measured edges. Do not guess RPM for a different configuration.
+        if ((config & 0xf8) != 0x08) {
+            sample.reason = "Fan-control configuration is unsupported";
+            continue;
+        }
+        if (status[0] & mask) { sample.reason = "Fan controller reports a stalled fan"; continue; }
+        if (status[1] & mask) { sample.reason = "Fan controller reports a spin-up failure"; continue; }
+        if (status[2] & mask) { sample.reason = "Fan controller reports a drive failure"; continue; }
+        uint16_t measured = 0;
+        if (EMC2302_get_fan_speed(channel, &measured) != ESP_OK) {
+            sample.reason = "Fan tachometer read failed";
+            continue;
+        }
+        if (measured == 0) { sample.reason = "Fan tachometer reports no valid rotation"; continue; }
+        if (measured < 500) { sample.reason = "Fan speed is below 500 RPM"; continue; }
+        if (measured > 16000) { sample.reason = "Fan speed is above 16000 RPM"; continue; }
+        sample.valid = true;
+        sample.rpm = measured;
+        sample.reason = "Fan RPM and controller status verified";
+    }
+}
+
 bool EMC2302_read_tuning_fan(int channel, uint16_t *rpm) {
     if (!rpm || channel < 0 || channel > 1) return false;
     *rpm = 0;
-    const uint8_t base = !channel ? EMC2302_FAN2 : EMC2302_FAN1;
-    uint8_t config = 0, status = 0;
-    // DS20006532A, sections4.4 and6.14: the existing conversion is valid for
-    // direct control, multiplier1, five edges. Fail closed on a changed mode.
-    if (i2c_master_register_read(EMC2302_ADDR,base+EMC2302_OFS_FAN_CONFIG1,&config,1)!=ESP_OK || (config & 0xf8)!=0x08) return false;
-    // Read-then-clear status does not authorize a failed sample: any fitted
-    // fan stall, spin-up or drive failure invalidates this entire acquisition.
-    const uint8_t statuses[] = {EMC2302_STALL_STATUS,EMC2302_SPIN_STATUS,EMC2302_DRIVE_STATUS};
-    for (uint8_t reg : statuses) {
-        if (i2c_master_register_read(EMC2302_ADDR,reg,&status,1)!=ESP_OK || (status & 0x03)) return false;
-    }
-    uint16_t measured = 0;
-    if (EMC2302_get_fan_speed(channel,&measured)!=ESP_OK || measured < 500 || measured > 16000) return false;
-    *rpm = measured;return true;
+    TuningFanSample samples[2];
+    EMC2302_read_tuning_fans(samples);
+    *rpm = samples[channel].rpm;
+    return samples[channel].valid;
 }
 
 bool EMC2302_init(bool invertPolarity)

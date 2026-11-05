@@ -43,10 +43,18 @@ export interface AutotuneEvent {
   conditions?: AutotuneConditions | null;
 }
 export interface AutotuneReadiness { key: string; label: string; ready: boolean; detail: string; }
+export interface AutotuneCooling {
+  supportedMask: number;
+  requiredMask: number;
+  warningVersion: 1;
+  valid: boolean;
+}
 export interface AutotuneReport {
   schemaVersion: 1; supported: boolean; waiverVersion: 1;
   hardware: { model: string; asicCount: number; asicSensor: string; vrmSensor: string; powerSource: string };
   config: AutotuneConfig; limits: AutotuneLimits;
+  /** Fitted-fan declaration, separate from operating limits and the original backup. */
+  cooling?: AutotuneCooling;
   guidance: {asic: string; vrm: string; power: string; experimental: true};
   status: {
     state: string; reason: string; active: boolean; ownsSettings: boolean; runId: number; experiments: number;

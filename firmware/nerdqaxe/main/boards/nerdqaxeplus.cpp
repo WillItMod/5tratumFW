@@ -320,6 +320,10 @@ bool NerdQaxePlus::readTuningFan(int channel, uint16_t &rpm) {
     return EMC2302_read_tuning_fan(channel,&rpm);
 }
 
+void NerdQaxePlus::readTuningFans(TuningFanSample output[2]) {
+    EMC2302_read_tuning_fans(output);
+}
+
 void NerdQaxePlus::setFanPolarity(bool invert) {
     EMC2302_set_fan_polarity(invert);
 }

@@ -48,7 +48,10 @@ bool advancedClockOverride=false;
 enum class BlobStatus { Unloaded, Missing, Present, Invalid, ReadFailure };
 bool storagePrepared=false,powerInitialized=false,baselineLoadError=false;
 BlobStatus optionsStatus=BlobStatus::Unloaded,baselineStatus=BlobStatus::Unloaded;
-JsonDocument bootOptions;
+JsonDocument bootOptions,bootCooling;
+BlobStatus coolingStatus=BlobStatus::Unloaded;
+bool coolingError=false;
+unsigned requiredFanMask=3;
 bool restoring = false, restoreSaved = false, restoreCommitFailed = false;
 bool recoveryRequested=false,recoveryAutomatic=false;
 const char *recoveryPhase="idle",*recoveryReason="No recovery requested";
@@ -100,6 +103,33 @@ bool exactFamily(Board *board) {
     if (!board || strcmp(board->getAsicModel(),"BM1370") || !FiveTratumMining::controlSupported() || board->isCanSlave() || Config::isCanEnabled()) return false;
     const unsigned count = FiveTratumMining::expectedStandaloneChain(board->getDeviceModel(), board->getAsicModel());
     return (count == 4 || count == 8) && board->getAsicCount() == static_cast<int>(count);
+}
+unsigned supportedFanMask(Board *board) {
+    const int count=board ? board->getNumFans() : 0;
+    return count>=1 && count<=2 ? (1u<<count)-1u : 0u;
+}
+bool fanMaskValid(Board *board,unsigned mask) {
+    const unsigned supported=supportedFanMask(board);
+    return supported && mask>=1 && mask<=3 && !(mask&~supported);
+}
+bool requiredFansHealthy(Board *board) {
+    if(coolingError || !fanMaskValid(board,requiredFanMask)) return false;
+    TuningFanSample fan[2]{};board->readTuningFans(fan);
+    for(unsigned i=0;i<2;++i) if((requiredFanMask&(1u<<i)) &&
+        (!fan[i].valid || fan[i].rpm<500 || fan[i].rpm>16000)) return false;
+    return true;
+}
+bool coolingRecord(Board *board,JsonObjectConst record,unsigned &mask) {
+    char identity[39];
+    if(!board || record.size()!=5 || !readFiveTratumPhysicalDeviceId(identity) ||
+       !record["schemaVersion"].is<int>() || record["schemaVersion"].is<bool>() || record["schemaVersion"].as<int>()!=1 ||
+       !record["deviceId"].is<const char *>() || strcmp(record["deviceId"],identity) ||
+       !record["model"].is<const char *>() || strcmp(record["model"],board->getDeviceModel()) ||
+       !record["asicCount"].is<int>() || record["asicCount"].is<bool>() || record["asicCount"].as<int>()!=board->getAsicCount() ||
+       !record["requiredFanMask"].is<unsigned>() || record["requiredFanMask"].is<bool>()) return false;
+    const unsigned value=record["requiredFanMask"].as<unsigned>();
+    if(!fanMaskValid(board,value)) return false;
+    mask=value;return true;
 }
 fwt_limits hardwareLimits(Board *board) {
     fwt_limits limits{};
@@ -262,6 +292,14 @@ void initialize(Board *board) {
             (!advanced && proposed.maxFrequencyMHz>board->getAbsMaxAsicFrequency())) optionsError=true;
         else {config=proposed;advancedClockOverride=advanced;}
     }
+    requiredFanMask=3;
+    coolingError=coolingStatus==BlobStatus::Invalid || coolingStatus==BlobStatus::ReadFailure;
+    if(coolingStatus==BlobStatus::Present) {
+        unsigned selected=3;
+        if(!coolingRecord(board,bootCooling.as<JsonObjectConst>(),selected)) coolingError=true;
+        else requiredFanMask=selected;
+    }
+    if(!fanMaskValid(board,requiredFanMask)) coolingError=true;
     fwt_init(&controller,&limits,&config);
     controller.frequencySupported=clockFrequencySupported;
     baselineLoadError=baselineStatus==BlobStatus::Invalid || baselineStatus==BlobStatus::ReadFailure;
@@ -328,14 +366,23 @@ void acquire(Board *board) {
     const int expectedCount=board ? std::min(board->getAsicCount(),8) : 0;
     for(int i=0;i<expectedCount;++i)readinessCheck(chipReadinessKeys[i],chipReadinessLabels[i],false,
         "Waiting for fresh valid-work and error counter samples");
-    observed.fanOk = true;
-    if (board) for (int i=0;i<board->getNumFans();++i) {
-        uint16_t rpm = 0;
-        const bool read=board->readTuningFan(i,rpm);
-        const bool fanReady=read && rpm>=500 && rpm<=16000;
-        if (!fanReady) observed.fanOk = false;
-        if(i<2)readinessCheck(i ? "fan-2" : "fan-1",i ? "Cooling fan 2" : "Cooling fan 1",fanReady,
-            read ? "%u RPM; required range 500 to 16000 RPM" : "Fan RPM could not be read",static_cast<unsigned>(rpm));
+    TuningFanSample fans[2]{};
+    const unsigned supported=supportedFanMask(board);
+    if(board && supported) board->readTuningFans(fans);
+    observed.fanOk=!coolingError && fanMaskValid(board,requiredFanMask);
+    for(unsigned i=0;i<2;++i) if(supported&(1u<<i)) {
+        const bool required=(requiredFanMask&(1u<<i))!=0;
+        const bool good=fans[i].valid && fans[i].rpm>=500 && fans[i].rpm<=16000;
+        const char *key=i ? "fan-2" : "fan-1",*label=i ? "Cooling fan 2" : "Cooling fan 1";
+        if(!required && !coolingError) readinessCheck(key,label,true,"Not selected as fitted; no RPM is assumed");
+        else if(coolingError) readinessCheck(key,label,false,"Saved fitted-fan selection is invalid; explicitly save the cooling setup");
+        else if(!good) {
+            observed.fanOk=false;
+            const char *reason=fans[i].valid ? "Fan RPM is outside the required 500 to 16000 RPM range" :
+                (fans[i].reason ? fans[i].reason : "Fan reading is unavailable");
+            if(fans[i].rpm)readinessCheck(key,label,false,"%s; reported %u RPM",reason,static_cast<unsigned>(fans[i].rpm));
+            else readinessCheck(key,label,false,"%s",reason);
+        } else readinessCheck(key,label,true,"%u RPM; required range 500 to 16000 RPM",static_cast<unsigned>(fans[i].rpm));
     }
     if (!observed.miningActive) return;
     if (!board->readTuningSensors(sensors)) {
@@ -472,6 +519,10 @@ bool recoverySensorsSafe(Board *board,bool requireOff,const char **failure=nullp
     if(hardRecoveryFault(board)) return reject("Hardware protection blocked recovery startup");
     if(!revisionCurrent()) return reject("External control interrupted recovery startup");
     if(requireOff&&!board->isRecoveryPowerOff()) return reject("ASIC power is not confirmed off");
+    // A paused board may not yet supply its fans. Validate the saved policy
+    // before energising it; the recovery verification phase requires fresh RPM
+    // from every selected fan before accepting resumed mining.
+    if(coolingError || !fanMaskValid(board,requiredFanMask)) return reject("Saved fitted-fan selection is unavailable during recovery");
     TuningSensors sample{};
     if(!board->readRecoverySensors(sample)) return reject("Recovery startup strict sensor or regulator-status read failed");
     const uint64_t now=esp_timer_get_time();
@@ -557,7 +608,7 @@ void pointJson(JsonObject parent,const char *key,const fwt_point *point) {
 }
 const char *cachedReason() {
     return adapterReason ? adapterReason : !storagePrepared ? "Tuning storage has not been preloaded on an internal boot stack" :
-        !powerInitialized ? "Waiting for power and fan initialization" : optionsError ? "Stored tuning options are invalid or unreadable" :
+        !powerInitialized ? "Waiting for power and fan initialization" : coolingError ? "Saved fitted-fan selection is invalid; configure cooling before tuning" : optionsError ? "Stored tuning options are invalid or unreadable" :
         observationReason ? observationReason : controller.reason ? controller.reason : "Tuning disabled";
 }
 bool presentationObscured() {
@@ -642,10 +693,12 @@ bool preloadStorage() {
         // RAM after the power owner signals FanController initialization.
         optionsStatus=readBlobState("options",bootOptions);
         baselineStatus=readBlobState("baseline",backup);
+        coolingStatus=readBlobState("cooling",bootCooling);
         storagePrepared=true;
     }
     return (optionsStatus==BlobStatus::Missing || optionsStatus==BlobStatus::Present) &&
-           (baselineStatus==BlobStatus::Missing || baselineStatus==BlobStatus::Present);
+           (baselineStatus==BlobStatus::Missing || baselineStatus==BlobStatus::Present) &&
+           (coolingStatus==BlobStatus::Missing || coolingStatus==BlobStatus::Present);
 }
 void powerReady() {
     Guard guard;powerInitialized=true;initialize(SYSTEM_MODULE.getBoard());
@@ -688,9 +741,7 @@ bool transitionHealthy() {
         checkedAt-static_cast<uint64_t>(fresh.capturedAtUs)>5000000 || fresh.vin<board->getMinVin() || fresh.vin>board->getMaxVin() ||
         fresh.outputCurrentA<=0 || std::fabs(fresh.coreVoltageMv-POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage())>30 ||
         fresh.asicTempC>=controller.limits.maxAsicTempC || fresh.vrmTempC>=controller.limits.maxVrmTempC) return false;
-    for (int i=0;i<board->getNumFans();++i) {
-        uint16_t rpm=0;if (!board->readTuningFan(i,rpm) || rpm<500 || rpm>16000) return false;
-    }
+    if(!requiredFansHealthy(board)) return false;
     const bool upward=target.frequencyMHz>POWER_MANAGEMENT_MODULE.getAppliedTuningFrequency() || target.coreVoltageMv>POWER_MANAGEMENT_MODULE.getAppliedTuningVoltage();
     if (upward && (fresh.asicTempC+2>=(restoring?controller.limits.maxAsicTempC:controller.config.maxAsicTempC) ||
         fresh.vrmTempC+2>=(restoring?controller.limits.maxVrmTempC:controller.config.maxVrmTempC) ||
@@ -869,6 +920,10 @@ bool report(JsonDocument &document) {
     hardware["vrmSensor"] = board ? board->tuningVrmSensorLabel() : "Unavailable VRM temperature source";
     hardware["powerSource"] = sensors.measuredInputPower ? "Measured regulator input power; not wall power" : "Converter output-derived power estimate; not wall power";
     writeConfig(document["config"].to<JsonObject>(),controller.config,advancedClockOverride);
+    auto cooling=document["cooling"].to<JsonObject>();
+    cooling["supportedMask"]=supportedFanMask(board);cooling["requiredMask"]=requiredFanMask;
+    cooling["warningVersion"]=1;cooling["valid"]=initialized && !coolingError;
+
     auto limits = document["limits"].to<JsonObject>();
     const auto &l=controller.limits;
     limits["minFrequencyMHz"]=l.minFrequencyMHz; limits["maxFrequencyMHz"]=board?board->getAbsMaxAsicFrequency():0;
@@ -913,6 +968,7 @@ bool report(JsonDocument &document) {
     const char *names[]={"unloaded","missing","present","invalid","read-failure"};
     diagnostic["optionsStorage"]=names[static_cast<unsigned>(optionsStatus)];
     diagnostic["baselineStorage"]=names[static_cast<unsigned>(baselineStatus)];
+    diagnostic["coolingStorage"]=names[static_cast<unsigned>(coolingStatus)];
     diagnostic["restoreWorkerStackBytes"]=restoreStackBytes;
     if (restoreMinFreeBytes==UINT32_MAX) diagnostic["restoreWorkerMinFreeBytes"]=nullptr;
     else diagnostic["restoreWorkerMinFreeBytes"]=restoreMinFreeBytes;
@@ -929,6 +985,28 @@ const char *command(JsonObjectConst input) {
     if (!initialized || !exactFamily(board)) return "unsupported-hardware";
     if (!input["action"].is<const char *>()) return "invalid-request";
     const char *action=input["action"];
+    if(!strcmp(action,"configure-cooling")) {
+        if(input.size()!=4 || !input["requiredFanMask"].is<unsigned>() || input["requiredFanMask"].is<bool>()) return "invalid-cooling-config";
+        const unsigned selected=input["requiredFanMask"].as<unsigned>();
+        if(!fanMaskValid(board,selected)) return "invalid-cooling-config";
+        if(!input["coolingWarningAccepted"].is<bool>() || !input["coolingWarningAccepted"].as<bool>() ||
+           !input["coolingWarningVersion"].is<int>() || input["coolingWarningVersion"].is<bool>() || input["coolingWarningVersion"].as<int>()!=1) return "cooling-warning-required";
+        if(controller.active || controller.owns || restoring || pending || controller.awaitingApply || recoveryRequested ||
+           firmwareUpdates.load() || permanentFreeze.load()) return "cooling-change-requires-idle";
+        const uint64_t before=Config::tuningMutationRevision();
+        const char *priorHandoff=handoff.load();
+        char identity[39];if(!readFiveTratumPhysicalDeviceId(identity)) return "unsupported-hardware";
+        JsonDocument record;record["schemaVersion"]=1;record["deviceId"]=identity;
+        record["model"]=board->getDeviceModel();record["asicCount"]=board->getAsicCount();record["requiredFanMask"]=selected;
+        if(!writeVerified("cooling",record)) {coolingError=true;coolingStatus=BlobStatus::ReadFailure;observed.valid=false;observed.fanOk=false;return "storage-unavailable";}
+        if(before!=Config::tuningMutationRevision() || handoff.load()!=priorHandoff || firmwareUpdates.load() || permanentFreeze.load()) {
+            coolingError=true;coolingStatus=BlobStatus::Invalid;observed.valid=false;observed.fanOk=false;return "manual-settings-changed";
+        }
+        requiredFanMask=selected;coolingError=false;coolingStatus=BlobStatus::Present;bootCooling.set(record);
+        observed.valid=false;observed.fanOk=false;observed.capturedAtUs=0;readinessCount=0;transitionHealthUntilUs=0;
+        if(!optionsError && !baselineLoadError)adapterReason=nullptr;
+        return nullptr;
+    }
     if (!strcmp(action,"configure")) {
         if (pending || restoring || controller.awaitingApply) return "transition-in-progress";
         fwt_config next{};bool nextAdvanced=false;
@@ -952,6 +1030,7 @@ const char *command(JsonObjectConst input) {
         return nullptr;
     }
     if (!strcmp(action,"start")) {
+        if(coolingError || !fanMaskValid(board,requiredFanMask)) return "cooling-config-unavailable";
         if ((input.size()!=3 && input.size()!=4) || !input["waiverAccepted"].is<bool>() || !input["waiverAccepted"].as<bool>() ||
             !input["waiverVersion"].is<int>() || input["waiverVersion"].as<int>()!=waiverVersion) return "waiver-required";
         if(advancedClockOverride) {
@@ -989,6 +1068,7 @@ const char *command(JsonObjectConst input) {
         return nullptr;
     }
     if (!strcmp(action,"restore-and-resume")) {
+        if(coolingError || !fanMaskValid(board,requiredFanMask)) return "cooling-config-unavailable";
         if(input.size()!=1)return "invalid-request";
         if(recoveryRequested||pending||controller.awaitingApply)return "transition-in-progress";
         if(firmwareUpdates.load()||permanentFreeze.load())return "firmware-update-in-progress";
@@ -1008,6 +1088,7 @@ const char *command(JsonObjectConst input) {
         return nullptr;
     }
     if (!strcmp(action,"stop")) {
+        if(coolingError || !fanMaskValid(board,requiredFanMask)) return "cooling-config-unavailable";
         if (input.size()!=1) return "invalid-request";
         recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";
         fwt_cancel(&controller,"Disable requested; restoring original settings");pending=false;restoring=false;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "i2c_master.h"
+#include "../tuning_fan.h"
 
 #define EMC2302_ADDR 0x2e
 
@@ -36,6 +37,9 @@
 
 esp_err_t EMC2302_set_fan_speed(int channel, float percent);
 esp_err_t EMC2302_get_fan_speed(int channel, uint16_t *dst);
+// Legacy single-channel call. Multi-fan acquisitions must use the batch API
+// so read-to-clear status cannot be consumed before a sibling is evaluated.
 bool EMC2302_read_tuning_fan(int channel, uint16_t *rpm);
+void EMC2302_read_tuning_fans(TuningFanSample output[2]);
 bool EMC2302_init(bool);
 bool EMC2302_set_fan_polarity(bool invert);

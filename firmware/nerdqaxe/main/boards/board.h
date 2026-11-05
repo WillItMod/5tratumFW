@@ -3,6 +3,7 @@
 #include <vector>
 #include <pthread.h>
 #include "tuning_telemetry.h"
+#include "tuning_fan.h"
 #include "../displays/images/themes/themes.h"
 #include "asic.h"
 #include "bm1368.h"
@@ -166,6 +167,15 @@ public:
     }
     virtual void getFanSpeedCh(int channel, uint16_t *rpm) = 0;
     virtual bool readTuningFan(int, uint16_t &) { return false; }
+    virtual void readTuningFans(TuningFanSample output[2]) {
+        if (!output) return;
+        for (int channel = 0; channel < 2; ++channel) {
+            output[channel] = {};
+            if (channel >= getNumFans()) continue;
+            output[channel].valid = readTuningFan(channel, output[channel].rpm);
+            output[channel].reason = output[channel].valid ? "Fan RPM read" : "Fan RPM could not be read";
+        }
+    }
 
     virtual int getNumFans() { return m_numFans; }
 

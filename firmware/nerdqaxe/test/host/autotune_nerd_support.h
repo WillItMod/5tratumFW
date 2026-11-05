@@ -1,6 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 #include "autotune/core.h"
+#include "boards/tuning_fan.h"
 #include "autotune/clock_policy.h"
 #include "autotune/events.h"
 #include "autotune/recovery_guard.h"
@@ -30,6 +31,7 @@ using esp_err_t = int; using nvs_handle_t = int;
 constexpr int ESP_OK=0,ESP_FAIL=-1,ESP_ERR_NVS_NOT_FOUND=-2,NVS_READONLY=0,NVS_READWRITE=1,HTTPD_401_UNAUTHORIZED=401;
 static uint64_t hostNow=20000000,hostGeneration=1;
 static bool storageFail=false,verifyFail=false,voltageFail=false,sensorFail=false,networkAllowed=true,otpAllowed=true,paused=false;
+static unsigned failedFanMask=0,fanBatchReads=0;
 static bool sensorValid=true;
 static bool restoreReadbackFail=false;
 static bool offSensorFail=false,offGpioGood=true,resumeFail=false,fanRemainsOff=false;
@@ -162,6 +164,7 @@ public:
  bool isInvertFanPolarityEnabled(){return fanPolarity;}void setFanPolarity(bool value){fanPolarity=value;}
  bool restoreTuningFanPolarity(bool,bool (*)());
  bool readTuningFan(int,uint16_t &rpm){rpm=fanReadFail?0:fanReportedRpm;return !fanReadFail;}
+ void readTuningFans(TuningFanSample out[2]){++fanBatchReads;for(unsigned i=0;i<2;++i){const bool good=!fanReadFail && !(failedFanMask&(1u<<i));out[i].rpm=good?fanReportedRpm:0;out[i].valid=good && out[i].rpm>=500 && out[i].rpm<=16000;out[i].reason=good?"Fan RPM is outside the required range":"Fan RPM could not be read";}}
  bool refreshTuningTemperatures(){return true;}
  PidSettings *getPidSettings(int ch){return &pid[ch];}
  bool restoreOriginalTuningFrequency(uint16_t);

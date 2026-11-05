@@ -25,7 +25,7 @@ static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;advancedClockOverride=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
-    controller={};history={};lastOwnerTickUs=0;recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";recoveryStartupGuardFailure=nullptr;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
+    controller={};history={};lastOwnerTickUs=0;requiredFanMask=3;coolingError=false;coolingStatus=BlobStatus::Unloaded;bootCooling.clear();recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";recoveryStartupGuardFailure=nullptr;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
     POWER_MANAGEMENT_MODULE.appliedVoltage=hostBoard.voltage;
     ++hostGeneration;
@@ -64,7 +64,7 @@ static void expectReadiness(const char *key,bool ready,const char *detail) {
 }
 int main(int argc,char **argv) {
     assert(argc==2);const std::string scenario=argv[1];
-    if(scenario=="oct"||scenario=="weak-chip-oct"||scenario=="auto-errors-exhausted-oct"||scenario=="readiness-oct")hostBoard.count=8;
+    if(scenario=="oct"||scenario=="weak-chip-oct"||scenario=="auto-errors-exhausted-oct"||scenario=="readiness-oct"||scenario=="cooling-single-oct")hostBoard.count=8;
     assert(FiveTratumAutotune::preloadStorage());
     {HostStackContext power(false);FiveTratumAutotune::powerReady();}
     step();
@@ -80,6 +80,66 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario.rfind("cooling-",0)==0) {
+        using namespace FiveTratumAutotune;
+        const auto configureCooling=[](unsigned mask){JsonDocument d;d["action"]="configure-cooling";d["requiredFanMask"]=mask;d["coolingWarningAccepted"]=true;d["coolingWarningVersion"]=1;return sendDocument(d);};
+        assert(initial["cooling"]["valid"]==true&&initial["cooling"]["requiredMask"]==3&&initial["cooling"]["supportedMask"]==3);
+        if(scenario=="cooling-inputs") {
+            for(const char *value:{"0","4","257","4294967297","-1","1.5","true","null","\"1\""}) {
+                const std::string body=std::string("{\"action\":\"configure-cooling\",\"requiredFanMask\":")+value+",\"coolingWarningAccepted\":true,\"coolingWarningVersion\":1}";
+                const unsigned before=hostNvsCalls;assert(response(body.c_str())["error"]=="invalid-cooling-config"&&hostNvsCalls==before);
+            }
+            for(const char *bad:{"{\"action\":\"configure-cooling\",\"requiredFanMask\":1}",
+              "{\"action\":\"configure-cooling\",\"requiredFanMask\":1,\"coolingWarningAccepted\":false,\"coolingWarningVersion\":1}",
+              "{\"action\":\"configure-cooling\",\"requiredFanMask\":1,\"coolingWarningAccepted\":true,\"coolingWarningVersion\":2}",
+              "{\"action\":\"configure-cooling\",\"requiredFanMask\":1,\"coolingWarningAccepted\":true,\"coolingWarningVersion\":1,\"unknown\":true}"}) {
+                const unsigned before=hostNvsCalls;assert(response(bad)["ok"]==false&&hostNvsCalls==before);
+            }
+            assert(writes.empty()&&!backupAvailable&&requiredFanMask==3);return 0;
+        }
+        if(scenario=="cooling-default") {
+            failedFanMask=2;step();expectReadiness("fan-1",true,"RPM");expectReadiness("fan-2",false,"could not be read");
+            assert(!observed.fanOk&&!observed.valid);
+            const unsigned before=hostNvsCalls;assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="telemetry-unavailable"&&hostNvsCalls==before);
+            assert(requiredFanMask==3&&!backupAvailable);return 0;
+        }
+        if(scenario=="cooling-storage") {
+            const auto opts=initial["config"].as<JsonObjectConst>();(void)opts;
+            storageFail=true;assert(configureCooling(1)["error"]=="storage-unavailable"&&coolingError);storageFail=false;
+            assert(!snapshot()["cooling"]["valid"].as<bool>());
+            assert(configureCooling(3)["ok"]==true&&!coolingError);
+            verifyFail=true;assert(configureCooling(1)["error"]=="storage-unavailable"&&coolingError);verifyFail=false;
+            assert(configureCooling(3)["ok"]==true);assert(!backupAvailable&&writes.empty());return 0;
+        }
+        if(scenario=="cooling-corrupt") {
+            nvstore["fwtune/cooling"]="{bad";boot();assert(coolingError&&!snapshot()["cooling"]["valid"].as<bool>());
+            const unsigned before=hostNvsCalls;assert(response("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}")["error"]=="cooling-config-unavailable"&&hostNvsCalls==before);
+            assert(configureCooling(3)["ok"]==true&&!coolingError);
+            JsonDocument bad;assert(!deserializeJson(bad,nvstore["fwtune/cooling"]));bad["deviceId"]="wrong-device";std::string text;serializeJson(bad,text);nvstore["fwtune/cooling"]=text;boot();assert(coolingError);
+            assert(configureCooling(3)["ok"]==true);return 0;
+        }
+        if(scenario=="cooling-active") {
+            start();const unsigned before=hostNvsCalls;assert(configureCooling(1)["error"]=="cooling-change-requires-idle"&&hostNvsCalls==before);
+            fwt_cancel(&controller,"fixture");recoveryRequested=true;assert(configureCooling(1)["error"]=="cooling-change-requires-idle");recoveryRequested=false;
+            ++firmwareUpdates;assert(configureCooling(1)["error"]=="cooling-change-requires-idle");--firmwareUpdates;
+            return 0;
+        }
+        assert(scenario=="cooling-single-qa"||scenario=="cooling-single-oct");
+        failedFanMask=2;step();std::string originalOptions;serializeJson(initial["config"],originalOptions);
+        assert(configureCooling(1)["ok"]==true&&requiredFanMask==1&&writes.empty()&&!backupAvailable);
+        step();expectReadiness("fan-1",true,"RPM");expectReadiness("fan-2",true,"Not selected");assert(observed.valid&&observed.fanOk);
+        std::string unchanged;serializeJson(snapshot()["config"],unchanged);assert(unchanged==originalOptions);
+        const unsigned sensorReads=hostSensorReads,nvsReads=hostNvsCalls;const unsigned batches=fanBatchReads;auto report=snapshot();assert(report["cooling"]["requiredMask"]==1&&hostSensorReads==sensorReads&&hostNvsCalls==nvsReads&&fanBatchReads==batches);
+        start();assert(controller.active&&controller.owns);const auto originalBackup=nvstore["fwtune/baseline"];
+        assert(configureCooling(3)["error"]=="cooling-change-requires-idle");
+        failedFanMask=1;acquire(&hostBoard);assert(!observed.valid&&!observed.fanOk&&!requiredFansHealthy(&hostBoard));expectReadiness("fan-1",false,"could not be read");
+        failedFanMask=2;step();assert(response("{\"action\":\"stop\"}")["ok"]==true);
+        for(int i=0;i<12;++i)step();assert(!restoring&&backupRestored&&!controller.owns&&requiredFanMask==1&&nvstore["fwtune/baseline"]==originalBackup);
+        boot();assert(requiredFanMask==1&&!coolingError&&!controller.active&&observed.valid&&nvstore["fwtune/baseline"]==originalBackup);
+        assert(configureCooling(2)["ok"]==true);failedFanMask=1;step();assert(observed.valid);expectReadiness("fan-1",true,"Not selected");expectReadiness("fan-2",true,"RPM");
+        sensorFail=true;step();assert(!observed.valid);sensorFail=false;step();assert(observed.valid);
+        assert(nvstore["fwtune/baseline"]==originalBackup);return 0;
+    }
     if(scenario=="readiness-qa"||scenario=="readiness-oct") {
         // Keep the real ArduinoJson report alive after report() releases its
         // mutex, then overwrite every cached readiness buffer before encoding.

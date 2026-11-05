@@ -697,4 +697,106 @@ describe('Dynamic tuning controls', () => {
     waiting.next(report);waiting.complete();expect(component.canStart).toBeTrue();
   });
 
+  function coolingFixture(valid=true): void {
+    report.cooling={supportedMask:3,requiredMask:3,warningVersion:1,valid};component.load();
+  }
+  function acceptCoolingSave(): void {
+    service.command.and.callFake((body:any)=>{
+      if(body.action==='configure-cooling')report.cooling={...report.cooling!,requiredMask:body.requiredFanMask,valid:true};
+      return of({ok:true,restartRequired:false});
+    });
+  }
+  it('preserves legacy behavior and does not offer unsupported cooling writes', () => {
+    expect(component.hasCoolingMetadata).toBeFalse();component.waiverAccepted=true;
+    expect(component.coolingReady).toBeTrue();expect(component.canStart).toBeTrue();
+    component.saveCooling();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('shows both fitted fans by default and requires a separate acknowledgement to change them', () => {
+    coolingFixture();expect(component.coolingDraftMask).toBe(3);expect(component.coolingSelectionText(3)).toBe('Both fans');
+    expect(component.coolingChoices.map(c=>c.mask)).toEqual([3,1,2]);
+    component.waiverAccepted=true;component.selectCooling(1);
+    expect(component.waiverAccepted).toBeFalse();expect(component.canSaveCooling).toBeFalse();
+    expect(component.canStart).toBeFalse();expect(component.startExplanation).toContain('cooling setup');
+    component.saveCooling();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('saves single-fan monitoring independently before the run waiver and does not start tuning', fakeAsync(() => {
+    coolingFixture();acceptCoolingSave();component.selectCooling(1);component.coolingWarningAccepted=true;
+    expect(component.canSaveCooling).toBeTrue();expect(component.waiverAccepted).toBeFalse();component.saveCooling();tick(0);
+    expect(service.command.calls.count()).toBe(1);
+    expect(service.command.calls.mostRecent().args).toEqual([{action:'configure-cooling',requiredFanMask:1,coolingWarningAccepted:true,coolingWarningVersion:1},'123456']);
+    expect(component.report!.cooling!.requiredMask).toBe(1);expect(component.coolingMessage).toContain('confirmed');
+    expect(component.coolingWarningAccepted).toBeFalse();expect(component.waiverAccepted).toBeFalse();
+    expect(report.status.active).toBeFalse();expect(report.status.runId).toBe(0);expect(component.canStart).toBeFalse();
+    component.waiverAccepted=true;expect(component.canStart).toBeTrue();
+  }));
+  it('preserves unsaved operating options and the original backup when saving cooling', fakeAsync(() => {
+    coolingFixture();acceptCoolingSave();const before=structuredClone(report.config),backup=structuredClone(report.backup);
+    component.edit!.maxVoltageMv=1140;component.selectCooling(2);component.coolingWarningAccepted=true;component.saveCooling();tick(0);
+    expect(component.edit!.maxVoltageMv).toBe(1140);expect(component.hasUnsavedChanges).toBeTrue();
+    expect(report.config).toEqual(before);expect(report.backup).toEqual(backup);expect(service.command.calls.count()).toBe(1);
+  }));
+  it('allows a corrupt stored cooling selection to be explicitly repaired without changing operating limits', fakeAsync(() => {
+    coolingFixture(false);acceptCoolingSave();expect(component.coolingReady).toBeFalse();
+    component.waiverAccepted=true;expect(component.canStart).toBeFalse();expect(component.startExplanation).toContain('needs repair');
+    component.coolingWarningAccepted=true;expect(component.canSaveCooling).toBeTrue();component.saveCooling();tick(0);
+    expect(component.report!.cooling!.valid).toBeTrue();expect(report.cooling!.requiredMask).toBe(3);expect(report.config.maxFrequencyMHz).toBe(525);
+  }));
+  it('never changes fitted-fan requirements while a tune or recovery owns the miner', () => {
+    coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;
+    for(const state of ['baseline','measuring','holding','restoring']){
+      report.status.state=state;report.status.ownsSettings=true;component.load();
+      expect(component.coolingLocked).toBeTrue();expect(component.canSaveCooling).toBeFalse();
+      component.selectCooling(2);expect(component.coolingDraftMask).toBe(1);component.saveCooling();
+    }
+    expect(service.command).not.toHaveBeenCalled();
+  });
+  it('keeps failed cooling readback blocked until a fresh matching report is received', fakeAsync(() => {
+    coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;component.saveCooling();tick(30001);
+    expect(component.coolingError).toContain('could not be confirmed');expect(component.coolingReady).toBeFalse();
+    component.waiverAccepted=true;expect(component.canStart).toBeFalse();expect(service.command.calls.count()).toBe(1);
+    report.cooling!.requiredMask=1;now+=100;component.load();
+    expect(component.coolingMessage).toContain('confirmed');expect(component.coolingReady).toBeTrue();
+    expect(component.waiverAccepted).toBeFalse();expect(service.command.calls.count()).toBe(1);
+  }));
+  it('refuses stale or malformed cooling metadata without silently treating it as the legacy interface', () => {
+    coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;now+=13000;
+    expect(component.canSaveCooling).toBeFalse();component.saveCooling();expect(service.command).not.toHaveBeenCalled();
+    now=1000;
+    for(const value of [{supportedMask:3,requiredMask:4,warningVersion:1,valid:true},{supportedMask:3,requiredMask:4294967297,warningVersion:1,valid:true},{supportedMask:3,requiredMask:1,warningVersion:2,valid:true},undefined]){
+      report.cooling=value as any;component.load();component.waiverAccepted=true;
+      expect(component.coolingReady).toBeFalse();expect(component.canStart).toBeFalse();
+    }
+  });
+  it('resets cooling acknowledgement on edits and run acknowledgement on external cooling changes', () => {
+    coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;component.selectCooling(2);
+    expect(component.coolingWarningAccepted).toBeFalse();component.useSavedCooling();expect(component.coolingDraftMask).toBe(3);
+    component.waiverAccepted=true;component.coolingMessage='Previous saved choice';component.coolingError='Previous problem';report.cooling!.requiredMask=1;component.load();
+    expect(component.coolingDraftMask).toBe(1);expect(component.waiverAccepted).toBeFalse();
+    expect(component.coolingMessage).toBe('');expect(component.coolingError).toBe('');
+  });
+
+  it('can discard a cancelled cooling repair request without enabling an invalid setup', () => {
+    coolingFixture(false);service.authorize.and.returnValue(EMPTY);
+    component.coolingWarningAccepted=true;component.saveCooling();
+    expect(service.command).not.toHaveBeenCalled();expect(component.coolingSaveUnconfirmed).toBeFalse();
+    component.useSavedCooling();expect(component.coolingSaveUnconfirmed).toBeFalse();
+    expect(component.coolingReady).toBeFalse();expect(component.canStart).toBeFalse();
+  });
+  it('confirms a cooling declaration without implying an existing hardware fault has cleared', fakeAsync(() => {
+    coolingFixture(false);report.status.state='faulted';report.status.telemetry.fault=true;component.load();
+    acceptCoolingSave();component.coolingWarningAccepted=true;component.saveCooling();tick(0);
+    expect(component.coolingMessage).toContain('confirmed');expect(component.coolingError).toBe('');
+    expect(component.canStart).toBeFalse();expect(component.startExplanation).toContain('fault');
+  }));
+  it('requires a fresh post-failure read before discarding an uncertain cooling write', () => {
+    coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;
+    service.command.and.returnValue(throwError(()=>new Error('Lost acknowledgement')));
+    component.saveCooling();expect(component.coolingSaveUnconfirmed).toBeTrue();
+    expect(component.canUseSavedCooling).toBeFalse();component.useSavedCooling();
+    expect(component.coolingSaveUnconfirmed).toBeTrue();expect(component.coolingDraftMask).toBe(1);
+    now+=100;component.load();expect(component.canUseSavedCooling).toBeTrue();
+    component.useSavedCooling();expect(component.coolingSaveUnconfirmed).toBeFalse();
+    expect(component.coolingDraftMask).toBe(3);expect(service.command.calls.count()).toBe(1);
+  });
+
 });
