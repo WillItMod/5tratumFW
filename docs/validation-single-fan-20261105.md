@@ -28,4 +28,10 @@ Six read-only browser cases against the actual QAxe page also passed at desktop 
 
 This does **not** qualify a physically single-fan assembly, Clem's Rev 5.1 unit, a new board revision, OctAxe hardware installation, high-clock tuning, cold power-cycles, sustained thermal stability or larger displays. Single-fan faults are covered by production-code simulations; the owner of the actual single-fan miner must confirm its fitted channel and adequate ASIC/VRM cooling. The owner confirmed that the physical screen and both fans were normal after this installation.
 
-GitHub validation and public asset verification are recorded after publication below. Source, package and bench evidence above is independent of those later checks.
+GitHub validation also passed for the exact build source:
+
+- [Gamma BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42104514592): success.
+- [QAxe paired BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42104514553): success.
+- [OctAxe paired BETA candidate validation](https://github.com/WillItMod/5tratumFW/actions/runs/42104514613): success.
+
+Public asset and current OS catalogue verification will be recorded after the releases are opened.
