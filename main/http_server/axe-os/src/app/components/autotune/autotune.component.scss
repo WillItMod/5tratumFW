@@ -1,4 +1,4 @@
-:host{--at-t:var(--fw-text,#dce8ed);--at-m:var(--fw-muted,#93a4b8);--at-a:var(--primary-color,#72d4b7);--at-b:var(--fw-border,#243044);--at-s:var(--fw-surface,#101824);--at-sa:var(--fw-surface-alt,#15212d);--at-w:var(--fw-warn,#e5b675);--at-d:var(--fw-danger,#ec7b7b);display:block;color:var(--at-t)}
+:host{--at-t:var(--text-color,#dce8ed);--at-m:var(--text-color-secondary,#93a4b8);--at-a:var(--primary-color,#72d4b7);--at-b:var(--surface-border,#243044);--at-s:var(--surface-card,#101824);--at-sa:var(--surface-section,#15212d);--at-w:var(--fw-warn,#e5b675);--at-d:var(--fw-danger,#ec7b7b);display:block;color:var(--at-t)}
 .tuning-page{max-width:1200px;margin:auto;min-width:0}
 .tuning-heading,.panel-heading,.save-bar,.run-actions{display:flex;justify-content:space-between;align-items:center;gap:1rem}
 .tuning-heading{align-items:flex-start;margin-bottom:1rem}
@@ -48,3 +48,5 @@ summary{font-size:.9rem;cursor:pointer}
 summary span{display:block}
 .run-actions .button{width:100%}
 }
+
+:host-context(.layout-theme-light){--at-w:#84500a;--at-d:#a33531}

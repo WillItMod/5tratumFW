@@ -18,14 +18,25 @@ function luminance(color: string): number {
   return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
 }
 
-/** Light mode needs a darker text accent; preserve the user's saved colour. */
+function contrast(first: string, second: string): number {
+  const light = Math.max(luminance(first), luminance(second));
+  const dark = Math.min(luminance(first), luminance(second));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+/** Use the actual card surfaces, preserving the user's saved base colour. */
 export function themeAccentColors(primaryColor: string, scheme: string): { [key: string]: string } {
   let accent = primaryColor;
-  if (scheme === 'light') {
-    while (1.05 / (luminance(accent) + 0.05) < 4.5) accent = hex(rgb(accent).map(value => value * 0.95));
+  const light = scheme === 'light';
+  const surface = light ? '#e4eaf2' : '#101925';
+  for (let attempt = 0; attempt < 256 && contrast(accent, surface) < 4.5; attempt++) {
+    accent = hex(rgb(accent).map(value => light ? Math.max(0, Math.min(value - 1, Math.round(value * 0.95)))
+      : Math.min(255, Math.max(value + 1, Math.round(value + (255 - value) * 0.05)))));
   }
-  const hover = hex(rgb(accent).map(value => value * 0.85));
-  const text = luminance(accent) > 0.179 ? '#07111b' : '#ffffff';
+  const text = contrast(accent, '#07111b') >= 4.5 ? '#07111b'
+    : contrast(accent, '#ffffff') >= 4.5 ? '#ffffff' : '#000000';
+  // Keep the same readable foreground when the button is hovered.
+  const hover = hex(rgb(accent).map(value => text === '#ffffff' ? value * 0.85 : value + (255 - value) * 0.12));
   const channels = rgb(accent).join(',');
   return {
     '--primary-color': accent, '--primary-color-text': text,

@@ -30,6 +30,7 @@ import { SnowflakesComponent } from 'src/app/components/snowflakes/snowflakes.co
 
 import { SystemApiService } from 'src/app/services/system.service';
 import { ThemeService } from 'src/app/services/theme.service';
+import { themeAccentColors } from 'src/app/services/theme-colors';
 import { QuicklinkService } from 'src/app/services/quicklink.service';
 import { LoadingService } from 'src/app/services/loading.service';
 import { ShareRejectionExplanationService } from 'src/app/services/share-rejection-explanation.service';
@@ -100,7 +101,7 @@ describe('HomeComponent', () => {
     expect(component.chartOptions.scales.y.ticks.color).toBe('#f7931a');
     TestBed.inject(ThemeService).saveThemeSettings({colorScheme:'dark',primaryColor:'#f80421'}).subscribe();
     fixture.detectChanges();
-    expect(component.chartData.datasets[0].borderColor).toBe('#f80421');
+    expect(component.chartData.datasets[0].borderColor).toBe(themeAccentColors('#f80421','dark')['--primary-color']);
   });
 
   it('should create', () => {

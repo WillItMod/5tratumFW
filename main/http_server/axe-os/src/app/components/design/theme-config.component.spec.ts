@@ -5,6 +5,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ButtonModule } from 'primeng/button';
 import { ThemeConfigComponent } from './theme-config.component';
 import { ThemeService } from '../../services/theme.service';
+import { themeAccentColors } from '../../services/theme-colors';
 import { LayoutService } from '../../layout/service/app.layout.service';
 import { environment } from '../../../environments/environment';
 
@@ -49,7 +50,7 @@ describe('Appearance saving', () => {
   it('loads the saved primaryColor and disables Apply until there is a change', () => {
     expect(fixture.componentInstance.currentColor).toBe('#f80421');
     expect(applyButton().disabled).toBeTrue();
-    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe('#f80421');
+    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe(themeAccentColors('#f80421', 'dark')['--primary-color']);
     http.expectNone(request => request.method === 'POST');
   });
 
@@ -57,7 +58,7 @@ describe('Appearance saving', () => {
     choose('Orange'); expect(applyButton().disabled).toBeFalse();
     expect(fixture.nativeElement.textContent).toContain('Changes are ready to apply');
     http.expectNone(request => request.method === 'POST');
-    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe('#f80421');
+    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe(themeAccentColors('#f80421', 'dark')['--primary-color']);
     applyButton().click(); fixture.detectChanges();
     expect(applyButton().disabled).toBeTrue();
     saveResponse({colorScheme: 'dark', primaryColor: '#f7931a'});
@@ -85,7 +86,7 @@ describe('Appearance saving', () => {
     http.expectOne('/api/theme').flush('failed', {status: 500, statusText: 'Failed'}); fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('Could not confirm');
     expect(fixture.componentInstance.currentColor).toBe('#f7931a');
-    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe('#f80421');
+    expect(document.documentElement.style.getPropertyValue('--primary-color')).toBe(themeAccentColors('#f80421', 'dark')['--primary-color']);
     expect(applyButton().disabled).toBeFalse();
     applyButton().click(); saveResponse({colorScheme: 'dark', primaryColor: '#f7931a'});
   });
@@ -107,6 +108,22 @@ describe('Appearance saving', () => {
     http.expectOne('/api/theme').flush({colorScheme: 'dark', primaryColor: '#2196f3'}); fixture.detectChanges();
     expect(fixture.componentInstance.currentColor).toBe('#2196f3');
     http.expectNone(request => request.method === 'POST');
+  });
+
+  it('allows explicit repair of incomplete saved preferences without claiming defaults are saved', () => {
+    for (const saved of [{}, null, {colorScheme:'light',primaryColor:''}, {colorScheme:'invalid',primaryColor:'#2196f3'}]) {
+      service.reload(); http.expectOne('/api/theme').flush(saved); fixture.detectChanges();
+      expect(fixture.componentInstance.needsRepair).toBeTrue();
+      expect(fixture.nativeElement.textContent).toContain('Stored appearance was incomplete');
+      expect(fixture.nativeElement.textContent).not.toContain('This appearance is saved on the miner');
+      expect(fixture.nativeElement.textContent).not.toContain('saved and confirmed');
+      expect(applyButton().disabled).toBeFalse();
+      http.expectNone(request => request.method === 'POST');
+      const expected = {colorScheme:fixture.componentInstance.selectedScheme,primaryColor:fixture.componentInstance.currentColor};
+      applyButton().click(); saveResponse(expected);
+      expect(fixture.componentInstance.needsRepair).toBeFalse();
+      expect(applyButton().disabled).toBeTrue();
+    }
   });
 
   it('preserves the colour when a caller saves only a scheme', () => {

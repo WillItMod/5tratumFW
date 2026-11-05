@@ -14,6 +14,7 @@ import { THEME_COLORS } from '../../services/theme-colors';
       <div *ngIf="loadError" role="alert" class="appearance-error">
         <p>{{loadError}}</p><button type="button" (click)="reload()">Retry loading</button>
       </div>
+      <p *ngIf="needsRepair && !loading && !loadError" role="status">Stored appearance was incomplete. Choose your colours and apply to save a valid appearance.</p>
       <fieldset [disabled]="saving || loading || !!loadError">
         <legend>Colour scheme</legend>
         <div class="appearance-schemes">
@@ -51,6 +52,7 @@ export class ThemeConfigComponent implements OnInit, OnDestroy {
   saving = false;
   loading = false;
   loadError = '';
+  needsRepair = false;
   saveError = '';
   message = '';
   private savedScheme = 'dark';
@@ -61,14 +63,16 @@ export class ThemeConfigComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.themeService.getThemeSettings().pipe(takeUntil(this.destroy$)).subscribe(settings => {
+      this.message = ''; this.saveError = '';
       this.selectedScheme = this.savedScheme = settings.colorScheme;
       this.currentColor = this.savedColor = settings.primaryColor || '#20cfff';
     });
     this.themeService.loadState$.pipe(takeUntil(this.destroy$)).subscribe(state => {
-      this.loading = state.loading; this.loadError = state.error;
+      this.loading = state.loading; this.loadError = state.error; this.needsRepair = state.needsRepair;
+      if (state.loading) { this.message = ''; this.saveError = ''; }
     });
   }
-  get hasChanges(): boolean { return this.selectedScheme !== this.savedScheme || this.currentColor !== this.savedColor; }
+  get hasChanges(): boolean { return this.needsRepair || this.selectedScheme !== this.savedScheme || this.currentColor !== this.savedColor; }
   selectionChanged(): void { this.message = ''; this.saveError = ''; }
   selectColor(color: string): void { this.currentColor = color; this.selectionChanged(); }
   reload(): void { this.themeService.reload(); }

@@ -126,6 +126,8 @@ button:focus-visible, a:focus-visible {
     .p-dropdown-panel .p-dropdown-item { color: var(--text-color); }
     .p-button { border-radius: 6px; }
     .p-button:not(.p-button-secondary):not(.p-button-text):not(.p-button-outlined) { color: var(--primary-color-text); }
+    .p-checkbox .p-checkbox-box.p-highlight .p-checkbox-icon { color: var(--primary-color-text); }
+    .p-radiobutton .p-radiobutton-box.p-highlight .p-radiobutton-icon { background: var(--primary-color-text); }
     .p-message, .p-inline-message { border-radius: 8px; }
     .orbit-footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 22px; font-size: 11px; color: var(--text-color-secondary); a { color: var(--text-color-secondary); } }
     .p-dialog { border-radius: 12px; }
