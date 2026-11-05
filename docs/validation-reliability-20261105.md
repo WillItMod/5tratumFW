@@ -37,3 +37,9 @@ Gamma temporarily used full cooling for its test while retaining the saved60 C A
 ## Limits
 
 These short checks prove the described installation, Start, measurement/rejection and restoration paths. They do not qualify an unrestricted optimisation search, a high-clock point, every ambient condition, every PCB revision, a larger screen or a W5500 adapter. Error thresholds are project policy, not a damaged-silicon diagnosis. Gamma602, other QAxe/OctAxe revisions and physical LAN remain outside this owned-device evidence.
+
+## Final GitHub and public checks
+
+Validation commit `24ee95ea3d1a7c1ce8edb49fcf3e59e879f24ca6` changes only the host-test includes and documentation relative to the compiled release source. All three GitHub validations passed: [Gamma](https://github.com/WillItMod/5tratumFW/actions/runs/42021120631), [QAxe](https://github.com/WillItMod/5tratumFW/actions/runs/42021120624) and [OctAxe](https://github.com/WillItMod/5tratumFW/actions/runs/42021120587). The corrected actual runtime harness also passed all scenarios locally on macOS and Linux.
+
+All three releases are public prereleases. All 23 public assets were downloaded without authentication and matched their qualified local hashes; all three tags resolve to the exact compiled commit. The real public GitHub catalogue and assets passed 16 model/version checks across retained 5tratumOS0.8.50/0.8.52 MAIN/DEV modules and four native-control qualifications on0.8.52. No OS code update or device reflash is part of that public-discovery check.
