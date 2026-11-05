@@ -750,6 +750,12 @@ describe('Dynamic tuning controls', () => {
     }
     expect(service.command).not.toHaveBeenCalled();
   });
+  it('keeps each rendered fitted-fan choice stable across change detection', () => {
+    coolingFixture();const first=component.coolingChoices;
+    for(let cycle=0;cycle<10;++cycle) component.coolingChoices.forEach((choice,index)=>expect(choice).toBe(first[index]));
+    report.cooling!.supportedMask=1;report.cooling!.requiredMask=1;component.load();
+    expect(component.coolingChoices.length).toBe(1);expect(component.coolingChoices[0]).toBe(first[1]);
+  });
   it('keeps failed cooling readback blocked until a fresh matching report is received', fakeAsync(() => {
     coolingFixture();component.selectCooling(1);component.coolingWarningAccepted=true;component.saveCooling();tick(30001);
     expect(component.coolingError).toContain('could not be confirmed');expect(component.coolingReady).toBeFalse();

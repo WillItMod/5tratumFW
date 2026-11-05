@@ -25,6 +25,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   coolingWarningAccepted = false;
   coolingMessage = '';
   coolingError = '';
+  private readonly fittedFanChoices = [{mask:3,label:'Both fans'}, {mask:1,label:'Fan 1 only'}, {mask:2,label:'Fan 2 only'}];
   private pendingCoolingMask: number | null = null;
   private coolingSubmittedAt = Infinity;
   private coolingWasAdvertised = false;
@@ -352,8 +353,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get coolingChoices(): {mask:number;label:string}[] {
     const supported=this.coolingAvailable?this.report!.cooling!.supportedMask:0;
-    return [{mask:3,label:'Both fans'}, {mask:1,label:'Fan 1 only'}, {mask:2,label:'Fan 2 only'}]
-      .filter(choice=>(choice.mask & ~supported)===0);
+    return this.fittedFanChoices.filter(choice=>(choice.mask & ~supported)===0);
   }
   coolingSelectionText(mask: number | null): string { return this.coolingChoices.find(choice=>choice.mask===mask)?.label || 'Unconfirmed cooling setup'; }
   get hasUnsavedCoolingChanges(): boolean {
