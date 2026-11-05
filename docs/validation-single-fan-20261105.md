@@ -34,4 +34,6 @@ GitHub validation also passed for the exact build source:
 - [QAxe paired BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42104514553): success.
 - [OctAxe paired BETA candidate validation](https://github.com/WillItMod/5tratumFW/actions/runs/42104514613): success.
 
-Public asset and current OS catalogue verification will be recorded after the releases are opened.
+Public releases [QAxe Beta14](https://github.com/WillItMod/5tratumFW/releases/tag/qaxe-v0.1.0-beta.14) and [OctAxe Gamma Beta12](https://github.com/WillItMod/5tratumFW/releases/tag/octaxe-v0.1.0-beta.12) were opened only after all three checks passed. All 14 release assets were downloaded anonymously and matched the tested package sizes and SHA-256 hashes. Lightweight release tags point to the exact compiled source.
+
+The actual anonymous GitHub release catalogue then passed through the current 5tratumOS updater code: QAxe Beta14 and OctAxe Gamma Beta12 were offered as the newest compatible BETA releases, excluded from STABLE, and accepted with their source-bound native-control sidecars. Missing sidecars were rejected. This checked public catalogue/asset delivery with fictional device records; it did not contact an installed OS or flash another miner.
