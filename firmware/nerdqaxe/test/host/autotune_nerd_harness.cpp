@@ -134,7 +134,8 @@ int main(int argc,char **argv) {
         assert(configureCooling(3)["error"]=="cooling-change-requires-idle");
         failedFanMask=1;acquire(&hostBoard);assert(!observed.valid&&!observed.fanOk&&!requiredFansHealthy(&hostBoard));expectReadiness("fan-1",false,"could not be read");
         failedFanMask=2;step();assert(response("{\"action\":\"stop\"}")["ok"]==true);
-        for(int i=0;i<12;++i)step();assert(!restoring&&backupRestored&&!controller.owns&&requiredFanMask==1&&nvstore["fwtune/baseline"]==originalBackup);
+        for(int i=0;i<12;++i) { step(); }
+        assert(!restoring&&backupRestored&&!controller.owns&&requiredFanMask==1&&nvstore["fwtune/baseline"]==originalBackup);
         boot();assert(requiredFanMask==1&&!coolingError&&!controller.active&&observed.valid&&nvstore["fwtune/baseline"]==originalBackup);
         assert(configureCooling(2)["ok"]==true);failedFanMask=1;step();assert(observed.valid);expectReadiness("fan-1",true,"Not selected");expectReadiness("fan-2",true,"RPM");
         sensorFail=true;step();assert(!observed.valid);sensorFail=false;step();assert(observed.valid);
