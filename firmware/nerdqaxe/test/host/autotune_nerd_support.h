@@ -14,6 +14,8 @@
 #include <atomic>
 #include <cassert>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>

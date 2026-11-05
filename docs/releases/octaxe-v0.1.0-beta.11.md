@@ -23,3 +23,7 @@ In **5tratumOS**, open the miner's firmware controls, select **BETA**, choose **
 ## Qualification
 
 Software tests cover readiness failures, stale and contradictory diagnostics, save/readback failures, the reported error-correction sequence and automatic guarded recovery. Source/build/package and physical-check evidence are recorded separately in the [dated validation](../validation-reliability-20261105.md). Tests using simulated hardware are not physical verification.
+
+## Rebuilding the source archive on Linux
+
+The published firmware and corresponding source remain bound to the manifest's build commit. A portability fix to the host-test harness adds explicit standard-library headers; it changes no firmware code. The release includes `nerd-host-test-headers.patch` (SHA-256 `9e948414ff00d4a4a818a7f0f1e72e6c8ee125bbe036ae4730543264aea25587`). When rebuilding the extracted Nerd source archive on Linux, apply it from the archive root with `patch -p3 < nerd-host-test-headers.patch` before running the full build helper. Current repository source already includes the fix.

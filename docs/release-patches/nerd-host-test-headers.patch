@@ -1,0 +1,13 @@
+diff --git a/firmware/nerdqaxe/test/host/autotune_nerd_support.h b/firmware/nerdqaxe/test/host/autotune_nerd_support.h
+index 75833046..7ee8187e 100644
+--- a/firmware/nerdqaxe/test/host/autotune_nerd_support.h
++++ b/firmware/nerdqaxe/test/host/autotune_nerd_support.h
+@@ -14,6 +14,8 @@
+ #include <atomic>
+ #include <cassert>
+ #include <cmath>
++#include <cstdarg>
++#include <cstdio>
+ #include <cstdint>
+ #include <cstring>
+ #include <initializer_list>
