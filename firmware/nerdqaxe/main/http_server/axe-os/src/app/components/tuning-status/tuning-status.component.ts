@@ -2,10 +2,11 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { EMPTY, Subject, catchError, exhaustMap, takeUntil, timer } from 'rxjs';
+import { AutotuneRestoration } from '../../models/IAutotune';
 import { AutotuneActivityService } from '../../services/autotune-activity.service';
 
 type Activity = {schemaVersion:1;available:true;supported:boolean;active:boolean;ownsSettings:boolean;fault:boolean;
-  state:string;reason:string;priority:'efficiency'|'balanced'|'performance';continuous:boolean;runId:number;controllerAgeSeconds:number|null};
+  state:string;reason:string;priority:'efficiency'|'balanced'|'performance';continuous:boolean;runId:number;controllerAgeSeconds:number|null;restoration?:AutotuneRestoration;recovery?:{requested:boolean;phase:string;reason:string}};
 type Badge = {label:string;phase:string;tone:string;description:string;goal:string};
 const STATES=['disabled','baseline','settling','measuring','holding','observing','suspended','faulted','applying','restoring'];
 
@@ -41,12 +42,20 @@ export class TuningStatusComponent implements OnInit,OnDestroy {
       &&STATES.includes(value.state)&&typeof value.reason==='string'
       &&['efficiency','balanced','performance'].includes(value.priority)
       &&Number.isInteger(value.runId)&&value.runId>=0
+      &&(value.restoration===undefined||this.restoration(value.restoration)!==undefined)
       &&(value.controllerAgeSeconds===null||typeof value.controllerAgeSeconds==='number'&&Number.isFinite(value.controllerAgeSeconds)&&value.controllerAgeSeconds>=0);
+  }
+  private restoration(value:unknown):AutotuneRestoration|undefined {
+    const r=value as AutotuneRestoration;
+    return r&&typeof r==='object'&&!Array.isArray(r)&&['idle','waiting','saving','applying','verifying','complete','blocked'].includes(r.phase)
+      &&typeof r.reason==='string'&&r.reason.length<=512&&(r.qualityWarning===null||typeof r.qualityWarning==='string'&&r.qualityWarning.length<=512)
+      &&[r.elapsedSeconds,r.timeoutSeconds].every(n=>n===null||typeof n==='number'&&Number.isFinite(n)&&n>=0) ? {...r}:undefined;
   }
   private snapshot(value:Activity):Activity {
     return {schemaVersion:1,available:true,supported:value.supported,active:value.active,ownsSettings:value.ownsSettings,
       fault:value.fault,state:value.state,reason:value.reason.slice(0,256),priority:value.priority,continuous:value.continuous,
-      runId:value.runId,controllerAgeSeconds:value.controllerAgeSeconds};
+      runId:value.runId,controllerAgeSeconds:value.controllerAgeSeconds,
+      restoration:this.restoration(value.restoration),recovery:value.recovery};
   }
   private accept(value:unknown,at:number):void {
     this.hiddenLegacy=false;
@@ -76,6 +85,12 @@ export class TuningStatusComponent implements OnInit,OnDestroy {
     }
     const goal={efficiency:'Efficiency',balanced:'Balanced',performance:'Performance'}[current.priority];
     const result=(label:string,phase:string,tone:string):Badge=>({label,phase,tone,goal,description:`${label}. ${phase}. ${current.reason.replace(/[-_]/g,' ')}. Open Tuning for details.`});
+    const restoration=current.restoration,recovery=current.recovery;
+    if(restoration?.phase==='blocked'||recovery?.phase==='blocked'&&recovery.requested===false) {
+      const timedOut=restoration&&restoration.elapsedSeconds!==null&&restoration.timeoutSeconds!==null&&restoration.elapsedSeconds>=restoration.timeoutSeconds;
+      return {label:'Restoration blocked',phase:timedOut?'Time limit reached':'Check the reason',tone:'fault',goal,description:restoration?.reason||recovery?.reason||current.reason};
+    }
+    if(restoration?.phase==='complete')return {label:'Restoration completed',phase:restoration.qualityWarning?'Review the result':'Tuning off',tone:restoration.qualityWarning?'suspended':'off',goal,description:restoration.qualityWarning||restoration.reason};
     if(current.fault)return result('Tuning blocked','Protection reported','fault');
     if(!current.active&&!current.ownsSettings&&current.reason==='cannot-reduce-load-within-limits')return result('Tuning stopped','Mining paused — limits reached','suspended');
     if(!current.active&&!current.ownsSettings)return result('Tuning off','Control released','off');

@@ -1,7 +1,8 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, Optional } from '@angular/core';
 import { EMPTY, Subject, catchError, exhaustMap, filter, finalize, map, switchMap, take, takeUntil, tap, throwError, timeout, timer } from 'rxjs';
 import { AutotuneService } from '../../services/autotune.service';
-import { AutotuneConfig, AutotuneConditions, AutotuneRecovery, AutotuneEvent, AutotunePoint, AutotuneReadiness, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
+import { AutotuneActivityService } from '../../services/autotune-activity.service';
+import { AutotuneConfig, AutotuneRestoration, AutotuneConditions, AutotuneRecovery, AutotuneEvent, AutotunePoint, AutotuneReadiness, AutotuneReport, AutotuneSearch, AutotuneTelemetry } from '../../models/IAutotune';
 
 type ObservedMetric = 'ths' | 'joules' | 'asicTempC' | 'vrmTempC' | 'powerW' | 'boardErrors' | 'worstErrors';
 interface TabObservation { at: number; ths: number | null; joules: number | null; asicTempC: number | null; vrmTempC: number | null; powerW: number | null; boardErrors: number | null; worstErrors: number | null; }
@@ -31,6 +32,11 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   ];
   private readonly destroyed = new Subject<void>();
   private requestedAt = -Infinity;
+  private heartbeat: {runId:number;active:boolean;ownsSettings:boolean;controllerAgeSeconds:number|null}|null=null;
+  private heartbeatAt=-Infinity;
+  private heartbeatAdvertised=false;
+  private heartbeatLegacy=false;
+  private heartbeatAvailable=false;
   private readEpoch = 0;
   private baseline = '';
   private startUnconfirmed = false;
@@ -52,10 +58,18 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   visibleEventCount = 12;
 
 
-  constructor(private service: AutotuneService) {}
+  constructor(private service: AutotuneService, @Optional() private activityService?: AutotuneActivityService) {}
 
   ngOnInit(): void {
     this.load();
+    if(this.activityService) timer(0,5000).pipe(exhaustMap(()=>{
+      const at=performance.now();
+      return this.activityService!.get().pipe(tap(value=>this.acceptHeartbeat(value,at)),catchError(error=>{
+        this.heartbeatAvailable=false;
+        this.heartbeatLegacy=error?.status===404&&!this.heartbeatAdvertised;
+        return EMPTY;
+      }));
+    }),takeUntil(this.destroyed)).subscribe();
     timer(5000,5000).pipe(filter(() => !this.busy && !this.loading), exhaustMap(() => {
       const epoch = this.readEpoch;
       const requestedAt = performance.now();
@@ -177,6 +191,53 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     }
     return true;
   }
+  private acceptHeartbeat(value:any,at:number): void {
+    this.heartbeatAvailable=false;this.heartbeatLegacy=false;
+    if(!value||value.schemaVersion!==1||value.available!==true||!Number.isInteger(value.runId)||value.runId<0
+      ||typeof value.active!=='boolean'||typeof value.ownsSettings!=='boolean'
+      ||!(value.controllerAgeSeconds===null||this.finite(value.controllerAgeSeconds)&&value.controllerAgeSeconds>=0)) return;
+    this.heartbeatAdvertised=true;this.heartbeat={...value};
+    this.heartbeatAt=at;this.heartbeatAvailable=true;
+  }
+  get controllerFresh(): boolean {
+    if(!this.activityService||this.heartbeatLegacy) return true;
+    const value=this.heartbeat,age=(performance.now()-this.heartbeatAt)/1000;
+    return this.heartbeatAvailable&&!!value&&this.finite(value.controllerAgeSeconds)&&age>=0&&value.controllerAgeSeconds+age<=15
+      &&value.runId===this.report?.status.runId&&value.active===this.report.status.active&&value.ownsSettings===this.report.status.ownsSettings;
+  }
+  get controllerStatusText(): string { return 'The controller status is not current or does not match this report. Start is blocked. '+(this.busy?'A request is awaiting readback; Refresh is available when that check finishes.':'Refresh status or use Disable and restore backup.'); }
+  get restoration(): AutotuneRestoration|null {
+    const value=this.report?.status.restoration;
+    if(!value||typeof value!=='object'||Array.isArray(value)||!['idle','waiting','saving','applying','verifying','complete','blocked'].includes(value.phase)
+      ||typeof value.reason!=='string'||value.reason.length>512||!(value.qualityWarning===null||typeof value.qualityWarning==='string'&&value.qualityWarning.length<=512)
+      ||![value.elapsedSeconds,value.timeoutSeconds].every(n=>n===null||this.finite(n)&&n>=0)) return null;
+    return value;
+  }
+  get restorationMalformed(): boolean { return this.report?.status.restoration!==undefined&&!this.restoration; }
+  get restorationBlocked(): boolean { return this.restoration?.phase==='blocked'||this.recovery?.phase==='blocked'; }
+  get restorationVisible(): boolean { return this.restorationMalformed||!!this.restoration&&this.restoration.phase!=='idle'||this.restorationBlocked; }
+  get restorationHeading(): string {
+    if(!this.isFresh||!this.controllerFresh||this.restorationMalformed)return 'Restoration status unconfirmed';
+    if(this.restorationBlocked)return this.restorationTimedOut?'Restoration blocked · time limit reached':'Restoration blocked';
+    if(this.restoration?.phase==='complete')return this.report!.backup.restored ? 'Original settings restored' : 'Original settings saved; mining remains paused';
+    return 'Restoration in progress';
+  }
+  get restorationTimedOut(): boolean { const value=this.restoration;return !!value&&value.phase==='blocked'&&this.finite(value.elapsedSeconds)&&this.finite(value.timeoutSeconds)&&value.elapsedSeconds>=value.timeoutSeconds; }
+  get restorationStage(): string { return this.restoration?.phase||this.recovery?.phase||''; }
+  get restorationReason(): string { return this.restoration?.reason||this.recovery?.reason||this.report?.status.reason||''; }
+  get restorationTiming(): string {
+    const value=this.restoration||this.recovery;
+    return value&&this.finite(value.elapsedSeconds)&&this.finite(value.timeoutSeconds) ? `${Math.floor(value.elapsedSeconds)} s elapsed · ${Math.floor(value.timeoutSeconds)} s limit for this attempt` : '';
+  }
+  private stopConfirmed(report:AutotuneReport): boolean {
+    if(!this.controllerFresh||this.restorationMalformed||report.status.active||report.status.ownsSettings)return false;
+    if(this.restoration?.phase==='complete')return report.backup.restored===true||report.status.telemetry.miningActive===false&&!!this.restoration.qualityWarning;
+    return report.backup.restored===true&&this.backupMatches(report);
+  }
+  private resumeConfirmed(report:AutotuneReport): boolean {
+    if(!this.controllerFresh||this.restorationMalformed||report.status.active||report.status.ownsSettings||this.recovery?.phase!=='complete'||this.recovery.requested||!report.backup.restored||report.status.telemetry.miningActive!==true||report.status.telemetry.fault!==false)return false;
+    return this.restoration?.phase==='complete'||this.backupMatches(report)&&this.telemetryFresh&&report.status.telemetry.fanOk===true;
+  }
   get isFresh(): boolean {
     const age = performance.now() - this.requestedAt;
     return !!this.report && !this.readError && Number.isFinite(age) && age >= 0 && age <= 12000;
@@ -241,6 +302,8 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     if(this.loading)return 'Refreshing the miner status. Wait for the current readiness checks.';
     if(this.optionsLocked)return this.editExplanation;
     if(this.isEngaged)return 'This tune already owns the settings. Change its options and save; there is no second Start or waiver to accept. Disable and restore the backup when you want to end it.';
+    if(this.restorationMalformed)return 'The restoration report is not recognised. Refresh status before starting.';
+    if(this.isFresh&&!this.controllerFresh)return this.controllerStatusText;
     if(!this.isFresh)return 'A fresh miner report is required before starting. Refresh status and check the connection.';
     if(['applying','restoring'].includes(this.report!.status.state))return 'Wait for the current operating-point transition or restoration to finish.';
     if(this.report!.status.state==='faulted'||this.report!.status.telemetry.fault)return 'The miner reports a fault. Check its cause; the waiver cannot override protection.';
@@ -267,6 +330,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     const report=this.report, telemetry=report?.status.telemetry;
     const row=(key:string,label:string,ready:boolean,detail:string):AutotuneReadiness=>({key,label,ready,detail});
     const checks=[row('report','Connection and live status',this.isFresh,this.isFresh?'The miner is responding.':'Refresh status and check the connection.')];
+    if(this.activityService) checks.push(row('controller-heartbeat','Current controller status',this.controllerFresh,this.controllerFresh?'The controller report is current.':this.controllerStatusText));
     if (!report || !telemetry) return checks;
     checks.push(row('request','No request in progress',!this.busy && !this.loading,this.busy?'Wait for the miner to confirm the current request.':this.loading?'Refreshing the miner status.':'No request is pending.'),row('options','Saved tuning options',this.optionsUsable && !this.hasUnsavedChanges && !this.validationError,
       !this.optionsUsable?'Tuning options or hardware limits are unavailable.':this.hasUnsavedChanges?'Save the changed options before starting.':this.validationError||'The selected options are saved and valid.'),
@@ -294,7 +358,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   get blockedStartChecks(): AutotuneReadiness[] { return this.startChecks.filter(row=>!row.ready); }
   get visibleStartChecks(): AutotuneReadiness[] { return this.showAllReadiness?this.startChecks:this.blockedStartChecks; }
   async copyDiagnostics(): Promise<void> {
-    this.diagnosticsText=JSON.stringify({capturedAt:new Date().toISOString(),statusFresh:this.isFresh,
+    this.diagnosticsText=JSON.stringify({capturedAt:new Date().toISOString(),statusFresh:this.isFresh,controllerStatus:{fresh:this.controllerFresh,legacy:this.heartbeatLegacy,lastReport:this.heartbeat,requestAgeSeconds:this.finite(this.heartbeatAt)?(performance.now()-this.heartbeatAt)/1000:null},
       startChecks:this.startChecks,report:this.report},null,2);
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
@@ -307,7 +371,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   get canSave(): boolean { return !this.busy && !this.loading && this.isFresh && this.optionsUsable && this.hasUnsavedChanges && !this.validationError; }
   get canStart(): boolean {
     const report = this.report;
-    return !!report && !this.busy && !this.loading && this.isFresh && this.optionsUsable && !report.status.active
+    return !!report && !this.busy && !this.loading && this.isFresh && this.controllerFresh && !this.restorationMalformed && this.optionsUsable && !report.status.active
       && !['faulted','restoring','applying'].includes(report.status.state) && !report.status.ownsSettings && !this.hasUnsavedChanges
       && !this.validationError && !this.startPointError && this.telemetryFresh && !this.hardwareReadiness.some(row=>!row.ready) && report.status.telemetry.fanOk === true
       && report.status.telemetry.miningActive === true && report.status.telemetry.fault === false && this.waiverAccepted;
@@ -345,7 +409,9 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return `The miner could not reduce load further within the limits active at the stop. The current saved minimum is ${minimum}. This is a limit-constrained rejection, not a diagnosis of defective hardware. Review cooling and allow a lower minimum within the board limits, or explicitly restore the original settings and resume mining when safe.`;
   }
   get stateLabel(): string {
-    if (!this.isFresh) return this.report ? 'Status unavailable' : 'Connecting';
+    if (!this.isFresh || !this.controllerFresh) return this.report ? 'Status unavailable' : 'Connecting';
+    if(this.restorationBlocked)return this.restorationTimedOut?'Restoration blocked · time limit reached':'Restoration blocked';
+    if(this.restoration?.phase==='complete')return this.report!.backup.restored?'Original settings restored':'Settings saved · mining paused';
     if (this.limitReached && !this.isEngaged) return 'Stopped · limit reached';
     if (!this.isEngaged && this.report?.status.telemetry.fault !== true) return this.report?.status.state === 'disabled' ? 'Disabled' : 'Inactive';
     return ({disabled:'Disabled',qualifying:'Checking miner',baseline:'Measuring baseline',evaluating:'Evaluating',applying:'Adjusting',restoring:'Restoring backup',settling:'Settling',
@@ -369,8 +435,11 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return 'Explicit Start required';
   }
   get activityBanner(): {label: string; detail: string; kind: string} {
-    if (!this.isFresh) return {label:this.report ? 'TUNING STATUS UNAVAILABLE' : 'CHECKING TUNING STATUS',detail:'Waiting for a fresh miner report. Do not infer the current state from older readings.',kind:'unknown'};
+    if (!this.isFresh || !this.controllerFresh) return {label:this.report ? 'TUNING STATUS UNAVAILABLE' : 'CHECKING TUNING STATUS',detail:'Waiting for a fresh miner report. Do not infer the current state from older readings.',kind:'unknown'};
     const report=this.report!, status=report.status;
+    if(this.restorationMalformed)return {label:'RESTORATION STATUS UNCONFIRMED',detail:'The restoration report is not recognised. Refresh status; no completion is assumed.',kind:'unknown'};
+    if(this.restorationBlocked)return {label:this.restorationTimedOut?'RESTORATION BLOCKED · TIME LIMIT REACHED':'RESTORATION BLOCKED',detail:this.restorationReason,kind:'fault'};
+    if(this.restoration?.phase==='complete')return {label:this.report!.backup.restored?'ORIGINAL SETTINGS RESTORED':'SETTINGS SAVED · MINING PAUSED',detail:this.restoration.qualityWarning||this.restoration.reason,kind:this.restoration.qualityWarning?'suspended':'off'};
     if (status.telemetry.fault === true) return {label:'TUNING FAULT',detail:'Miner protection is authoritative. Check the reported reason before taking action.',kind:'fault'};
     if (this.recovery?.requested) return {label:'RECOVERING MINING · AUTO-TUNING OFF',detail:this.recoveryText,kind:'restoring'};
     if (this.limitReached && !this.isEngaged) return {label:'STOPPED — LIMIT REACHED',detail:this.limitStopText,kind:'suspended'};
@@ -386,8 +455,9 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get ownedSettingsText(): string { return this.isFresh ? this.report!.status.ownsSettings ? 'Controller owns settings' : 'Controller has released settings' : 'Ownership unavailable'; }
   get activityText(): string {
-    if (!this.isFresh) return 'Waiting for a fresh report. Earlier observations are kept below; they do not show the miner’s current condition.';
+    if (!this.isFresh || !this.controllerFresh) return 'Waiting for a fresh report. Earlier observations are kept below; they do not show the miner’s current condition.';
     const report = this.report!;
+    if(this.restorationVisible)return this.restorationHeading+': '+this.restorationReason;
     if (report.status.telemetry.fault === true) return 'The miner reports an active protection fault. Tuning cannot clear it or force settings through it; check the miner’s reason below.';
     if (this.limitReached) return this.limitStopText;
     if (!report.supported) return 'Automatic tuning is unavailable for this hardware or operating state. Restore remains available when the miner has a backup or owns settings.';
@@ -661,7 +731,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   restore(): void {
     if (!this.canRestore) return;
     this.waiverAccepted = false;
-    this.execute({action:'stop'}, report => !report.status.active && !report.status.ownsSettings && report.backup.restored === true && this.backupMatches(report),
+    this.execute({action:'stop'}, report => this.stopConfirmed(report),
       'Auto-tuning disabled and the pre-tuning backup restored.');
   }
   restoreAndResume(): void {
@@ -671,9 +741,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     // Only cancel the acknowledged Stop's GET wait; never cancel or repeat its POST.
     if(this.busy)this.cancelActionReadback.next();
     this.waiverAccepted=false;
-    this.execute({action:'restore-and-resume'}, report=>this.recovery?.phase==='complete' && this.recovery.requested===false
-      && !report.status.active && !report.status.ownsSettings && report.backup.restored===true && this.backupMatches(report)
-      && this.telemetryFresh && report.status.telemetry.miningActive===true && report.status.telemetry.fault===false && report.status.telemetry.fanOk===true,
+    this.execute({action:'restore-and-resume'}, report=>this.resumeConfirmed(report),
       'Original settings restored and normal mining verified. Auto-tuning remains off.');
   }
   private execute(body: Record<string,unknown>, confirms: (report: AutotuneReport) => boolean, success: string): void {
@@ -695,11 +763,14 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         return this.service.get().pipe(map(report => ({report,requestedAt})));
       }),tap(({report,requestedAt}) => {
         if (!this.accept(report,requestedAt)) throw new Error('unconfirmed');
+        if (['stop','restore-and-resume'].includes(String(body['action'])) && this.restorationBlocked)throw new Error('recovery-blocked');
         if (body['action']==='restore-and-resume') {if(this.recovery?.phase==='blocked')throw new Error('recovery-blocked');}
         else if (report.status.state === 'faulted') throw new Error('transition-fault');
-      }),filter(({report}) => confirms(report)),take(1),timeout({first:30000}));
+      }),filter(({report}) => confirms(report)),take(1),timeout({first:['stop','restore-and-resume'].includes(String(body['action']))?195000:30000}));
     }),takeUntil(this.destroyed),takeUntil(this.cancelActionReadback),finalize(() => {this.busy=false;this.pendingAction='';this.actionAcknowledged=false;})).subscribe({
       next: ({report}) => {
+        if(body['action']==='stop'&&this.restoration?.phase==='complete')success=this.report!.backup.restored ? 'Original settings restored. '+(this.restoration.qualityWarning||'Auto-tuning is off.') : 'Original settings saved; mining remains paused. '+(this.restoration.qualityWarning||'');
+        if(body['action']==='restore-and-resume'&&this.restoration?.qualityWarning)success='Original settings restored; mining resumed with a quality warning. '+this.restoration.qualityWarning;
         this.startUnconfirmed = false;
         if (body['action'] === 'start') {this.viewMode='live';document.querySelector('.run-banner')?.scrollIntoView({block:'start'});}
         if (body['action'] === 'configure') { this.edit = this.config(report.config); this.baseline = JSON.stringify(this.edit); }
@@ -710,7 +781,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
         const explanation=({'advanced-clock-warning-required':'The miner requires the explicit advanced clock warning before saving this override.',
           'advanced-clock-acceptance-required':'The miner requires the advanced clock acknowledgement for this Start.',
           'advanced-clock-override-required':'The current clock is above the standard profile limit. Explicitly enable the advanced override or lower or restore the current point before tuning.'} as Record<string,string>)[error?.error?.error];
-        this.actionError = error?.message==='recovery-blocked' ? this.recoveryText : explanation
+        this.actionError = error?.message==='recovery-blocked' ? this.restorationReason||this.recoveryText : explanation
           ? `${explanation} Refresh status before choosing another action. No repeat request was sent.`
           : 'The request could not be confirmed. Refresh status and check the miner before trying again. No repeat request was sent.';
       },

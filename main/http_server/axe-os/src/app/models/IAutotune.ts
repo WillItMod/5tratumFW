@@ -34,7 +34,8 @@ export interface AutotuneSearch {
   rejectedWindows: number; reference: AutotuneMeans | null; best: AutotuneMeans | null;
 }
 export interface AutotuneConditions {asicTempC:number;vrmTempC:number;powerW:number;hashRateGHs:number;errorPercentage:number;worstErrorPercentage:number;}
-export interface AutotuneRecovery {requested:boolean;phase:'idle'|'validating-off'|'restoring'|'resuming'|'verifying'|'complete'|'blocked';reason:string;}
+export interface AutotuneRestoration {phase:'idle'|'waiting'|'saving'|'applying'|'verifying'|'complete'|'blocked';reason:string;elapsedSeconds:number|null;timeoutSeconds:number|null;qualityWarning:string|null;}
+export interface AutotuneRecovery {elapsedSeconds?:number|null;timeoutSeconds?:number|null;requested:boolean;phase:'idle'|'validating-off'|'restoring'|'resuming'|'verifying'|'complete'|'blocked';reason:string;}
 export interface AutotuneEvent {
   id: number; atSeconds: number; kind: string; reason: string; outcome: string;
   from: AutotunePoint | null; point: AutotunePoint;
@@ -58,6 +59,7 @@ export interface AutotuneReport {
     search?: AutotuneSearch;
     eventCapacity?: number; events?: AutotuneEvent[];
     recovery?: AutotuneRecovery;
+    restoration?: AutotuneRestoration;
   };
   backup: { available: boolean; restored: boolean; frequencyMHz: number | null; coreVoltageMv: number | null };
 }

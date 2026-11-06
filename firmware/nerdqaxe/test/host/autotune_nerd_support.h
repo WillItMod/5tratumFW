@@ -37,6 +37,8 @@ static bool restoreReadbackFail=false;
 static bool offSensorFail=false,offGpioGood=true,resumeFail=false,fanRemainsOff=false;
 static uint64_t hostPolicyRevision=0;static unsigned recoveryResumeCalls=0;
 static bool miningGateOpen=true,counterValid=true;
+static bool poolConnected=true,staleSensors=false;
+static float sensorVin=12;
 static float voltageOffset=0,asicDegrees=50,vrmDegrees=55,watts=100,chipErrorWork=1;
 static bool weakChip=false; static std::vector<std::string> writes;
 static std::map<std::string,std::string> nvstore,staged;
@@ -194,11 +196,11 @@ static PowerManagementTask POWER_MANAGEMENT_MODULE;
 bool Board::readTuningSensors(TuningSensors &out){
  ++hostSensorReads;
  out={};if(sensorFail||!sensorValid)return false;
- out={asicDegrees,vrmDegrees,watts,12,static_cast<float>(POWER_MANAGEMENT_MODULE.appliedVoltage)+voltageOffset,60,static_cast<int64_t>(hostNow-1000),true};return true;
+ out={asicDegrees,vrmDegrees,watts,sensorVin,static_cast<float>(POWER_MANAGEMENT_MODULE.appliedVoltage)+voltageOffset,60,static_cast<int64_t>(hostNow-(staleSensors?6000000:1000)),true};return true;
 }
 struct HostSystem {Board::Error error=Board::NONE;Board *getBoard(){return &hostBoard;}Board::Error getBoardError(){return error;}void setBoardError(Board::Error err,uint32_t){error=err;}};
 static HostSystem SYSTEM_MODULE;
-struct Stratum {bool isAnyConnected(){return true;}};
+struct Stratum {bool isAnyConnected(){return poolConnected;}};
 static Stratum manager;static Stratum *STRATUM_MANAGER=&manager;
 namespace FiveTratumMining {
 bool applyTuningFrequency(uint16_t value){if(!FiveTratumAutotune::tuningFrequencyAllowed(value))return false;writes.push_back("clock:"+std::to_string(value));POWER_MANAGEMENT_MODULE.appliedFrequency=value;++hostGeneration;return !paused;}

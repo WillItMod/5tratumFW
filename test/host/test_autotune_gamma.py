@@ -34,6 +34,7 @@ class GammaAutotuneTests(unittest.TestCase):
         (directory/'gamma_wire_methods.inc').write_text(
             method(serial,'uint32_t SERIAL_tx_failure_count(')+method(serial,'int SERIAL_send(')+
             method(tps,'static esp_err_t smb_write_byte(')+method(tps,'static esp_err_t smb_write_word('))
+        (directory/'gamma_stop_guard.inc').write_text(method((ROOT/'main/tasks/power_management_task.c').read_text(),'static bool current_stop_request('))
         cls.binary=directory/'autotune-gamma'
         command=shlex.split(os.environ.get('CC','cc'))+['-std=gnu11','-Wall','-Wextra','-Werror',
             '-Wno-unused-parameter','-Wno-unused-const-variable','-Wno-sign-compare','-Wno-misleading-indentation','-Wno-deprecated-declarations',
@@ -83,7 +84,14 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_start_cannot_consume_manual_revocation_racing_the_saved_snapshot(self): self.run_case('start-snapshot-interleave')
     def test_restore_storage_failure_freezes_live_point_then_restores_all_fields(self): self.run_case('restore-storage')
     def test_same_point_restore_preserves_counters_and_verifies_original_fan_without_hardware_command(self): self.run_case('restore-verify-only')
-    def test_same_point_missing_counters_or_strict_reads_remain_unverified_without_fake_actuation_timeout(self): self.run_case('restore-verify-only-stale')
+    def test_same_point_missing_counters_complete_with_warning_but_missing_physical_reads_time_out(self): self.run_case('restore-verify-only-stale')
+    def test_changed_point_restores_original_without_asic_counters_and_reports_warning(self): self.run_case('restore-no-counters')
+    def test_restore_timeout_holds_live_point_until_explicit_manual_handoff(self): self.run_case('restore-timeout-hold')
+    def test_restore_reports_exact_cached_physical_gate_reasons(self): self.run_case('restore-physical-reasons')
+    def test_restore_readback_failure_blocks_without_retry_until_explicit_request(self): self.run_case('restore-live-readback-failure')
+    def test_recovery_missing_counters_completes_physical_restore_without_pausing(self): self.run_case('recovery-counters-missing')
+    def test_recovery_cooling_wait_times_out_and_requires_explicit_retry(self): self.run_case('recovery-cooling-timeout')
+    def test_newer_schedule_revokes_recovery_without_pause_override_or_held_ownership(self): self.run_case('recovery-schedule-revision')
     def test_same_point_real_cml_fan_thermal_or_voltage_fault_stops_with_accurate_reason(self): self.run_case('restore-verify-only-faults')
     def test_restore_never_clears_fault_or_lowers_cooling_during_fault(self): self.run_case('restore-fault')
     def test_failed_sensor_reads_never_refresh_cached_headroom(self): self.run_case('stale-sensors')
@@ -103,7 +111,7 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_unapplied_manual_settings_cannot_become_backup(self): self.run_case('manual-pending')
     def test_recovery_requires_confirmed_off_and_never_runs_on_http_thread(self): self.run_case('recovery-running-denied')
     def test_explicit_recovery_verifies_durable_original_then_normal_resume_and_live_point(self): self.run_case('recovery-success')
-    def test_stop_manual_power_and_ota_cancel_pending_resume(self): self.run_case('recovery-stop-and-revocation')
+    def test_stop_preserves_pending_resume_but_manual_power_and_ota_revoke_it(self): self.run_case('recovery-stop-and-revocation')
     def test_off_recovery_refuses_fault_voltage_and_noninternal_stack(self): self.run_case('recovery-off-faults')
     def test_recovery_waits_for_cooling_and_requires_new_request_after_storage_failure(self): self.run_case('recovery-cooling-and-storage')
     def test_recovery_rechecks_initial_off_rail_and_fan_settling_before_power(self): self.run_case('recovery-off-settling')
@@ -111,7 +119,7 @@ class GammaAutotuneTests(unittest.TestCase):
     def test_recovery_never_completes_bad_live_readback_and_requests_pause_without_retry(self): self.run_case('recovery-live-failure')
     def test_failed_limit_floor_conditions_remain_visible_through_explicit_recovery(self): self.run_case('recovery-floor-event')
     def test_automatic_floor_fallback_is_cancelled_by_new_manual_intent_without_retry(self): self.run_case('automatic-floor-cancel')
-    def test_automatic_fallback_never_confirms_excessive_asic_errors(self): self.run_case('automatic-floor-errors')
+    def test_automatic_fallback_restores_physical_point_and_reports_existing_asic_errors(self): self.run_case('automatic-floor-errors')
     def test_recovery_reopens_legacy_and_extended_journal_and_rejects_corruption(self): self.run_case('recovery-durable-formats')
     def test_unpowered_diode_signed_off_current_and_fresh_powered_work_gate(self): self.run_case('recovery-unpowered-diode')
     def test_new_control_during_powered_gate_keeps_jobs_blocked_until_off(self): self.run_case('recovery-prework-cancel')

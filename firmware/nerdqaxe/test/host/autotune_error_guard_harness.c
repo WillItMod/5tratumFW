@@ -273,9 +273,97 @@ static void fast_corrections_remain_bounded(void) {
 }
 
 static fwt_request ordinary_rejection(fixture *f,double board,double worst) {
- assert(reading(f,15,board,worst).kind==FWT_REQUEST_NONE);
- assert(reading(f,5,board,worst).kind==FWT_REQUEST_NONE);
- return reading(f,5,board,worst);
+ for(unsigned n=0;n<24;++n) {
+  const fwt_request request=reading(f,5,board,worst);
+  if(request.kind!=FWT_REQUEST_NONE)return request;
+ }
+ assert(!"Persistent ordinary errors did not receive a bounded correction");
+ return fwt_none();
+}
+
+static void settling_does_not_condemn_transient_moderate_errors(void) {
+ const double board[]={0.6,0.49,0.60,0.72};
+ const double worst[]={0.7,1.40,1.58,2.55};
+ for(unsigned scenario=0;scenario<4;++scenario) {
+  fixture f=begin(options());
+  const fwt_point original=f.input.current;
+  apply(&f,measured_first_trial(&f));
+  const fwt_point trial=f.input.current;
+  const uint64_t appliedAt=f.now;
+  assert(f.core.stableAvailable&&fwt_point_equal(f.core.stable,original));
+  assert(reading(&f,15,board[scenario],worst[scenario]).kind==FWT_REQUEST_NONE);
+  assert(reading(&f,5,board[scenario],worst[scenario]).kind==FWT_REQUEST_NONE);
+  assert(reading(&f,5,board[scenario],worst[scenario]).kind==FWT_REQUEST_NONE);
+  assert(reading(&f,5,board[scenario],worst[scenario]).kind==FWT_REQUEST_NONE);
+  assert(f.core.state==FWT_MEASURING&&f.core.errorSamples==0);
+  assert(f.core.failedCount==0&&f.core.stableAvailable&&fwt_point_equal(f.core.stable,original));
+  /* A clean settled point completes its normal window. Earlier transient
+   * errors never enter the failed-point list or invalidate the known point. */
+  fwt_request request=fwt_none();
+  for(unsigned n=0;n<15;++n) {
+   request=reading(&f,5,0.1,0.2);
+   assert(request.kind!=FWT_REQUEST_PAUSE);
+   if(n<14)assert(request.kind==FWT_REQUEST_NONE);
+  }
+  assert(f.now-appliedAt==105*FWT_SECOND);
+  assert(request.kind==FWT_REQUEST_APPLY&&fwt_point_equal(request.point,original));
+  assert(f.core.failedCount==0&&f.core.stableAvailable&&fwt_point_equal(f.core.stable,trial));
+ }
+}
+
+static void settled_moderate_errors_need_fresh_confirmation(void) {
+ fixture f=begin(options());const fwt_point original=f.input.current;
+ apply(&f,measured_first_trial(&f));const fwt_point trial=f.input.current;
+ const uint64_t appliedAt=f.now;
+ for(unsigned n=0;n<6;++n)assert(reading(&f,5,0.49,1.4).kind==FWT_REQUEST_NONE);
+ assert(f.core.state==FWT_MEASURING&&f.core.errorSamples==0);
+ assert(reading(&f,5,0.49,1.4).kind==FWT_REQUEST_NONE);
+ assert(reading(&f,5,0.49,1.4).kind==FWT_REQUEST_NONE);
+ assert(f.core.errorSamples==0);
+ /* A still-fresh interval captured before the end of the full flush cannot
+  * count, even when its sample ID advances. Nor can repeated browser polls. */
+ f.now=appliedAt+45*FWT_SECOND;
+ f.input.capturedAtUs=appliedAt+44*FWT_SECOND;f.input.sampleId=f.now;
+ assert(fwt_tick(&f.core,&f.input,f.now).kind==FWT_REQUEST_NONE&&f.core.errorSamples==0);
+ f.input.capturedAtUs=f.input.sampleId=f.now+1;
+ f.now+=1;
+ assert(fwt_tick(&f.core,&f.input,f.now).kind==FWT_REQUEST_NONE&&f.core.errorSamples==1);
+ for(unsigned n=0;n<100;++n)assert(fwt_tick(&f.core,&f.input,f.now).kind==FWT_REQUEST_NONE);
+ assert(f.core.errorSamples==1);
+ assert(reading(&f,5,0.49,1.4).kind==FWT_REQUEST_NONE&&f.core.errorSamples==2);
+ const fwt_request request=reading(&f,5,0.49,1.4);
+ assert(f.now-appliedAt>=55*FWT_SECOND);
+ assert(request.kind==FWT_REQUEST_APPLY&&fwt_point_equal(request.point,original));
+ assert(!strcmp(f.core.reason,"restoring-last-stable-point"));
+ assert(fwt_point_failed(&f.core,trial)&&!fwt_point_failed(&f.core,original));
+ assert(f.core.stableAvailable&&fwt_point_equal(f.core.stable,original));
+}
+
+static void option_changes_cannot_shorten_physical_settling(void) {
+ fixture f=begin(options());const fwt_point original=f.input.current;
+ apply(&f,measured_first_trial(&f));const uint64_t appliedAt=f.now;
+ assert(reading(&f,15,0.6,1.4).kind==FWT_REQUEST_NONE);
+ fwt_config changed=f.core.config;changed.priority=FWT_PERFORMANCE;
+ assert(fwt_configure(&f.core,&changed));
+ for(unsigned n=0;n<5;++n)assert(reading(&f,5,0.6,1.4).kind==FWT_REQUEST_NONE);
+ assert(f.now-appliedAt==40*FWT_SECOND&&f.core.errorSamples==0);
+ assert(reading(&f,5,0.6,1.4).kind==FWT_REQUEST_NONE&&f.core.errorSamples==1);
+ assert(reading(&f,5,0.6,1.4).kind==FWT_REQUEST_NONE&&f.core.errorSamples==2);
+ const fwt_request request=reading(&f,5,0.6,1.4);
+ assert(f.now-appliedAt==55*FWT_SECOND);
+ assert(request.kind==FWT_REQUEST_APPLY&&fwt_point_equal(request.point,original));
+ assert(f.core.stableAvailable&&fwt_point_equal(f.core.stable,original));
+}
+
+static void settling_keeps_immediate_thermal_and_power_protection(void) {
+ for(unsigned condition=0;condition<2;++condition) {
+  fixture f=begin(options());apply(&f,measured_first_trial(&f));
+  if(condition==0)f.input.asicTempC=f.core.config.maxAsicTempC;
+  else f.input.powerW=f.core.config.maxPowerW+1;
+  const fwt_request request=reading(&f,1,0.6,1.4);
+  assert(request.kind==FWT_REQUEST_APPLY&&request.point.frequencyMHz<f.input.current.frequencyMHz);
+  assert(!strcmp(f.core.reason,condition==0?"temperature-limit-backoff":"power-limit-backoff"));
+ }
 }
 
 static void voltage_trials_leave_room_for_clock_recovery(void) {
@@ -474,6 +562,10 @@ int main(void) {
  protection_precedes_error_recovery();
  fast_corrections_remain_bounded();
  voltage_trials_leave_room_for_clock_recovery();
+ settling_does_not_condemn_transient_moderate_errors();
+ settled_moderate_errors_need_fresh_confirmation();
+ option_changes_cannot_shorten_physical_settling();
+ settling_keeps_immediate_thermal_and_power_protection();
  voltage_allowance_requires_a_complete_passing_window();
  full_performance_window_is_unchanged();
  failed_point_exclusion_survives_rounds_and_edits();

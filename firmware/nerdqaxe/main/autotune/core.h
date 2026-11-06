@@ -73,7 +73,7 @@ typedef struct {
  fwt_point stable, failedPoints[FWT_ERROR_POINT_CAPACITY];
  double stablePower;
  unsigned failedCount, errorSamples;
- uint64_t errorEpochUs, errorSampleId, errorCapturedAtUs, errorStartedUs;
+ uint64_t errorEpochUs, moderateErrorEpochUs, errorSampleId, errorCapturedAtUs, errorStartedUs;
  /* Optional pure driver preflight. This never commands hardware or I/O. */
  bool (*frequencySupported)(double frequencyMHz);
 } fwt_controller;
@@ -244,7 +244,7 @@ static inline bool fwt_start(fwt_controller *c,const fwt_input *i,uint64_t now) 
  c->frequencySupported=frequencySupported;
  c->baseline=c->current=i->current;c->baselineAvailable=true;
  c->generation=i->generation;c->lastNowUs=now;c->stateSinceUs=now;
- c->errorEpochUs=now;
+ c->errorEpochUs=now;c->moderateErrorEpochUs=now;
  c->state=FWT_BASELINE;c->reason="measuring-starting-point";
  const fwt_point none={0,0};
  fwt_event_record(c,&c->lastDecision,FWT_EVENT_STARTED,FWT_OUTCOME_MEASURED,none,c->current,c->reason,now);
@@ -285,6 +285,7 @@ static inline void fwt_applied(fwt_controller *c,bool success,uint64_t now) {
  if(c->lastAdjustment.id) c->lastAdjustment.outcome=FWT_OUTCOME_APPLIED;
  c->reason="waiting-for-stable-measurements";c->stateSinceUs=now;c->lastNowUs=now;
  c->errorEpochUs=now;c->errorSampleId=0;c->errorCapturedAtUs=0;fwt_error_streak_reset(c);
+ c->moderateErrorEpochUs=now<=UINT64_MAX-FWT_SETTLE_US?now+FWT_SETTLE_US:UINT64_MAX;
  c->generation=0;c->lastSampleId=0;c->invalidSinceUs=0;fwt_clear_window(c,now);
 }
 static inline double fwt_score(const fwt_controller *c,double hash,double power) {
@@ -387,8 +388,8 @@ static inline fwt_request fwt_error_recover(fwt_controller *c,const fwt_input *i
  }
  return fwt_backoff(c,i,now,"error-recovery-clock-backoff");
 }
-/* Independent of score windows and browser polling. Old counter intervals
- * cannot condemn a newly applied point, including while it is settling. */
+/* Independent of browser polling. Severe errors retain the post-apply flush
+ * bound; ordinary errors require whole counter intervals after settling. */
 static inline const char *fwt_early_error(fwt_controller *c,const fwt_input *i) {
  if(i->sampleId<=c->errorSampleId||i->capturedAtUs<=c->errorCapturedAtUs) return NULL;
  if(i->capturedAtUs<c->errorEpochUs||i->capturedAtUs-c->errorEpochUs<FWT_FRESH_US) return NULL;
@@ -396,6 +397,13 @@ static inline const char *fwt_early_error(fwt_controller *c,const fwt_input *i) 
  c->errorSampleId=i->sampleId;c->errorCapturedAtUs=i->capturedAtUs;
  if(i->errorPercentage>=FWT_BOARD_SEVERE_ERROR_LIMIT||i->worstErrorPercentage>=FWT_CHIP_SEVERE_ERROR_LIMIT)
   return "early-severe-error-limit";
+ /* A settling interval can be noisy without proving the settled point bad.
+  * Its counters must not contribute to a later ordinary-error streak. The
+  * timestamp bound also excludes intervals straddling the settle boundary. */
+ if(c->state==FWT_SETTLING||i->capturedAtUs<c->moderateErrorEpochUs||
+    i->capturedAtUs-c->moderateErrorEpochUs<FWT_FRESH_US) {
+  fwt_error_streak_reset(c);return NULL;
+ }
  if(i->errorPercentage<=FWT_BOARD_ERROR_LIMIT&&i->worstErrorPercentage<=FWT_CHIP_ERROR_LIMIT) {
   fwt_error_streak_reset(c);return NULL;
  }
@@ -487,7 +495,8 @@ static inline fwt_request fwt_tick(fwt_controller *c,const fwt_input *i,uint64_t
  }
  if(c->state==FWT_SETTLING) {
   if(now-c->stateSinceUs<FWT_SETTLE_US) return fwt_none();
-  c->state=FWT_MEASURING;c->reason="measuring-settled-operating-point";fwt_clear_window(c,now);
+  c->state=FWT_MEASURING;c->reason="measuring-settled-operating-point";
+  c->moderateErrorEpochUs=now;fwt_error_streak_reset(c);fwt_clear_window(c,now);
  }
  /* Discard a whole maximum permitted counter interval after the window starts.
   * Merely receiving a still-TTL-fresh pre-settle sample is not new evidence. */

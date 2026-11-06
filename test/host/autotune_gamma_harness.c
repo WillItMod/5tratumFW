@@ -13,12 +13,15 @@ esp_err_t nvs_get_blob(nvs_handle_t h,const char *key,void *out,size_t *size) {
     if (revoke_on_backup_read && !strcmp(key,"backup")) {revoke_on_backup_read=false;autotune_gamma_manual_override();}
     return stored_nvs_get_blob(h,key,out,size);
 }
-static bool revoke_after_snapshot;
+static bool revoke_after_snapshot,fail_tuning_snapshot;
 static bool interleaved_snapshot(const NvsConfigKey *,NvsConfigMutation *,size_t);
 #define nvs_config_read_atomic interleaved_snapshot
 #include "../../main/autotune_runtime.c"
 #undef nvs_config_read_atomic
+void mining_schedule_update(void) {}
+#include "gamma_stop_guard.inc"
 static bool interleaved_snapshot(const NvsConfigKey *keys,NvsConfigMutation *values,size_t count) {
+    if(fail_tuning_snapshot)return false;
     const bool result=nvs_config_read_atomic(keys,values,count);
     if (revoke_after_snapshot) {revoke_after_snapshot=false;autotune_gamma_manual_override();}
     return result;
@@ -36,7 +39,7 @@ static uint8_t host_status_cml;
 static char last_fault_reason[160];
 static bool host_applied_paused,host_internal_stack=true,host_resume_refused;
 static uint32_t host_schedule_revision=1;
-static unsigned host_resume_requests;
+static unsigned host_resume_requests,host_pause_requests;
 static double off_vout,off_iout;
 static uint16_t off_status_word=TPS546_STATUS_OFF|TPS546_STATUS_PGOOD;
 static uint8_t off_status_vout;
@@ -52,7 +55,7 @@ bool mining_schedule_resume_if_unchanged(uint32_t revision) {
 }
 bool mining_schedule_pause_if_unchanged(uint32_t revision) {
     if (revision!=host_schedule_revision) return false;
-    gs.SYSTEM_MODULE.mining_paused=true;return true;
+    ++host_pause_requests;gs.SYSTEM_MODULE.mining_paused=true;return true;
 }
 int64_t esp_timer_get_time(void) {return host_now;}
 void vTaskDelay(unsigned ticks) {(void)ticks;}
@@ -383,7 +386,8 @@ int main(int argc,char **argv) {
     } else if(!strcmp(name,"recovery-success")) {
         start();confirmed_off();unsigned before=writes;
         assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
-        assert(step(false) && tuner.restore_pending && !tuner.restore_committed && !host_resume_requests);
+        assert(step(false) && tuner.restore_held && !tuner.restore_pending && !tuner.restore_committed && !host_resume_requests);
+        assert(tuner.restoration_phase==RESTORE_BLOCKED&&strstr(tuner.restoration_reason,"Mining is paused"));
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
         assert(writes==before && tuner.recovery_requested && !host_resume_requests);
         expect_error("{\"action\":\"restore-and-resume\"}","recovery-already-requested");
@@ -393,9 +397,10 @@ int main(int argc,char **argv) {
         recovery_finish();assert(!erases);
     } else if(!strcmp(name,"recovery-stop-and-revocation")) {
         start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        const uint32_t epoch=tuner.owner_epoch;const uint64_t started=tuner.restoration_started;const unsigned before=writes;
         assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
-        autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests && !tuner.recovery_requested);
-        assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        assert(tuner.recovery_requested&&tuner.owner_epoch==epoch&&tuner.restoration_started==started&&writes==before);
         mining_schedule_manual_override(true);autotune_gamma_recovery_tick(&gs);
         assert(!host_resume_requests && tuner.recovery_phase==RECOVERY_BLOCKED);
         assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
@@ -459,8 +464,31 @@ int main(int argc,char **argv) {
         assert(!mining_state_work_allowed(&gs));
         mining_schedule_manual_override(false);autotune_gamma_recovery_tick(&gs);
         assert(!tuner.recovery_requested && gs.SYSTEM_MODULE.tuning_recovery_work_blocked && !mining_state_work_allowed(&gs));
-        autotune_gamma_recovery_tick(&gs);assert(gs.SYSTEM_MODULE.mining_paused && !mining_state_work_allowed(&gs));
+        autotune_gamma_recovery_tick(&gs);assert(!gs.SYSTEM_MODULE.mining_paused && !mining_state_work_allowed(&gs));
         confirmed_off();autotune_gamma_recovery_tick(&gs);assert(!gs.SYSTEM_MODULE.tuning_recovery_work_blocked && host_resume_requests==1);
+    } else if(!strcmp(name,"recovery-schedule-revision")) {
+        start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);normal_resume_completed();
+        const uint32_t epoch=atomic_load(&manual_epoch);const unsigned pauses=host_pause_requests,stored=writes;
+        ++host_schedule_revision;gs.SYSTEM_MODULE.mining_paused=false;
+        autotune_gamma_recovery_tick(&gs);autotune_gamma_recovery_tick(&gs);
+        assert(atomic_load(&manual_epoch)>epoch&&host_pause_requests==pauses&&writes==stored);
+        assert(!tuner.recovery_requested&&!tuner.restore_held&&!gs.SYSTEM_MODULE.mining_paused);
+        assert(gs.SYSTEM_MODULE.tuning_recovery_work_blocked&&!mining_state_work_allowed(&gs));
+        assert(tuner.restoration_phase==RESTORE_BLOCKED&&strstr(tuner.restoration_reason,"newer schedule")&&strstr(tuner.restoration_reason,"confirmed off"));
+        cJSON *json=report(),*status=cJSON_GetObjectItem(json,"status");
+        assert(cJSON_IsFalse(cJSON_GetObjectItem(status,"ownsSettings"))&&cJSON_IsFalse(cJSON_GetObjectItem(status,"active")));cJSON_Delete(json);
+        uint16_t mv=0;float mhz=0;assert(!autotune_gamma_select_target(&gs,&mv,&mhz));
+        assert(current_stop_request(&gs)&&autotune_gamma_transition_cancelled());
+        autotune_gamma_interrupt("mining-paused-or-faulted");
+        /* The normal power owner completes its stop without changing the new
+         * schedule, then reports idle only after power-off confirmation. */
+        gs.ASIC_initalized=false;host_applied_paused=true;
+        gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv=0;gs.POWER_MANAGEMENT_MODULE.frequency_value=50;
+        autotune_gamma_owner_idle();autotune_gamma_recovery_tick(&gs);
+        assert(!gs.SYSTEM_MODULE.tuning_recovery_work_blocked&&host_pause_requests==pauses&&host_resume_requests==1);
+        assert(!gs.SYSTEM_MODULE.mining_paused&&!current_stop_request(&gs));
+        normal_resume_completed();assert(mining_state_work_allowed(&gs));
     } else if(!strcmp(name,"recovery-prework-timeout")) {
         start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
         autotune_gamma_recovery_tick(&gs);normal_resume_completed();host_asic_temp=75;
@@ -531,8 +559,9 @@ int main(int argc,char **argv) {
         start();host_asic_temp=59.5f;step(false);confirmed_off();host_asic_temp=50;
         autotune_gamma_recovery_tick(&gs);normal_resume_completed();host_error_percentage=2;
         for (unsigned i=0;i<20 && tuner.recovery_requested;++i) {host_now+=TUNE_POLL_US;autotune_gamma_recovery_tick(&gs);}
-        assert(!tuner.recovery_requested && tuner.recovery_phase==RECOVERY_BLOCKED && !tuner.backup_restored);
-        assert(gs.SYSTEM_MODULE.mining_paused && host_resume_requests==1);
+        assert(!tuner.recovery_requested && tuner.recovery_phase==RECOVERY_COMPLETE && tuner.backup_restored);
+        assert(!gs.SYSTEM_MODULE.mining_paused && host_resume_requests==1 && !fault_stops);
+        assert(tuner.restoration_phase==RESTORE_COMPLETE&&tuner.restoration_quality_warning&&strstr(tuner.restoration_quality_warning,"ASIC errors"));
     } else if(!strcmp(name,"recovery-durable-formats")) {
         start();assert(nvs_config_apply_autotune_restore(tuner.backup,BACKUP_FIELDS)==ESP_OK);
         assert(journal()->bytes[4]==1 && nvs_config_verify_autotune_restore(tuner.backup,BACKUP_FIELDS)==ESP_OK);
@@ -589,6 +618,10 @@ int main(int argc,char **argv) {
             assert(cJSON_IsTrue(cJSON_GetObjectItem(json,"available")));
             assert(cJSON_IsFalse(cJSON_GetObjectItem(json,"active")));
             assert(cJSON_GetObjectItem(json,"controllerAgeSeconds")->valuedouble==0);
+            cJSON *restoration=cJSON_GetObjectItem(json,"restoration");
+            assert(restoration&&cJSON_GetArraySize(restoration)==5);
+            assert(!strcmp(cJSON_GetObjectItem(restoration,"phase")->valuestring,"idle"));
+            assert(cJSON_IsNull(cJSON_GetObjectItem(restoration,"elapsedSeconds"))&&cJSON_IsNull(cJSON_GetObjectItem(restoration,"qualityWarning")));
             cJSON_Delete(json);
         }
         pthread_mutex_lock(&tuner_mutex);
@@ -599,6 +632,24 @@ int main(int argc,char **argv) {
         cJSON *json=cJSON_Parse(stale.reply);assert(json&&cJSON_GetObjectItem(json,"controllerAgeSeconds")->valuedouble==16);cJSON_Delete(json);
         authorized=false;httpd_req_t denied={.code=200};assert(get_activity(&denied)==ESP_OK&&denied.code==401);authorized=true;
         assert(writes==before&&sensor_reads==reads&&tuner.observer_until==observer&&!memcmp(&unchanged,&tuner.core,sizeof(unchanged)));
+        for(unsigned phase=RESTORE_WAITING;phase<=RESTORE_BLOCKED;++phase) {
+            tuner.restoration_phase=phase;tuner.restoration_started=host_now-10*FWT_SECOND;
+            tuner.restoration_finished=phase>=RESTORE_COMPLETE?host_now-2*FWT_SECOND:0;
+            tuner.restoration_reason="cached restoration reason";
+            tuner.restoration_quality_warning=phase==RESTORE_COMPLETE?"cached ASIC quality warning":NULL;
+            const GammaTuner cached=tuner;
+            httpd_req_t activity={.code=200};assert(get_activity(&activity)==ESP_OK&&activity.code==200);
+            cJSON *compact=cJSON_Parse(activity.reply),*restoration=cJSON_GetObjectItem(compact,"restoration");
+            assert(restoration&&cJSON_GetArraySize(restoration)==5);
+            assert(!strcmp(cJSON_GetObjectItem(restoration,"phase")->valuestring,restoration_phase_name(phase)));
+            assert(!strcmp(cJSON_GetObjectItem(restoration,"reason")->valuestring,"cached restoration reason"));
+            assert(cJSON_GetObjectItem(restoration,"elapsedSeconds")->valueint==(phase>=RESTORE_COMPLETE?8:10));
+            assert(cJSON_GetObjectItem(restoration,"timeoutSeconds")->valueint==180);
+            if(phase==RESTORE_COMPLETE)assert(!strcmp(cJSON_GetObjectItem(restoration,"qualityWarning")->valuestring,"cached ASIC quality warning"));
+            else assert(cJSON_IsNull(cJSON_GetObjectItem(restoration,"qualityWarning")));
+            cJSON_Delete(compact);
+            assert(!memcmp(&cached,&tuner,sizeof(cached))&&writes==before&&sensor_reads==reads);
+        }
     } else if(!strcmp(name,"passive-owned-fault")) {
         start();tuner.last_owner_tick=host_now;
         httpd_req_t req={.code=200};assert(get_activity(&req)==ESP_OK);
@@ -865,14 +916,114 @@ int main(int argc,char **argv) {
         start();assert(tune_request(true,"{\"action\":\"stop\"}").code==200);step(true);
         const unsigned resets=counter_resets;
         counters_ok=false;
-        for(unsigned i=0;i<20;++i) assert(step(true));
-        assert(tuner.restore_pending&&tuner.restore_verify_only&&!tuner.backup_restored&&!fault_stops);
-        assert(!strcmp(tuner.override_reason,"original-settings-verification-waiting-for-fresh-data"));
-        counters_ok=true;sensors_ok=false;
-        for(unsigned i=0;i<20;++i) assert(step(true));
-        assert(tuner.restore_pending&&!tuner.backup_restored&&!fault_stops&&counter_resets==resets);
-        sensors_ok=true;step(true);step(true);
+        for(unsigned i=0;i<4&&tuner.restore_pending;++i) step(true);
         assert(!tuner.restore_pending&&tuner.backup_restored&&!fault_stops&&counter_resets==resets);
+        assert(tuner.restoration_phase==RESTORE_COMPLETE&&strstr(tuner.restoration_quality_warning,"counters"));
+        counters_ok=true;host_now+=TUNE_POLL_US;observe();start();
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);step(true);sensors_ok=false;
+        for(unsigned i=0;i<20;++i)assert(step(true));
+        assert(tuner.restore_pending&&!tuner.backup_restored&&!fault_stops);
+        host_now=tuner.restoration_started+RESTORE_TIMEOUT_US;assert(step(true));
+        assert(!tuner.restore_pending&&tuner.restore_held&&tuner.restoration_phase==RESTORE_BLOCKED&&!fault_stops);
+        sensors_ok=true;assert(step(true));assert(tuner.restore_held&&!tuner.backup_restored);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        for(unsigned i=0;i<4&&tuner.restore_pending;++i)step(true);
+        assert(tuner.backup_restored&&!tuner.restore_held&&!fault_stops&&counter_resets==resets);
+    } else if(!strcmp(name,"restore-no-counters")) {
+        start();for(unsigned i=0;i<50&&!point_changes;++i)step(true);assert(point_changes);
+        Entry *original=find(2,"backup");assert(original&&original->size<2048);
+        unsigned char bytes[2048];const size_t size=original->size;memcpy(bytes,original->bytes,size);
+        counters_ok=false;assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        for(unsigned i=0;i<12&&tuner.restore_pending;++i)step(true);
+        assert(!tuner.restore_pending&&tuner.backup_restored&&!tuner.core.owns&&!fault_stops);
+        assert(gs.POWER_MANAGEMENT_MODULE.frequency_value==625.125f&&gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==1173);
+        assert(original->size==size&&!memcmp(original->bytes,bytes,size));
+        assert(tuner.restoration_phase==RESTORE_COMPLETE&&strstr(tuner.restoration_quality_warning,"counters"));
+        cJSON *json=report(),*status=cJSON_GetObjectItem(json,"status"),*restoration=cJSON_GetObjectItem(status,"restoration");
+        assert(!strcmp(cJSON_GetObjectItem(restoration,"phase")->valuestring,"complete"));
+        assert(cJSON_IsString(cJSON_GetObjectItem(restoration,"qualityWarning")));
+        assert(cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(json,"backup"),"restored")));
+        cJSON_Delete(json);
+    } else if(!strcmp(name,"restore-timeout-hold")) {
+        start();for(unsigned i=0;i<50&&!point_changes;++i)step(true);assert(point_changes);
+        const float live=gs.POWER_MANAGEMENT_MODULE.frequency_value;
+        const uint16_t voltage=gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv;
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);sensors_ok=false;
+        assert(step(true)&&tuner.restore_pending&&!tuner.restore_committed);
+        const unsigned before=writes;
+        host_now=tuner.restoration_started+RESTORE_TIMEOUT_US;assert(step(true));
+        assert(!tuner.restore_pending&&tuner.restore_held&&!tuner.backup_restored&&!fault_stops);
+        assert(tuner.restoration_phase==RESTORE_BLOCKED&&strstr(tuner.restoration_reason,"180 seconds"));
+        assert(strstr(tuner.restoration_reason,"Strict regulator read failed"));
+        sensors_ok=true;
+        for(unsigned i=0;i<4;++i)assert(step(true));
+        assert(writes==before&&gs.POWER_MANAGEMENT_MODULE.frequency_value==live&&gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==voltage);
+        assert(!tuner.core.owns&&!tuner.core.active);
+        cJSON *json=report(),*restoration=cJSON_GetObjectItem(cJSON_GetObjectItem(json,"status"),"restoration");
+        assert(!strcmp(cJSON_GetObjectItem(restoration,"phase")->valuestring,"blocked"));
+        assert(cJSON_GetObjectItem(restoration,"elapsedSeconds")->valuedouble>=180);
+        assert(cJSON_GetObjectItem(restoration,"timeoutSeconds")->valueint==180);
+        assert(cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(json,"status"),"ownsSettings")));
+        assert(!strcmp(cJSON_GetObjectItem(cJSON_GetObjectItem(json,"status"),"state")->valuestring,"suspended"));cJSON_Delete(json);
+        httpd_req_t activity=request(5,NULL);assert(activity.code==200);
+        json=cJSON_Parse(activity.reply);assert(json);
+        assert(cJSON_IsTrue(cJSON_GetObjectItem(json,"ownsSettings"))&&!strcmp(cJSON_GetObjectItem(json,"state")->valuestring,"suspended"));cJSON_Delete(json);
+        GammaAutotuneDisplaySnapshot display;assert(autotune_gamma_try_display_snapshot(&display,host_now));
+        assert(display.ownsSettings&&!display.active&&!display.restoring&&display.state==FWT_SUSPENDED);
+        assert(configure_request(tuner.core.config).code!=200);
+        expect_error("{\"action\":\"start\",\"waiverAccepted\":true,\"waiverVersion\":1}","storage-or-restore-unavailable");
+        const NvsConfigMutation changed[]={{.key=NVS_CONFIG_ASIC_FREQUENCY,.type=TYPE_FLOAT,.value.f=600},
+            {.key=NVS_CONFIG_ASIC_VOLTAGE,.type=TYPE_U16,.value.u16=1150}};
+        assert(nvs_config_apply_atomic(changed,2)==ESP_OK);
+        uint16_t mv=0;float mhz=0;assert(!autotune_gamma_select_target(&gs,&mv,&mhz));
+        assert(!tuner.restore_held&&mv==1150&&mhz==600);
+    } else if(!strcmp(name,"restore-live-readback-failure")) {
+        start();assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        assert(step(true)&&tuner.restore_verify_only);fail_tuning_snapshot=true;
+        assert(step(true));assert(step(true));
+        assert(tuner.restore_held&&!tuner.restore_pending&&!tuner.backup_restored);
+        assert(tuner.restoration_phase==RESTORE_BLOCKED&&strstr(tuner.restoration_reason,"readback failed"));
+        fail_tuning_snapshot=false;const unsigned stored=writes;
+        for(unsigned i=0;i<3;++i)assert(step(true));
+        assert(tuner.restore_held&&writes==stored);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
+        for(unsigned i=0;i<4&&tuner.restore_pending;++i)step(true);
+        assert(tuner.backup_restored&&!tuner.restore_held);
+    } else if(!strcmp(name,"restore-physical-reasons")) {
+        const GammaTuner clean=tuner;const char *reason=NULL;
+        const char *expected[]={"Strict regulator","sensor read","Cooling fan","Input voltage","Core-voltage","output current","ASIC temperature","VRM temperature","stale","output-voltage"};
+        for(unsigned kind=0;kind<10;++kind) {
+            tuner=clean;
+            if(kind==0){tuner.sensor_ok=false;tuner.regulator_read_ok=false;}
+            if(kind==1){tuner.sensor_ok=false;tuner.regulator_read_ok=true;}
+            if(kind==2)tuner.input.fanOk=false;
+            if(kind==3)tuner.strict.vin=4.0;
+            if(kind==4)tuner.input.voltageReadbackMv=0;
+            if(kind==5)tuner.strict.iout=0;
+            if(kind==6)tuner.input.asicTempC=70;
+            if(kind==7)tuner.input.vrmTempC=95;
+            if(kind==8)tuner.sensor_at=host_now-TUNE_FRESH_US-1;
+            if(kind==9)tuner.strict.status_vout=1;
+            assert(!restoration_physical_ready(&gs,host_now,&reason)&&reason&&strstr(reason,expected[kind]));
+        }
+        tuner=clean;assert(restoration_physical_ready(&gs,host_now,&reason)&&!reason);
+    } else if(!strcmp(name,"recovery-counters-missing")) {
+        start();confirmed_off();assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);counters_ok=false;recovery_finish();
+        assert(tuner.restoration_phase==RESTORE_COMPLETE&&strstr(tuner.restoration_quality_warning,"counters"));
+        assert(!gs.SYSTEM_MODULE.mining_paused&&!fault_stops&&host_resume_requests==1);
+    } else if(!strcmp(name,"recovery-cooling-timeout")) {
+        start();confirmed_off();host_vrm_temp=96;
+        assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        const unsigned before=writes;autotune_gamma_recovery_tick(&gs);
+        assert(tuner.recovery_requested&&tuner.recovery_phase==RECOVERY_VALIDATING_OFF&&!host_resume_requests);
+        host_now=tuner.restoration_started+RESTORE_TIMEOUT_US;autotune_gamma_recovery_tick(&gs);
+        assert(!tuner.recovery_requested&&tuner.recovery_phase==RECOVERY_BLOCKED&&tuner.restoration_phase==RESTORE_BLOCKED);
+        assert(writes==before&&!host_resume_requests&&gs.SYSTEM_MODULE.mining_paused);
+        assert(strstr(tuner.restoration_reason,"recovery-waiting-for-cooling"));
+        host_vrm_temp=50;autotune_gamma_recovery_tick(&gs);assert(!host_resume_requests);
+        assert(tune_request(true,"{\"action\":\"restore-and-resume\"}").code==200);
+        autotune_gamma_recovery_tick(&gs);recovery_finish();assert(host_resume_requests==1);
     } else if(!strcmp(name,"restore-verify-only-faults")) {
         const char *expected[]={"communication","fan tachometer","temperature","temperature","voltage readback"};
         for(unsigned kind=0;kind<5;++kind) {
@@ -900,9 +1051,14 @@ int main(int argc,char **argv) {
         assert(journal()->bytes[4]==2&&nvs_config_get_u16(NVS_CONFIG_MANUAL_FAN_SPEED)==80);
         assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
         fail_set=true;assert(step(true));
-        assert(tuner.restore_pending&&!tuner.backup_restored&&!tuner.restore_committed);
+        assert(!tuner.restore_pending&&tuner.restore_held&&!tuner.backup_restored&&!tuner.restore_committed);
+        assert(tuner.restoration_phase==RESTORE_BLOCKED&&strstr(tuner.restoration_reason,"storage or readback failed"));
         assert(gs.POWER_MANAGEMENT_MODULE.frequency_value==live&&gs.POWER_MANAGEMENT_MODULE.applied_core_voltage_mv==voltage);
         fail_set=false;
+        const unsigned after_failure=writes;
+        for(unsigned i=0;i<4;++i)assert(step(true));
+        assert(tuner.restore_held&&writes==after_failure);
+        assert(tune_request(true,"{\"action\":\"stop\"}").code==200);
         for(unsigned i=0;i<12&&tuner.restore_pending;++i) step(true);
         assert(tuner.backup_restored&&!tuner.restore_pending&&tuner.backup_available);
         assert(nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE)==1173&&nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY)==625.125f);

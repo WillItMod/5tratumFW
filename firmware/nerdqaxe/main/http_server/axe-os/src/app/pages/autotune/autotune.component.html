@@ -3,6 +3,12 @@
   <section class="run-banner" [attr.data-state]="activityBanner.kind" aria-label="Tuning activity"><span class="run-banner-light" aria-hidden="true"></span><div><strong>{{ activityBanner.label }}</strong><span class="run-active-mode" *ngIf="isFresh && optionsUsable">{{ runningGoal }} · Continuous {{ report?.config?.continuous ? 'On' : 'Off' }}</span><p>{{ activityBanner.detail }}</p><small *ngIf="isFresh && report">Run {{ report.status.runId }} · {{ stateLabel }} · {{ ownedSettingsText }}</small></div></section>
   <div class="notice notice--error" role="alert" *ngIf="readError">{{ readError }}</div>
   <div class="notice" role="status" *ngIf="report && !isFresh && !readError">Live tuning status is stale. Refresh before making changes.</div>
+  <div class="notice" role="status" *ngIf="isFresh && !controllerFresh">{{ controllerStatusText }}</div>
+  <section class="notice restoration-status" aria-label="Restoration status" *ngIf="restorationVisible" [class.notice--error]="restorationBlocked">
+    <strong>{{ restorationHeading }}</strong><p>Stage: {{ restorationStage }}</p><p>{{ restorationReason }}</p><small *ngIf="restorationTiming">{{ restorationTiming }}</small>
+    <p *ngIf="restoration?.qualityWarning">{{ restoration?.qualityWarning }}</p>
+    <p *ngIf="restorationBlocked">The attempt has stopped. Review this reason before retrying. No automatic repeat request was sent.</p>
+  </section>
   <div class="notice notice--error" role="alert" *ngIf="actionError">{{ actionError }}</div>
   <div class="notice notice--success" role="status" *ngIf="message && !hasUnsavedChanges">{{ message }}</div>
   <div class="top-actions"><nav class="view-switch" aria-label="Tuning sections"><button type="button" class="button button--quiet" [class.view-selected]="viewMode==='live'" [attr.aria-pressed]="viewMode==='live'" (click)="showView('live')">Live dashboard</button><button type="button" class="button button--quiet" [class.view-selected]="viewMode==='options'" [attr.aria-pressed]="viewMode==='options'" (click)="showView('options')">{{ isEngaged ? 'Adjust this tune' : 'Tuning options' }}</button></nav><button type="button" class="button button--quiet refresh" (click)="load()" [disabled]="busy || loading">{{ loading ? 'Reading status…' : 'Refresh status' }}</button><button type="button" class="button button--stop" (click)="restore()" [disabled]="!canRestore">Disable and restore backup</button></div>

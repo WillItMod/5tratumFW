@@ -160,7 +160,7 @@ describe('Dynamic tuning controls', () => {
   }));
   it('does not call a restore successful when the target differs from its backup', fakeAsync(() => {
     report.backup={available:true,restored:true,frequencyMHz:525,coreVoltageMv:1150};
-    report.status.current={frequencyMHz:500,coreVoltageMv:1100};component.load();component.restore();tick(30001);
+    report.status.current={frequencyMHz:500,coreVoltageMv:1100};component.load();component.restore();tick(195001);
     expect(component.message).toBe('');expect(component.actionError).toContain('could not be confirmed');expect(service.command.calls.count()).toBe(1);
   }));
   it('leaves a faulted restore unconfirmed without clearing its hardware fault', fakeAsync(() => {
@@ -372,7 +372,7 @@ describe('Dynamic tuning controls', () => {
   it('shows blocked recovery as terminal and never automatically retries it', fakeAsync(() => {
     pausedRecovery();spyOn(window,'confirm').and.returnValue(true);
     service.command.and.callFake(()=>{report.status.recovery={requested:false,phase:'blocked',reason:'cooling-not-ready'};return of({ok:true,restartRequired:false});});
-    component.restoreAndResume();tick(0);expect(component.busy).toBeFalse();expect(component.actionError).toContain('cooling not ready');
+    component.restoreAndResume();tick(0);expect(component.busy).toBeFalse();expect(component.actionError).toContain('cooling-not-ready');
     tick(10000);expect(service.command.calls.count()).toBe(1);expect(component.canRestore).toBeTrue();
   }));
   it('does not resend a recovery after a lost acknowledgement and requires fresh readback before another request', fakeAsync(() => {
@@ -803,6 +803,48 @@ describe('Dynamic tuning controls', () => {
     now+=100;component.load();expect(component.canUseSavedCooling).toBeTrue();
     component.useSavedCooling();expect(component.coolingSaveUnconfirmed).toBeFalse();
     expect(component.coolingDraftMask).toBe(3);expect(service.command.calls.count()).toBe(1);
+  });
+
+  it('shows old blocked recovery instead of an endless restoring banner', () => {
+    report.status.state='restoring';report.status.ownsSettings=true;
+    report.status.recovery={requested:false,phase:'blocked',reason:'Original voltage did not verify'};component.load();
+    expect(component.activityBanner.label).toBe('RESTORATION BLOCKED');expect(component.activityBanner.detail).toContain('Original voltage');
+    expect(component.canRestore).toBeTrue();expect(service.command).not.toHaveBeenCalled();
+  });
+  it('shows a timed-out restoration with its exact last gate and attempt budget', () => {
+    report.status.restoration={phase:'blocked',reason:'Waiting for fan 1',elapsedSeconds:180,timeoutSeconds:180,qualityWarning:null};component.load();
+    expect(component.restorationHeading).toContain('time limit reached');expect(component.restorationReason).toBe('Waiting for fan 1');
+    expect(component.restorationTiming).toBe('180 s elapsed · 180 s limit for this attempt');
+  });
+  it('confirms a physically restored backup with a mining quality warning and missing counters', fakeAsync(() => {
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();
+    service.command.and.callFake(()=>{report.status.active=false;report.status.ownsSettings=false;report.backup.restored=true;
+      report.status.telemetry.valid=false;report.status.restoration={phase:'complete',reason:'Physical settings verified',elapsedSeconds:4,timeoutSeconds:180,qualityWarning:'ASIC measurements unavailable; tuning remains off'};return of({ok:true,restartRequired:false});});
+    component.restore();tick(0);expect(component.busy).toBeFalse();expect(component.message).toContain('ASIC measurements unavailable');expect(component.activityBanner.label).toBe('ORIGINAL SETTINGS RESTORED');
+    expect(service.command.calls.count()).toBe(1);
+  }));
+  it('confirms an explicitly completed paused save without claiming live restoration', fakeAsync(() => {
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();
+    service.command.and.callFake(()=>{report.status.active=false;report.status.ownsSettings=false;report.status.telemetry.miningActive=false;
+      report.status.restoration={phase:'complete',reason:'Saved originals',elapsedSeconds:2,timeoutSeconds:180,qualityWarning:'Mining remains paused; live voltage not verified'};return of({ok:true,restartRequired:false});});
+    component.restore();tick(0);expect(component.busy).toBeFalse();expect(component.message).toContain('Original settings saved; mining remains paused');expect(component.report!.backup.restored).toBeFalse();
+  }));
+  it('gates Start on controller heartbeat but retains Stop and manual refresh', fakeAsync(() => {
+    const activity={get:jasmine.createSpy().and.returnValue(of({schemaVersion:1,available:true,runId:0,active:false,ownsSettings:false,controllerAgeSeconds:30}))};
+    component.ngOnDestroy();component=new AutotuneComponent(service as any,activity as any);component.ngOnInit();tick(0);component.waiverAccepted=true;
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};component.load();expect(component.canStart).toBeFalse();expect(component.canRestore).toBeTrue();expect(component.activityBanner.label).toContain('UNAVAILABLE');
+    activity.get.and.returnValue(of({schemaVersion:1,available:true,runId:0,active:false,ownsSettings:false,controllerAgeSeconds:0}));tick(5000);
+    expect(component.controllerFresh).toBeTrue();expect(component.canStart).toBeTrue();expect(service.command).not.toHaveBeenCalled();component.ngOnDestroy();
+  }));
+  it('supports a legacy missing activity endpoint but never treats a later lost heartbeat as current', fakeAsync(() => {
+    const activity={get:jasmine.createSpy().and.returnValue(throwError(()=>({status:404})))};
+    component.ngOnDestroy();component=new AutotuneComponent(service as any,activity as any);component.ngOnInit();tick(0);expect(component.controllerFresh).toBeTrue();
+    activity.get.and.returnValue(of({schemaVersion:1,available:true,runId:0,active:false,ownsSettings:false,controllerAgeSeconds:0}));tick(5000);expect(component.controllerFresh).toBeTrue();
+    activity.get.and.returnValue(throwError(()=>({status:404})));tick(5000);expect(component.controllerFresh).toBeFalse();expect(service.command).not.toHaveBeenCalled();component.ngOnDestroy();
+  }));
+  it('rejects malformed restoration metadata without changing an unsaved edit', () => {
+    component.edit!.maxVoltageMv=1140;report.status.restoration={phase:'complete',reason:'bad',elapsedSeconds:-1,timeoutSeconds:180,qualityWarning:null};component.load();
+    expect(component.restoration).toBeNull();expect(component.restorationMalformed).toBeTrue();expect(component.canStart).toBeFalse();expect(component.activityBanner.label).toBe('RESTORATION STATUS UNCONFIRMED');expect(component.hasUnsavedChanges).toBeTrue();expect(component.edit!.maxVoltageMv).toBe(1140);
   });
 
 });

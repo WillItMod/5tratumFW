@@ -24,6 +24,8 @@ static void step() {
 static void boot() {
     using namespace FiveTratumAutotune;
     initialized=false;advancedClockOverride=false;firmwareUpdates.store(0);permanentFreeze.store(false);optionsError=false;backupAvailable=false;backupRestored=false;restoring=false;restoreSaved=false;restoreCommitFailed=false;restoreWorker=nullptr;workerNotifications=0;pending=false;
+    restoreHold=false;restorePaused=false;tunerPauseOwned=false;tunerPausePolicy=0;restorationStarted=0;restorationFinished=0;
+    restorationPhase="idle";restorationReason="No restoration requested";restorationQualityWarning=nullptr;restorationWorkAvailable=false;
     storagePrepared=false;powerInitialized=false;baselineLoadError=false;optionsStatus=BlobStatus::Unloaded;baselineStatus=BlobStatus::Unloaded;bootOptions.clear();restoreMinFreeBytes=UINT32_MAX;restoreStackLow=false;
     controller={};history={};lastOwnerTickUs=0;requiredFanMask=3;coolingError=false;coolingStatus=BlobStatus::Unloaded;bootCooling.clear();recoveryRequested=false;recoveryAutomatic=false;recoveryPhase="idle";recoveryReason="No recovery requested";recoveryStartupGuardFailure=nullptr;observed={};backup.clear();adapterReason=nullptr;handoff.store(nullptr);transitionHealthUntilUs=0;
     POWER_MANAGEMENT_MODULE.appliedFrequency=hostBoard.frequency;
@@ -80,6 +82,100 @@ int main(int argc,char **argv) {
     }
     assert(initial["status"]["baseline"].isNull()&&initial["status"]["best"].isNull());
     assert(initial["status"]["current"]["frequencyMHz"].as<int>()==600&&initial["status"]["current"]["coreVoltageMv"].as<int>()==1150);
+    if(scenario.rfind("restoration-",0)==0) {
+        using namespace FiveTratumAutotune;
+        start();const auto original=nvstore["fwtune/baseline"];
+        const bool automatic=scenario=="restoration-repeat-auto";
+        const bool explicitResume=scenario=="restoration-repeat-explicit" || scenario=="restoration-resume-weak";
+        if(automatic) {
+            chipErrorWork=25;
+            for(unsigned i=0;i<1500&&!recoveryRequested;++i)step();
+            assert(recoveryRequested && recoveryAutomatic && paused);
+        } else if(explicitResume) {
+            FiveTratumMining::manualOverride(true);
+            assert(response("{\"action\":\"restore-and-resume\"}")["ok"]==true);
+        } else {
+            POWER_MANAGEMENT_MODULE.appliedFrequency=550;POWER_MANAGEMENT_MODULE.appliedVoltage=1100;
+            if(scenario=="restoration-user-paused")FiveTratumMining::manualOverride(true);
+        }
+        if(scenario=="restoration-weak" || scenario=="restoration-resume-weak")weakChip=true;
+        if(scenario=="restoration-counters")counterValid=false;
+        if(scenario=="restoration-no-pool")poolConnected=false;
+        if(scenario=="restoration-errors")chipErrorWork=25;
+        if(scenario=="restoration-sensor-timeout" || scenario=="restoration-repeat-timeout" || scenario=="restoration-retry-newer-pause")sensorFail=true;
+        if(scenario=="restoration-fan-timeout")failedFanMask=1;
+        if(scenario=="restoration-temperature-timeout")asicDegrees=68;
+        if(scenario=="restoration-stale-timeout")staleSensors=true;
+        if(scenario=="restoration-input-timeout")sensorVin=10;
+        if(scenario=="restoration-readback-fault")voltageOffset=50;
+        assert(response("{\"action\":\"stop\"}")["ok"]==true);
+        const uint64_t started=restorationStarted;
+        if(automatic || explicitResume) {
+            assert(recoveryRequested && !restorePaused);
+            for(int i=0;i<3;++i)assert(response("{\"action\":\"stop\"}")["ok"]==true);
+            assert(recoveryRequested && restorationStarted==started);
+        }
+        if(scenario=="restoration-worker-timeout")workerFunction=nullptr;
+        if(scenario=="restoration-newer-pause") {
+            FiveTratumMining::manualOverride(true);step();
+            assert(!restoring && !recoveryRequested && !ownsSettings() && paused);
+            assert(snapshot()["status"]["restoration"]["phase"]=="blocked" && writes.empty());return 0;
+        }
+        for(int i=0;i<100 && restoring;++i) {
+            step();
+            if(scenario=="restoration-repeat-timeout" && i%20==0) {
+                assert(response("{\"action\":\"stop\"}")["ok"]==true);
+                assert(restorationStarted==started);
+            }
+        }
+        auto result=snapshot();auto status=result["status"]["restoration"];
+        assert(nvstore["fwtune/baseline"]==original);
+        if(scenario.find("timeout")!=std::string::npos || scenario=="restoration-readback-fault" || scenario=="restoration-retry-newer-pause") {
+            assert(!restoring && !pending && restoreHold && ownsSettings() && !transitionAllowed());
+            assert(status["phase"]=="blocked" && !result["backup"]["restored"].as<bool>());
+            assert(status["timeoutSeconds"]==180 && status["elapsedSeconds"].as<double>()<=182);
+            assert(result["status"]["state"]=="suspended");
+            if(scenario!="restoration-readback-fault")assert(writes.empty());
+            if(scenario=="restoration-sensor-timeout") {
+                assert(strstr(status["reason"].as<const char *>(),"Fresh strict"));sensorFail=false;
+                assert(response("{\"action\":\"stop\"}")["ok"]==true);
+                for(int i=0;i<12 && restoring;++i)step();
+                assert(!restoreHold && snapshot()["backup"]["restored"]==true);
+            }
+            if(scenario=="restoration-fan-timeout")assert(strstr(status["reason"].as<const char *>(),"required cooling fan"));
+            if(scenario=="restoration-temperature-timeout")assert(strstr(status["reason"].as<const char *>(),"ASIC temperature"));
+            if(scenario=="restoration-input-timeout")assert(strstr(status["reason"].as<const char *>(),"Input voltage"));
+            if(scenario=="restoration-readback-fault")assert(paused && SYSTEM_MODULE.error==Board::VOUT_FAULT);
+            if(scenario=="restoration-retry-newer-pause") {
+                sensorFail=false;FiveTratumMining::manualOverride(true);
+                assert(response("{\"action\":\"stop\"}")["ok"]==true);
+                for(int i=0;i<12 && restoring;++i)step();
+                assert(paused && !ownsSettings() && recoveryResumeCalls==0 && !restoring && !recoveryRequested);
+                assert(snapshot()["status"]["restoration"]["phase"]=="complete");
+            }
+        } else {
+            assert(status["phase"]=="complete" && !ownsSettings() && !restoring && !pending && !restoreHold);
+            if(scenario=="restoration-user-paused") {
+                assert(paused && recoveryResumeCalls==0 && writes.empty() && result["backup"]["restored"]==false);
+                assert(Config::cfgGetU16("asicfrequency")==600 && Config::cfgGetU16("asicvoltage")==1150);
+                assert(strstr(status["qualityWarning"].as<const char *>(),"left paused"));
+            } else {
+                assert(!paused && result["backup"]["restored"]==true);
+                assert(POWER_MANAGEMENT_MODULE.appliedFrequency==600 && POWER_MANAGEMENT_MODULE.appliedVoltage==1150);
+                if(scenario!="restoration-repeat-explicit") {
+                    assert(status["qualityWarning"].is<const char *>());
+                    assert(strcmp(status["reason"].as<const char *>(),"Original settings restored and normal mining verified"));
+                }
+                if(automatic || explicitResume)assert(recoveryResumeCalls==1 && !recoveryRequested);
+            }
+        }
+        const unsigned reads=hostSensorReads,nvs=hostNvsCalls.load(),fanReads=fanBatchReads;
+        const auto hardwareWrites=writes.size();
+        auto passive=snapshot();JsonDocument activity;assert(FiveTratumAutotune::activity(activity));
+        assert(activity["restoration"]==passive["status"]["restoration"]);
+        assert(hostSensorReads==reads && hostNvsCalls.load()==nvs && fanBatchReads==fanReads && writes.size()==hardwareWrites);
+        return 0;
+    }
     if(scenario.rfind("cooling-",0)==0) {
         using namespace FiveTratumAutotune;
         const auto configureCooling=[](unsigned mask){JsonDocument d;d["action"]="configure-cooling";d["requiredFanMask"]=mask;d["coolingWarningAccepted"]=true;d["coolingWarningVersion"]=1;return sendDocument(d);};
@@ -334,8 +430,8 @@ int main(int argc,char **argv) {
             assert(recoveryRequested&&recoveryResumeCalls==0&&paused);
             asicDegrees=50;offSensorFail=false;
         }
-        for(int i=0;i<35;++i)step();
-        const bool succeeds=scenario=="recovery-cold"||scenario=="recovery-after-stop"||scenario=="recovery-duplicate"||scenario=="recovery-hot"||scenario=="recovery-sensor"||scenario=="recovery-floor";
+        for(int i=0;i<100;++i)step();
+        const bool succeeds=scenario=="recovery-cold"||scenario=="recovery-after-stop"||scenario=="recovery-duplicate"||scenario=="recovery-hot"||scenario=="recovery-sensor"||scenario=="recovery-floor"||scenario=="recovery-stop";
         auto result=snapshot();
         if(succeeds) {
             assert(result["status"]["recovery"]["phase"]=="complete"&&!recoveryRequested&&!paused&&recoveryResumeCalls==1);
@@ -628,7 +724,8 @@ int main(int argc,char **argv) {
             if(scenario=="worker-wrong-context")hostWorkerExternal=true;
             assert(response("{\"action\":\"stop\"}")["ok"].as<bool>());assert(workerRequestedBytes==8192);
             step();step();step();
-            assert(snapshot()["status"]["ownsSettings"].as<bool>()&&snapshot()["status"]["state"]=="restoring"&&!snapshot()["backup"]["restored"].as<bool>()&&writes.empty());
+            assert(snapshot()["status"]["ownsSettings"].as<bool>()&&snapshot()["status"]["state"]=="suspended"&&!snapshot()["backup"]["restored"].as<bool>()&&writes.empty());
+            assert(snapshot()["status"]["restoration"]["phase"]=="blocked");
             assert(Config::s_doc["pid_temp"].as<int>()==(scenario=="worker-low-after-commit"?55:67));
             if(scenario!="worker-wrong-context")assert(snapshot()["diagnostics"]["restoreWorkerStackLow"].as<bool>()&&snapshot()["diagnostics"]["restoreWorkerMinFreeBytes"]==512);
             if(scenario=="worker-low-after-commit")assert(FiveTratumAutotune::revisionCurrent());

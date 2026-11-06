@@ -105,4 +105,13 @@ describe('Global passive tuning activity',()=>{
     report.fault=false;advance(5000);service.get.and.returnValue(throwError(()=>({status:404})));advance(5000);expect(component.hiddenLegacy).toBeFalse();expect(component.badge.label).toBe('Tuning last stopped');component.ngOnDestroy();
   }));
 
+  it('shows a blocked restoration deadline rather than restoring forever',fakeAsync(()=>{
+    report.active=false;report.state='restoring';report.restoration={phase:'blocked',reason:'Waiting for rail confirmation',elapsedSeconds:180,timeoutSeconds:180,qualityWarning:null};begin();
+    expect(component.badge.label).toBe('Restoration blocked');expect(component.badge.phase).toBe('Time limit reached');expect(component.badge.description).toBe('Waiting for rail confirmation');component.ngOnDestroy();
+  }));
+  it('keeps a completed restoration quality warning visible without claiming healthy mining',fakeAsync(()=>{
+    report.active=false;report.ownsSettings=false;report.restoration={phase:'complete',reason:'Physical restore verified',elapsedSeconds:5,timeoutSeconds:180,qualityWarning:'ASIC counters unavailable'};begin();
+    expect(component.badge.label).toBe('Restoration completed');expect(component.badge.phase).toBe('Review the result');expect(component.badge.description).toBe('ASIC counters unavailable');component.ngOnDestroy();
+  }));
+
 });
