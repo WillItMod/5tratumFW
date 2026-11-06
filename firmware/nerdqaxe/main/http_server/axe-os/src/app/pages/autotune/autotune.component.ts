@@ -280,6 +280,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
   }
   get validationError(): string {
     const value = this.edit; const limits = this.report?.limits;
+    if (this.restorationBlocked && this.isEngaged) return this.blockedRestoreEditText;
     if (this.optionsLocked && !this.busy) return this.report?.status.state==='restoring' ? 'The miner is restoring the original backup. Wait for restoration to finish before changing options.' : 'The miner is applying a clock or voltage change. Wait for its confirmation before changing options.';
     if (!this.optionsUsable) return 'Tuning options or hardware limits are unavailable. Restore the backup or refresh after the miner has recovered.';
     if (value && this.wholeMHz && (!Number.isInteger(value.minFrequencyMHz) || !Number.isInteger(value.maxFrequencyMHz))) return 'Use whole MHz for this miner’s clock bounds.';
@@ -319,10 +320,12 @@ export class AutotuneComponent implements OnInit, OnDestroy {
     return '';
   }
   get isEngaged(): boolean {return this.report?.status.active===true || this.report?.status.ownsSettings===true;}
-  get optionsLocked(): boolean {return this.busy || this.isEngaged && ['applying','restoring'].includes(this.report?.status.state||'');}
-  get saveActionLabel(): string {return this.busy?'Working…':this.isEngaged?'Save changes to this tune':'Save options';}
+  get optionsLocked(): boolean {return this.busy || this.isEngaged && (this.restorationBlocked || ['applying','restoring'].includes(this.report?.status.state||''));}
+  get blockedRestoreEditText(): string {return 'The blocked restoration still controls these settings. Retry Disable and restore backup, or use Miner controls to take over before changing tuning options.';}
+  get saveActionLabel(): string {return this.busy?'Working…':this.restorationBlocked&&this.isEngaged?'Restoration blocked':this.isEngaged?'Save changes to this tune':'Save options';}
   get editExplanation(): string {
     if (this.busy) return 'Waiting for the miner to confirm this request. No further change is sent until readback finishes.';
+    if (this.restorationBlocked && this.isEngaged) return this.blockedRestoreEditText;
     if (this.optionsLocked) return this.report?.status.state==='restoring'?'Original settings are being restored. Options unlock when restoration finishes.':'The miner is confirming an operating-point change. Options unlock when that transition finishes.';
     if (this.isEngaged) return 'You are editing this existing tune. No new waiver or Start is needed. Saving a changed goal or bounds makes the controller reassess; temperature and power reductions can trigger safety backoff. Continuous On resumes monitoring after a held round.';
     return 'Save your choices, then accept the waiver and Start when ready. Saving options alone does not start tuning.';
@@ -400,7 +403,7 @@ export class AutotuneComponent implements OnInit, OnDestroy {
       this.diagnosticsMessage='Select and copy the diagnostics below. Include the installed firmware version when reporting a problem.';
     }
   }
-  get canSave(): boolean { return !this.busy && !this.loading && this.isFresh && this.optionsUsable && this.hasUnsavedChanges && !this.validationError; }
+  get canSave(): boolean { return !this.busy && !this.loading && !this.optionsLocked && this.isFresh && this.optionsUsable && this.hasUnsavedChanges && !this.validationError; }
   get canStart(): boolean {
     const report = this.report;
     return !!report && !this.busy && !this.loading && this.isFresh && this.controllerFresh && !this.restorationMalformed && this.optionsUsable && !report.status.active

@@ -847,4 +847,16 @@ describe('Dynamic tuning controls', () => {
     expect(component.restoration).toBeNull();expect(component.restorationMalformed).toBeTrue();expect(component.canStart).toBeFalse();expect(component.activityBanner.label).toBe('RESTORATION STATUS UNCONFIRMED');expect(component.hasUnsavedChanges).toBeTrue();expect(component.edit!.maxVoltageMv).toBe(1140);
   });
 
+  it('blocks tuning edits held by failed restoration without blocking restore or manual takeover', () => {
+    report.status.state='suspended';report.status.ownsSettings=true;report.status.active=false;
+    report.backup={available:true,restored:false,frequencyMHz:525,coreVoltageMv:1150};
+    report.status.restoration={phase:'blocked',reason:'Voltage could not be verified',elapsedSeconds:180,timeoutSeconds:180,qualityWarning:null};
+    component.load();component.edit!.priority='efficiency';
+    expect(component.optionsLocked).toBeTrue();expect(component.canSave).toBeFalse();expect(component.saveActionLabel).toBe('Restoration blocked');
+    expect(component.editExplanation).toContain('blocked restoration');expect(component.editExplanation).not.toContain('reassess');
+    expect(component.validationError).toContain('Miner controls');expect(component.canRestore).toBeTrue();component.save();expect(service.command).not.toHaveBeenCalled();
+    report.status.ownsSettings=false;report.status.state='disabled';component.load();
+    expect(component.optionsLocked).toBeFalse();expect(component.canSave).toBeTrue();expect(component.saveActionLabel).toBe('Save options');
+  });
+
 });
