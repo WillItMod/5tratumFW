@@ -2,7 +2,7 @@
 
 ## Build source and scope
 
-Gamma Beta18 (`v0.1.0-beta.18`), NerdQAxe++ Beta15 (`qaxe-v0.1.0-beta.15`) and NerdOctAxe Gamma Beta13 (`octaxe-v0.1.0-beta.13`) are built from `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. Gamma uses pinned ESP-IDF 6.0.2; the Nerd targets use pinned ESP-IDF 5.5.3. All web builds use Node 24.14.0.
+Gamma Beta18 (`v0.1.0-beta.18`), NerdQAxe++ Beta15 (`qaxe-v0.1.0-beta.15`) and NerdOctAxe Gamma Beta13 (`octaxe-v0.1.0-beta.13`) are built from `e5f422c68a75e5696d8497f8c913d6a81078c72f`. Gamma uses pinned ESP-IDF 6.0.2; the Nerd targets use pinned ESP-IDF 5.5.3. All web builds use Node 24.14.0.
 
 These changes repair restoration and its status reporting. They do not qualify another board revision, higher clock/voltage, larger display or accessory. Only the owned four-chip QAxe is available for new physical checks. Gamma and OctAxe retain software/build qualification for this revision; earlier physical observations remain tied to their original releases.
 
@@ -24,7 +24,7 @@ The Tuning page and compact header use controller heartbeat and restoration meta
 
 - All 27 Gamma host-test entrypoints and 37 Nerd host-test entrypoints passed. Gamma's production runtime passed 73 scenarios; the Nerd runtime passed 128 scenarios, including the new restoration cases. C/C++ early-error policy tests passed under AddressSanitizer/UndefinedBehaviorSanitizer.
 - The Gamma and Nerd production runtime suites also passed with Linux/GCC, including cached report/activity checks that perform no hardware or storage reads.
-- All 330 Gamma and 306 Nerd frontend tests passed. Both production web builds passed. Fifteen production-browser scenarios across the three family routes covered blocked/time-limited restoration, completed-with-warning, paused completion, stale controller activity and malformed metadata.
+- All 331 Gamma and 307 Nerd frontend tests passed. Both production web builds passed. Fifteen production-browser scenarios across the three family routes covered blocked/time-limited restoration, completed-with-warning, paused completion, stale controller activity and malformed metadata.
 - All three actual targets compiled and packaged. Gamma's embedded interface and optional matching WWW were verified; each Nerd WWW was reconstructed and bound to all 108 asset records. Manifests, corresponding source archives, certificate bundles and native display fixtures passed. Existing public artifacts remained byte-for-byte unchanged.
 - Four retained public 5tratumOS MAIN/DEV archives (0.8.50 and 0.8.52) passed 16 modeled paired-upgrade cases, including both Gamma board profiles. New BETA selection, exclusion from STABLE and source-bound Nerd native-control qualification passed. This was a transport simulation using actual packages, not a live OS installation.
 
@@ -37,3 +37,19 @@ At the existing 600 MHz /1,150 mV point, the controller successfully started run
 A separate controlled lifecycle paused the miner using its normal power control. Stop while manually paused saved/verified the original settings and released ownership while keeping mining paused. An explicit Restore and resume request was then followed by Stop while the same recovery transaction was still active. Readbacks before and after that Stop confirmed recovery remained active. Recovery completed in 19.01 seconds, original settings were physically verified, normal mining resumed, and the quality-warning field was null. No MCU reboot or changed clock/voltage trial was used. One GET timed out during guarded startup; a later GET-only reconciliation confirmed completion, and no command was replayed.
 
 The original schedule override mode was restored to none. A final read-only audit passed all 15 checks with no differences: original 600 MHz /1,150 mV, both fans required, tuning disabled/unowned, recovery not pending, backup restored and normal mining active. The physical test did not inject a hardware fault, disconnect a fan or deliberately corrupt ASIC measurements; those cases are covered by production-code simulations. No Gamma or OctAxe installation is claimed for this release.
+
+## Final interface review
+
+A final UI-only review found that a held, blocked restoration still offered tuning Save even though the server correctly refused it. The final source locks those edits and explains the blocked state while keeping restoration controls available. Six additional desktop/mobile browser checks across Gamma, QAxe and OctAxe passed.
+
+The Gamma/Nerd runtime source files are byte-identical to the recovery-tested candidate `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. The final QAxe application SHA-256 is also identical to that installed and tested candidate, so it was explicitly verified and reused; only the final matched WWW required another upload. The reuse proof binds the archived application/ELF, prior acknowledged upload, paired installed-device verification and fresh device identity/settings checks. It is not a direct on-device flash hash measurement. The final web files and interaction checks are recorded separately.
+
+## Final GitHub validation
+
+All three family workflows passed against the final image source `e5f422c68a75e5696d8497f8c913d6a81078c72f` on 6 November 2026:
+
+- [Gamma BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42212586368)
+
+- [OctAxe paired BETA candidate validation](https://github.com/WillItMod/5tratumFW/actions/runs/42212586460)
+
+- [QAxe paired BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42212586263)

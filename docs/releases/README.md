@@ -1,6 +1,6 @@
 # Firmware releases
 
-Current experimental releases: [Gamma Beta18](v0.1.0-beta.18.md), [NerdQAxe++ Beta15](qaxe-v0.1.0-beta.15.md) and [NerdOctAxe Gamma Beta13](octaxe-v0.1.0-beta.13.md), built from `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. [Recovery validation](../validation-recovery-20261106.md) separates current software/package checks and the owned-QAxe recovery test from earlier Gamma/OctAxe hardware observations. Earlier [reliability](../validation-reliability-20261105.md) and [fan-feedback](../validation-single-fan-20261105.md) records remain historical evidence for their exact images.
+Current experimental releases: [Gamma Beta18](v0.1.0-beta.18.md), [NerdQAxe++ Beta15](qaxe-v0.1.0-beta.15.md) and [NerdOctAxe Gamma Beta13](octaxe-v0.1.0-beta.13.md), built from `e5f422c68a75e5696d8497f8c913d6a81078c72f`. [Recovery validation](../validation-recovery-20261106.md) separates current software/package checks and the owned-QAxe recovery test from earlier Gamma/OctAxe hardware observations. Earlier [reliability](../validation-reliability-20261105.md) and [fan-feedback](../validation-single-fan-20261105.md) records remain historical evidence for their exact images.
 
 Use [5tratumOS on your existing MAIN/DEV channel](../../DOWNLOADS.md#update-through-5tratumos). Current compatible firmware is discovered dynamically; no per-release OS update is needed. Historical downloads and their evidence remain unchanged.
 

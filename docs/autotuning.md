@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental releases are **Gamma Beta18**, **NerdQAxe++ Beta15** and **NerdOctAxe Gamma Beta13**, built from `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. They separate physical original-settings restoration from tuning-quality admission and show bounded recovery progress. See [current recovery validation](validation-recovery-20261106.md); the previous [reliability](validation-reliability-20261105.md) and [fitted-fan](validation-single-fan-20261105.md) records keep their original scope. Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. [Downloads and OS instructions](../DOWNLOADS.md).
+The current experimental releases are **Gamma Beta18**, **NerdQAxe++ Beta15** and **NerdOctAxe Gamma Beta13**, built from `e5f422c68a75e5696d8497f8c913d6a81078c72f`. They separate physical original-settings restoration from tuning-quality admission and show bounded recovery progress. See [current recovery validation](validation-recovery-20261106.md); the previous [reliability](validation-reliability-20261105.md) and [fitted-fan](validation-single-fan-20261105.md) records keep their original scope. Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. [Downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
