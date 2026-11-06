@@ -1,6 +1,6 @@
 # Adaptive tuning: experimental BETA
 
-The current experimental releases are **Gamma Beta17**, **NerdQAxe++ Beta14** and **NerdOctAxe Gamma Beta12**. Gamma17 remains unchanged; the Nerd fan-feedback update is built from `012488d6078f914cc68a3dd3594374e8e07aa507`. See [current fan-feedback validation](validation-single-fan-20261105.md) and the separate [Gamma17/QA13/Oct11 reliability record](validation-reliability-20261105.md). Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. See [downloads and OS instructions](../DOWNLOADS.md).
+The current experimental releases are **Gamma Beta18**, **NerdQAxe++ Beta15** and **NerdOctAxe Gamma Beta13**, built from `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. They separate physical original-settings restoration from tuning-quality admission and show bounded recovery progress. See [current recovery validation](validation-recovery-20261106.md); the previous [reliability](validation-reliability-20261105.md) and [fitted-fan](validation-single-fan-20261105.md) records keep their original scope. Gamma includes its matching interface in the application. QAxe/OctAxe retain matched app/WWW pairs. [Downloads and OS instructions](../DOWNLOADS.md).
 
 The controller runs on the miner. Closing the browser does not stop it. It
 adjusts the whole miner's clock and core voltage using current hardware
@@ -53,6 +53,16 @@ session. While an adjustment or restore is pending, the page explains why
 another change must wait. Saving options while the tuner is disabled does not
 start it. Boot and OTA never automatically restart
 a tuning session, even if Continuous tuning was saved as On.
+
+## Restoration status and mining quality
+
+**Disable and restore backup** stops tuning and restores the original settings. It does not cancel an existing recovery or turn an explicit manual pause into a resume. A paused miner can finish saving the original settings with a clear notice that live voltage has not been verified. Use the separate **Restore original settings and resume mining** action when you want that paused miner to resume, after reviewing the reported reason.
+
+The page shows the actual restoration phase, exact reason, elapsed time and the 180-second overall attempt limit. A failed attempt is labelled **Restoration blocked**, including **Time limit reached** when applicable. It retains the failed safety check instead of saying Restoring indefinitely. Refresh, review the reason and retry only when that requirement is resolved. A stale controller heartbeat blocks a new Start and completion claims; Stop and diagnostic refresh remain available.
+
+A safe physical restore requires fresh temperatures, input/output voltage, regulator status, selected fan feedback, the correct device identity and original backup, plus clock/voltage confirmation. Missing or high-error ASIC work measurements do not by themselves prevent restoring an otherwise verified original operating point. They produce a visible **quality warning** and tuning stays off. This confirms the physical restoration, not that the ASIC is healthy or that its settings are suitable for another tune.
+
+Ordinary mining is not paused by default. An explicitly configured pause schedule, a manual pause, hardware protection or a rejected tuning point can stop work. Keep the exact reason and diagnostics before restarting, because a reboot clears volatile control state. These distinctions do not override protection or justify forcing an unsafe miner to run.
 
 ## Temperature and electrical limits
 

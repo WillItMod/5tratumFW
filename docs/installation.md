@@ -4,7 +4,7 @@ These application and web images are for **Bitaxe Gamma PCB revisions 601 and 60
 
 GT800, NerdQAxe, NerdOctAxe, other Bitaxe boards, and custom board profiles are outside this Gamma image's supported hardware. NerdQAxe++ has a separate firmware family in this repository; use its [model-specific guide](nerdqaxe.md) and image pair. A successful build does not establish installed-device testing; consult the release's validation record for the specific revision and version.
 
-**Current public Gamma release: [Beta17 experimental BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.17).** It fixes Appearance saving and adds precise tuning readiness plus bounded error correction. The owned Gamma601 application-only update, real Start, rejection/automatic recovery and original-settings checks are recorded in [current validation](validation-reliability-20261105.md). Gamma602 tuner qualification and physical W5500 remain outside that evidence. Read [Tuning](autotuning.md) before enabling the optional controller. Previous releases retain their own evidence.
+**Current public Gamma release: [Beta18 experimental BETA](https://github.com/WillItMod/5tratumFW/releases/tag/v0.1.0-beta.18).** It adds bounded original-settings restoration, explicit blocked/quality status and controller-heartbeat checks. See [current validation](validation-recovery-20261106.md); this update has no new physical Gamma qualification. The earlier Gamma 601 and Gamma 602/W5500 limitations retain their scope. Read [Tuning](autotuning.md) before enabling the optional controller.
 
 ## Choose the correct files
 
@@ -40,7 +40,7 @@ If this miner is already running a tuning candidate, first open its Tuning page,
 
 1. Open **Fleet → Devices** in Orbit, or **5tratumFW devices** in Classic.
 2. On the correct miner, select **Firmware update → BETA → Check for updates**.
-3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta16**, **NerdQAxe++ Beta12**, or **NerdOctAxe Gamma Beta10**.
+3. Confirm the model-labelled version: **Bitaxe Gamma 601/602 Beta18**, **NerdQAxe++ Beta15**, or **NerdOctAxe Gamma Beta13**.
 4. Select **Install firmware → Confirm install**. Keep power connected until **Firmware installation verified** appears.
 5. Use **Open miner**, reload the miner page and check matching application/web versions, saved settings, temperatures, fans and mining.
 

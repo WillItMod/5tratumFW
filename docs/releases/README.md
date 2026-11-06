@@ -1,6 +1,6 @@
 # Firmware releases
 
-Current experimental releases: [Gamma Beta17](v0.1.0-beta.17.md), [NerdQAxe++ Beta14](qaxe-v0.1.0-beta.14.md) and [NerdOctAxe Gamma Beta12](octaxe-v0.1.0-beta.12.md). Gamma Beta17 retains build source `1e2d1b545a01218ce906936dddba6c82b5af62b7`; the new Nerd pairs use `012488d6078f914cc68a3dd3594374e8e07aa507`. [Fan-feedback validation](../validation-single-fan-20261105.md) covers the new changes. [Earlier reliability validation](../validation-reliability-20261105.md) retains the actual owned-miner checks for Gamma17/QA13/Oct11. No high-clock, larger-panel or new-board qualification is implied.
+Current experimental releases: [Gamma Beta18](v0.1.0-beta.18.md), [NerdQAxe++ Beta15](qaxe-v0.1.0-beta.15.md) and [NerdOctAxe Gamma Beta13](octaxe-v0.1.0-beta.13.md), built from `9303a3faec05a071f6c2a95d4e9c12047f6958d9`. [Recovery validation](../validation-recovery-20261106.md) separates current software/package checks and the owned-QAxe recovery test from earlier Gamma/OctAxe hardware observations. Earlier [reliability](../validation-reliability-20261105.md) and [fan-feedback](../validation-single-fan-20261105.md) records remain historical evidence for their exact images.
 
 Use [5tratumOS on your existing MAIN/DEV channel](../../DOWNLOADS.md#update-through-5tratumos). Current compatible firmware is discovered dynamically; no per-release OS update is needed. Historical downloads and their evidence remain unchanged.
 
