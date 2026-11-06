@@ -53,3 +53,9 @@ All three family workflows passed against the final image source `e5f422c68a75e5
 - [OctAxe paired BETA candidate validation](https://github.com/WillItMod/5tratumFW/actions/runs/42212586460)
 
 - [QAxe paired BETA validation](https://github.com/WillItMod/5tratumFW/actions/runs/42212586263)
+
+## Public release verification
+
+All three BETA releases were published on 6 November 2026 after the final family workflows passed. Anonymous downloads verified every released file against the local package hashes, including corresponding source, manifests, checksums and both Nerd native-control qualifications. The three release tags point to the final image source above. Later documentation commits do not change those images or their source identity.
+
+The actual public GitHub catalogue and anonymously downloaded assets passed the current 5tratumOS parser and update-selection checks. BETA offers Gamma18, QAxe15 and OctAxe13, while STABLE excludes them. Both Nerd native-control qualifications were accepted; removing a qualification was correctly rejected. This used fictional device records, not an installed OS or additional miner writes.

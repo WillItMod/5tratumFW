@@ -199,11 +199,15 @@ when status is stale, when a Start acknowledgement was lost, or when tuning
 options need repair. It requests restoration of the original saved configuration
 and its live clock/voltage/cooling policy through the protected owner.
 
-If the miner is too hot, paused, faulted or missing required readings, restoration
-waits. The backup remains available and the page reports the reason. Restoration
-does not clear a fault, restart a stopped ASIC or force old settings onto unsafe
-hardware. Use the miner's existing explicit recovery controls when the underlying
-condition has been corrected, then retry restoration as reported.
+If the miner is too hot, faulted or missing required physical safety readings,
+restoration waits within its 180-second overall limit, then reports a blocked
+attempt and its failed check. The backup remains available. An explicit manual
+pause stays paused: Nerd miners can finish saving and verifying the original
+configuration without claiming live voltage verification; Gamma reports the
+pause as a block requiring the separate resume action. Restoration does not
+clear a fault or force old settings onto unsafe hardware. Correct the reported
+condition before retrying. Missing ASIC work counters alone do not block a
+physically verified original-settings restore.
 
 For a miner which is already paused, **Restore original settings and resume
 mining** is a separate explicit recovery action. It keeps auto-tuning off. The
@@ -213,12 +217,15 @@ startup. Recovery is not complete until live settings, fans and mining state
 are verified. It never clears a hardware fault or bypasses normal startup
 protection. A manual power action or an update cancels a pending recovery.
 
-When an ordinary measured trial is rejected, the controller returns to its better measured point when headroom permits. If protective backoff exhausts the permitted clock range, or bounded error-correction attempts are exhausted, the failed point is retained in the decision history. A clock-floor rejection records the initiating readings; error exhaustion records the available decision evidence, distinguishing completed window means from instantaneous readings without inventing an improvement score. These two soft tuning failures can make one guarded automatic recovery attempt: pause and cool, validate protection and sensors, restore and independently verify the immutable pre-tune settings, then resume and verify normal mining with tuning off. Cooling admission requires the applicable temperature headroom; Gamma holds mining work until fresh powered ASIC/regulator/fan readings pass. Nerd applies the extra 5°C margin before startup and continues to enforce user ceilings during powered startup. A real hardware fault, invalid backup, missing telemetry, failed verification or newer manual/scheduled control blocks or cancels recovery. There is no automatic fault clearing, MCU reboot or repeated retry. The original point can differ from tighter tuning targets selected later; improve cooling or review the permitted range before another Start.
+When an ordinary measured trial is rejected, the controller returns to its better measured point when headroom permits. If protective backoff exhausts the permitted clock range, or bounded error-correction attempts are exhausted, the failed point is retained in the decision history. A clock-floor rejection records the initiating readings; error exhaustion records the available decision evidence, distinguishing completed window means from instantaneous readings without inventing an improvement score. These two soft tuning failures can make one guarded automatic recovery attempt: pause and cool, validate protection and sensors, restore and independently verify the immutable pre-tune settings, then resume and verify normal mining with tuning off. Cooling admission requires the applicable temperature headroom; Gamma holds mining work until fresh powered ASIC/regulator/fan readings pass. Nerd applies the extra 5°C margin before startup and continues to enforce user ceilings during powered startup. A real hardware fault, invalid backup, missing physical safety telemetry, failed verification or newer manual/scheduled control blocks or cancels recovery. There is no automatic fault clearing, MCU reboot or repeated retry. The original point can differ from tighter tuning targets selected later; improve cooling or review the permitted range before another Start.
 
 On Gamma 601/602, the ASIC temperature diode is unavailable while ASIC power is off. Recovery may power and initialize the ASIC with mining work held back until fresh powered sensor checks pass, then verify normal mining counters.
 
-A completed restore is reported only after saved-settings checks and successful
-live readback. The browser never automatically repeats the state-changing
+A running restore is reported complete only after saved-settings checks and
+successful live readback. Saved-settings restoration on a manually paused Nerd
+miner is labelled separately. Missing or unsuitable ASIC work measurements at
+physical verification produce a quality warning, not a claim of healthy mining.
+The browser never automatically repeats the state-changing
 request after an uncertain response. Refresh status before choosing another
 action. An explicit manual setting or scheduled profile cancels tuning ownership
 without overwriting that new request; the original backup remains available for
@@ -317,9 +324,13 @@ Only fresh, distinct hardware-counter intervals belonging to the current
 point’s evaluation count. The possible old 15-second counter interval is
 excluded before this check can judge a trial. Repeated browser reads and stale
 values are not additional evidence. Managed changes reset counters and restart
-the guard; a monotonic-clock regression stops the controller. The earliest qualifying timings are 15 seconds for severe errors or 25 seconds
-for persistent ordinary errors from Start or confirmed application. These are
-software evidence timings, not physical response guarantees. After
+the guard; a monotonic-clock regression stops the controller. Severe errors can
+qualify after 15 seconds from Start or confirmed application. Persistent ordinary
+errors can qualify after 25 seconds at the unchanged starting point. After an
+applied change, ordinary-error assessment waits for the full 30-second settling
+period, excludes the following 15-second counter interval, and then requires
+the 10-second confirmation streak: its earliest qualifying time is 55 seconds.
+These are software evidence timings, not physical response guarantees. After
 that guard, a severe reading of at least 3% board errors or 5% on any required
 ASIC rejects the point without waiting for its full measurement window. Lower
 errors above the normal 0.5% board or 1% worst-ASIC limit require at least
